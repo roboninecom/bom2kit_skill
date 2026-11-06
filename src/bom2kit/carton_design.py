@@ -35,7 +35,7 @@ def design_carton(request, time_limit=5):
         raise ValueError("Explicit mm units required")
     policy = request.get("policy", {})
     allowed_policy = {"wall_mm", "protection_mm", "reserved_top_mm", "gap_mm",
-                      "dimension_increment_mm", "max_external_mm"}
+                      "dimension_increment_mm", "max_external_mm", "inner_wall_mm"}
     if not isinstance(policy, dict) or set(policy) - allowed_policy:
         raise ValueError("Unsupported packing policy field")
     allowed_item = {"id", "quantity", "dimensions_mm", "allowed_rotations"}
@@ -60,6 +60,11 @@ def design_carton(request, time_limit=5):
     prepared = perf_counter()
     best, attempts, seen = None, [], set()
     validation_seconds = 0.0
+    if "inner_wall_mm" in policy:
+        from .layered_design import design_layers
+        layered = design_layers(request, units, time_limit=time_limit*.5)
+        best = layered["candidate"]
+        attempts.extend({**a,"method":"generated_inner_carton_layers"} for a in layered["attempts"])
 
     def problem_for(usable):
         external = [math.ceil((usable[k] + shell[k]) / increment - 1e-10) * increment for k in range(3)]

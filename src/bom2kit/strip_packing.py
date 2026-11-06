@@ -1,7 +1,7 @@
 """Constructive maximal-free-rectangle strip packing with bounded part height."""
 
 
-def pack_strip(units, width, height, gap=0):
+def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, priority_unit=None):
     """Place envelope units on the floor, selecting individual orientations.
 
     Free rectangles may overlap one another, but each is empty. All rectangles
@@ -11,11 +11,15 @@ def pack_strip(units, width, height, gap=0):
     for unit in units:
         choices = [(r, s) for r, s in unit["orientations"] if s[0] <= width + 1e-8 and s[2] <= height + 1e-8]
         if not choices:
+            if allow_partial:
+                continue
             return None
         available.append((unit, choices))
-    available.sort(key=lambda entry: (-max(s[0]*s[1] for _, s in entry[1]),
+    available.sort(key=lambda entry: (entry[0]["unit_id"] != priority_unit, -max(s[0]*s[1] for _, s in entry[1]),
                                      -max(max(s[:2]) for _, s in entry[1]), entry[0]["unit_id"]))
     length = sum(max(s[1] for _, s in choices) + gap for _, choices in available)
+    if depth is not None:
+        length = depth
     free = [(0.0, 0.0, width + gap, length + gap)]
     placements, used_x, used_y, used_z = [], 0., 0., 0.
     for unit, choices in available:
@@ -27,6 +31,8 @@ def pack_strip(units, width, height, gap=0):
                     options.append(((max(used_y, y + size[1]), min(w-dx, h-dy), y, x, size),
                                     x, y, rotation, size))
         if not options:
+            if allow_partial:
+                continue
             return None
         _, x, y, rotation, size = min(options)
         placements.append({"item_id": unit["item_id"], "unit_id": unit["unit_id"],

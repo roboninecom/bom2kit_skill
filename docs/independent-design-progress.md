@@ -86,6 +86,31 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Supported multilayer cartons
+
+Optional `policy.carton.inner_wall_mm` now enables geometry-derived closed inner
+cartons. The constructor searches footprint/height bands, chooses per-part
+orientations, fills each layer and stacks the cartons. A second policy anchors
+each layer on a large remaining part before placing smaller parts around it.
+Both alternatives compete with the unchanged single-floor incumbent.
+
+The independent hierarchical validator checks exact source-unit coverage, every
+inner cavity, material thickness, outer containment, full carton base support
+and top insertion. Original triangle validation and internal/group motion checks
+remain separate. Inner and outer carton dimensions respect manufacturing
+increments. The engine emits an inner-carton dimension BOM; production dielines
+and carton strength are not certified by these geometry checks.
+
+With 1.5 mm inner walls, the full 102 singleton run reached 27.55 L. Combining
+generated layers with the independently discovered mixed-arm pair reached
+**224 x 268 x 433 mm = 25.993856 L**, using seven inner cartons. All 108 packing
+units, declared BOM counts, original-source triangles and assembly/insertion
+checks pass. Evidence:
+`packaging-results/independent/102/complete-layered-grouped/1/result.json`.
+This remains worse than the required engineer comparison; the goal is open.
+The next compaction step is broader geometry-driven groups and improved layer
+selection, with unchanged protection requirements.
+
 ### Complete 102 hardware input and first full search
 
 `prepare_hardware_library.py` reads the extracted source rows and an explicit

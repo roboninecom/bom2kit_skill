@@ -207,6 +207,9 @@ def main(argv=None):
             from .mesh_validation import validate_mesh_layout
 
             validation = validate_mesh_layout(problem, layout)
+        elif "layers" in layout:
+            from .layered_design import validate_layered
+            validation = validate_layered(problem, layout)
         else:
             validation = validate(problem, layout)
         if args.command in ("validate", "mesh-validate"):
