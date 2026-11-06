@@ -40,7 +40,7 @@ def design_carton(request, time_limit=5):
         raise ValueError("Unsupported packing policy field")
     if policy.get("item_order","area") not in ("area","volume"):
         raise ValueError("Unknown item order")
-    if policy.get("placement_score","bottom_left") not in ("bottom_left","short_side","area"):
+    if policy.get("placement_score","bottom_left") not in ("bottom_left","short_side","area","height_fill"):
         raise ValueError("Unknown rectangle placement score")
     allowed_item = {"id", "quantity", "dimensions_mm", "allowed_rotations"}
     if not isinstance(request.get("items"), list) or any(

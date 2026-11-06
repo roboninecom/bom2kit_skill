@@ -9,7 +9,7 @@ def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, pri
     Free rectangles may overlap one another, but each is empty. All rectangles
     overlapping a placement are split. No support or artificial filler is needed.
     """
-    if placement_score not in ("bottom_left","short_side","area"):
+    if placement_score not in ("bottom_left","short_side","area","height_fill"):
         raise ValueError("Unknown rectangle placement score")
     if item_order not in ("area","volume"):
         raise ValueError("Unknown item order")
@@ -36,7 +36,9 @@ def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, pri
                 dx, dy = size[0] + gap, size[1] + gap
                 if dx <= w + 1e-8 and dy <= h + 1e-8:
                     short,long = min(w-dx,h-dy),max(w-dx,h-dy)
-                    if placement_score == "short_side":
+                    if placement_score == "height_fill":
+                        score = (-size[2],max(used_y,y+size[1]),short,y,x,size)
+                    elif placement_score == "short_side":
                         score = (short,long,max(used_y,y+size[1]),y,x,size)
                     elif placement_score == "area":
                         score = (w*h-dx*dy,short,max(used_y,y+size[1]),y,x,size)

@@ -4,7 +4,7 @@ from bom2kit.validation import validate
 import pytest
 
 
-@pytest.mark.parametrize("placement_score",["bottom_left","short_side","area"])
+@pytest.mark.parametrize("placement_score",["bottom_left","short_side","area","height_fill"])
 def test_strip_reuses_free_rectangles_and_keeps_lateral_clearance(placement_score):
     problem = {"units": "mm", "container": {"inner_mm": [8,30,2]}, "gap_mm": .2,
                "items": [{"id": "long", "quantity": 3, "dimensions_mm": [4,2,1]},
@@ -32,3 +32,12 @@ def test_volume_order_preserves_tall_items_when_floor_area_is_scarce():
     assert volume["placements"][0]["item_id"] == "dense"
     with pytest.raises(ValueError,match="item order"):
         pack_strip(units,10,10,item_order="unknown")
+
+
+def test_height_fill_uses_allowed_vertical_span_without_changing_dimensions():
+    problem = {"container":{"inner_mm":[10,10,4]},"items":[
+        {"id":"block","dimensions_mm":[4,3,2],"allowed_rotations":[[0,1,2],[1,2,0],[2,1,0]]}]}
+    units = normalize(problem)["units"]
+    result = pack_strip(units,10,4,depth=10,placement_score="height_fill")
+    assert result["placements"][0]["dimensions_mm"][2] == 4
+    assert validate(problem,result)["valid"]

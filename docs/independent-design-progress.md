@@ -3,6 +3,24 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Height-oriented placement improves 102
+
+`carton.placement_score: "height_fill"` prefers taller permitted orientations
+within each candidate height band, reducing the floor area consumed by a unit.
+It changes neither dimensions nor allowed rotations. This differs from sorting
+units by volume, which did not improve these benchmarks.
+
+With the independently discovered groups, unchanged protection and a 90-second
+carton budget, 102 improved to **252 x 264 x 332 mm = 22.087296 L**. Original
+geometry, group assembly, outer insertion and complete declared BOM pass. It is
+still **10.09% above** the 20.063360 L reference; the objective remains open.
+The selected artifact is `102/height-fill-design/result.json`; `height-fill-review/`
+freshly checks and renders all 108 units in five inner cartons. Reused group
+discovery means this experiment is not an end-to-end cold timing measurement.
+
+The shared skill documents this mode alongside other tested heuristics. Full
+regression suite: 127 tests passed in 15.55 seconds.
+
 ## Orientation coverage under short search budgets
 
 The expanded 102 search revealed that several expensive pairs explored only
@@ -18,6 +36,16 @@ records proposal time. The small cavity regression explores all 24 rotations
 and preserves nested assembly checks. Full suite: 125 tests passed in 15.85 s.
 Whole-kit performance remains an empirical question; synthetic success does not
 establish a smaller 101/102 carton.
+
+The 102 orientation-first trial explored 17–24 rotations per attempted pair in
+121.69 seconds. Accepted pair envelope volumes matched the earlier alternatives;
+the complete carton remained 22.340736 L and was rejected as non-improving.
+Evidence: `102/orientation-first-pairs/` and `102/orientation-first-design/`.
+
+The 101 extension search retained seven original-source-checked three-part
+groups. Their combined greedy carton was 21.213568 L, worse than the verified
+20.612862 L incumbent, so original whole-carton pose certification was skipped.
+Evidence: `101/expanded-nested-search/` and `101/expanded-nested-design/`.
 
 ## Latest retained 101 candidate
 

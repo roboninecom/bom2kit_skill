@@ -53,8 +53,12 @@ The policy requires `carton`, `item_padding_mm`, `clearance_mm` and
 `protection_mm`, `inner_wall_mm`, `reserved_top_mm`, `gap_mm` and
 `dimension_increment_mm`. Choose values from actual requirements.
 `refine_footprints` switches local size refinement versus broader sequence
-search. `placement_score` accepts `bottom_left`, `short_side` or `area`.
-Neither heuristic dominates every kit; preserve protection while comparing them.
+search. `placement_score` accepts `bottom_left`, `short_side`, `area` or
+`height_fill` (prefer taller allowed orientations within a layer).
+No heuristic dominates every kit; preserve protection while comparing them.
+`item_order` accepts `area` or `volume`; `unequal_columns: true` also searches
+adjacent stacks of different widths. Keep the best fully verified result across
+experiments. These settings do not relax walls, padding or part geometry.
 
 ```powershell
 python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --pair-seconds 8 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6
