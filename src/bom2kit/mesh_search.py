@@ -11,7 +11,9 @@ from itertools import permutations, product
 import json
 import math
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from time import perf_counter
+from zipfile import BadZipFile
 
 
 @dataclass
@@ -90,13 +92,28 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
     cache_root = Path(cache_dir) if cache_dir else (Path(checkpoint_dir).parent / "mesh-voxel-cache" if checkpoint_dir else None)
     if cache_root:
         cache_root.mkdir(parents=True, exist_ok=True)
+
+    def save_cache(path, **arrays):
+        temporary = None
+        try:
+            with NamedTemporaryFile(dir=path.parent, suffix=".npz", delete=False) as handle:
+                temporary = Path(handle.name)
+                np.savez_compressed(handle, **arrays)
+            temporary.replace(path)
+        except OSError:
+            # Cache persistence is optional; concurrent readers can briefly
+            # hold a Windows file handle. In-memory search remains usable.
+            pass
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
     for permutation in permutations(range(3)):
         for signs in product((1, -1), repeat=3):
             rotation = np.zeros((3, 3))
             rotation[np.arange(3), permutation] = signs
             if np.linalg.det(rotation) > 0:
                 rotations.append(rotation)
-    data, expected, originals = {}, {}, {}
+    data, expected, originals, source_hashes = {}, {}, {}, {}
     seeded_ids = {pose.get("unit_id") for pose in (seed_placements or []) if isinstance(pose, dict)}
     for item in problem["items"]:
         iid, quantity = item["id"], item.get("quantity", 1)
@@ -116,6 +133,7 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
         if not mesh.is_volume or np.any(mesh.area_faces <= 0):
             raise ValueError(f"Source must be a nondegenerate watertight positive mesh: {iid}")
         originals[iid] = mesh.copy()
+        source_hashes[iid] = ref["sha256"]
         item_units = {f"{iid}#{index + 1}": iid for index in range(quantity)}
         if set(item_units).issubset(seeded_ids):
             # A partial recipe may already contain every unit of this type.
@@ -144,7 +162,7 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
                     candidate_grid = cached["grid"]
                     if candidate_grid.ndim == 3 and candidate_grid.dtype == bool:
                         grid = candidate_grid.astype(np.float32)
-            except (OSError, ValueError, KeyError):
+            except (OSError, ValueError, KeyError, EOFError, BadZipFile):
                 grid = None
         if grid is None:
             voxels = mesh.voxelized(pitch_mm).fill()
@@ -152,7 +170,7 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
                 raise ValueError("Unexpected normalized voxel origin")
             grid = voxels.matrix.astype(np.float32)
             if cache_path:
-                np.savez_compressed(cache_path, grid=grid.astype(bool))
+                save_cache(cache_path, grid=grid.astype(bool))
         orientations, fingerprints = [], set()
         for rotation in rotations:
             perm = np.argmax(np.abs(rotation), axis=1)
@@ -213,8 +231,27 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
             mesh = originals[pose["item_id"]].copy()
             mesh.apply_transform(pose["transform"])
             mesh.apply_translation(-margin)
-            voxels = mesh.voxelized(pitch_mm).fill()
-            indices = np.rint(voxels.points / pitch_mm).astype(int)
+            seed_key = sha256(json.dumps({"source_sha256": source_hashes[pose["item_id"]],
+                                         "transform": pose["transform"], "margin_mm": margin.tolist(),
+                                         "pitch_mm": pitch_mm, "trimesh": trimesh.__version__,
+                                         "schema": 1}, sort_keys=True).encode()).hexdigest()
+            seed_cache = cache_root / f"seed-{seed_key}.npz" if cache_root else None
+            indices = None
+            if seed_cache and seed_cache.exists():
+                try:
+                    with np.load(seed_cache, allow_pickle=False) as cached:
+                        stored = cached["indices"]
+                        if stored.ndim == 2 and stored.shape[1] == 3 and stored.dtype.kind in "iu":
+                            indices = stored
+                except (OSError, ValueError, KeyError, EOFError, BadZipFile):
+                    indices = None
+            if indices is None:
+                voxels = mesh.voxelized(pitch_mm).fill()
+                indices = np.rint(voxels.points / pitch_mm).astype(int)
+                if seed_cache:
+                    save_cache(seed_cache, indices=indices)
+            # Occupancy is only a search proxy. Every cached seed has already
+            # passed fresh exact validation; final candidates are revalidated.
             indices = indices[np.all((indices >= 0) & (indices < shape), axis=1)]
             initial_grid[tuple(indices.T)] = 1
             initial_meshes.append(mesh)

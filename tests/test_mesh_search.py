@@ -77,3 +77,39 @@ def test_partial_recipe_skips_orientations_for_fully_seeded_type(tmp_path, monke
     result = solve_mesh_kit(problem, seed_placements=seed, pitch_mm=1, time_limit=15)
     assert result["validation"]["valid"]
     assert len(calls) == 2  # One unseeded-type grid and one transformed seed grid.
+
+
+def test_partial_recipe_occupancy_cache_binds_transform(tmp_path, monkeypatch):
+    mesh = trimesh.creation.box([2, 2, 2])
+    source = tmp_path / "mesh.json"
+    source.write_text(json.dumps({"units": "mm", "vertices_mm": mesh.vertices.tolist(),
+                                  "triangles": mesh.faces.tolist()}))
+    reference = {"path": str(source), "sha256": sha256(source.read_bytes()).hexdigest()}
+    problem = {"units": "mm", "container": {"inner_mm": [9, 3, 3]}, "clearance_mm": .5,
+               "items": [{"id": name, "quantity": 1, "mesh": reference} for name in ["seeded", "new"]]}
+    seed = [{"item_id": "seeded", "unit_id": "seeded#1",
+             "transform": [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [0, 0, 0, 1]]}]
+    cache = tmp_path / "cache"
+    first = solve_mesh_kit(problem, seed_placements=seed, pitch_mm=1, cache_dir=cache)
+    assert first["validation"]["valid"]
+    original = trimesh.Trimesh.voxelized
+    calls = []
+
+    def counted(mesh, *args, **kwargs):
+        calls.append(1)
+        return original(mesh, *args, **kwargs)
+
+    monkeypatch.setattr(trimesh.Trimesh, "voxelized", counted)
+    replay = solve_mesh_kit(problem, seed_placements=seed, pitch_mm=1, cache_dir=cache)
+    assert replay["validation"]["valid"]
+    assert not calls
+    moved = json.loads(json.dumps(seed))
+    moved[0]["transform"][0][3] = 4
+    changed = solve_mesh_kit(problem, seed_placements=moved, pitch_mm=1, cache_dir=cache)
+    assert changed["validation"]["valid"]
+    assert len(calls) == 1  # Changed world pose cannot reuse old seed occupancy.
+    for cached in cache.glob("seed-*.npz"):
+        cached.write_bytes(b"truncated-cache")
+    recovered = solve_mesh_kit(problem, seed_placements=seed, pitch_mm=1, cache_dir=cache)
+    assert recovered["validation"]["valid"]
+    assert len(calls) == 2  # Corrupt optional occupancy is rebuilt, not trusted.

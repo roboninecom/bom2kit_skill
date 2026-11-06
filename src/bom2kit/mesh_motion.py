@@ -90,7 +90,10 @@ def check_vertical_sequence(problem, layout, groups=None, time_limit=30):
             # Once the moving group's minimum Z exceeds every obstacle maximum,
             # continued upward translation cannot hit an obstacle or side wall.
             travel = max(mesh.bounds[1, 2] for mesh in others) - moving.bounds[0, 2] + 1.0
-            current = moving.copy()
+            # Keep the moving mesh's FCL acceleration structure throughout the
+            # continuous path check. min_distance_single rebuilt it every step.
+            moving_manager = trimesh.collision.CollisionManager()
+            moving_manager.add_object('moving', moving)
             moved, passed = 0.0, False
             for _ in range(500):
                 if perf_counter() - start >= time_limit:
@@ -98,13 +101,15 @@ def check_vertical_sequence(problem, layout, groups=None, time_limit=30):
                 if moved >= travel:
                     passed = True
                     break
-                distance = manager.min_distance_single(current)
+                distance = manager.min_distance_other(moving_manager)
                 distance_queries += 1
                 if not np.isfinite(distance) or distance <= 1e-6:
                     break
                 step = min(distance * 0.49, travel - moved)
-                current.apply_translation([0, 0, step])
                 moved += step
+                transform = np.eye(4)
+                transform[2, 3] = moved
+                moving_manager.set_transform('moving', transform)
             if passed:
                 removals.append({'group_id': name, 'unit_ids': members, 'direction': '+Z'})
                 del remaining[name]
