@@ -1,4 +1,5 @@
 from copy import deepcopy
+import pytest
 from bom2kit.models import normalize
 from bom2kit.layered_design import design_layers, validate_layered, remaining_height_bands
 
@@ -11,9 +12,10 @@ def test_height_bands_follow_remaining_quantities_and_keep_fallbacks():
     assert remaining_height_bands([u for u in units if u["item_id"]=="large"],1,[5],limit=1) == [5,30]
 
 
-def test_supported_layers_preserve_counts_walls_and_detect_floating_cartons():
+@pytest.mark.parametrize("refine",[True,False])
+def test_supported_layers_preserve_counts_walls_and_detect_floating_cartons(refine):
     request = {"units":"mm","items":[{"id":"box","quantity":12,"dimensions_mm":[20,20,20],"allowed_rotations":"fixed"}],
-               "policy":{"wall_mm":2,"protection_mm":3,"inner_wall_mm":1.5,"gap_mm":.2}}
+               "policy":{"wall_mm":2,"protection_mm":3,"inner_wall_mm":1.5,"gap_mm":.2,"refine_footprints":refine}}
     units = normalize({"items":request["items"],"container":{"inner_mm":[300]*3}})["units"]
     result = design_layers(request,units,time_limit=1)
     best = result["candidate"]

@@ -76,6 +76,9 @@ def design_layers(request, units, time_limit=5):
     started = perf_counter()
     time_limit = number(time_limit,"time_limit",True)
     policy = request["policy"]
+    refine_footprints = policy.get("refine_footprints",True)
+    if type(refine_footprints) is not bool:
+        raise ValueError("refine_footprints must be boolean")
     thickness = number(policy["inner_wall_mm"],"inner_wall_mm",True)
     wall = vector(policy.get("wall_mm",0),"wall")
     margin = vector(policy.get("protection_mm",0),"protection")
@@ -91,21 +94,46 @@ def design_layers(request, units, time_limit=5):
     if len(heights) > 10:
         heights = [heights[round(i*(len(heights)-1)/9)] for i in range(10)]
     best, attempts = None, []
+    sequence_seeds = []
+
+    def accept(poses, layers, cavity, method):
+        nonlocal best
+        external = [math.ceil((cavity[k]+2*(wall[k]+margin[k])+(reserve if k==2 else 0))/increment)*increment for k in range(3)]
+        if maximum and any(a>b for a,b in zip(external,maximum)):
+            return
+        total = math.prod(external)
+        if best and total >= best["volume_mm3"]:
+            return
+        problem = {"units":"mm","items":deepcopy(request["items"]),"gap_mm":gap,"inner_wall_mm":thickness,
+                   "container":{"inner_mm":[external[k]-2*wall[k] for k in range(3)],
+                                "wall_mm":list(wall),"protection_mm":list(margin),"reserved_top_mm":reserve}}
+        layout = {"placements":poses,"layers":layers,"status":"feasible"}
+        certificate = validate_layered(problem,layout)
+        attempts.append({"external_mm":external,"valid":certificate["valid"],"layer_count":len(layers),"strategy":method})
+        if certificate["valid"]:
+            packaging = [{"id":layer["id"],"quantity":1,"type":"closed_rectangular_inner_carton",
+                          "inner_mm":layer["inner_mm"],"external_mm":[d+2*thickness for d in layer["inner_mm"]],
+                          "wall_mm":thickness,"manufacturing_status":"Dimension specification; production dieline and strength qualification pending"}
+                         for layer in layers]
+            best = {"input":problem,"layout":layout,"validation":certificate,"volume_mm3":total,"external_mm":external,
+                    "packaging_bom":packaging}
+
+    greedy_deadline = time_limit*.65
     # Compete full-width trays with narrower independently supported columns.
     # Column dimensions derive from geometry, never a target reference carton.
     configurations = [(w,d,anchor,columns) for w in footprints for d in footprints
                       for columns in (1,2) for anchor in (True,False)]
     for footprint_width, depth, anchor_required, columns in configurations:
-        if perf_counter()-started >= time_limit:
+        if perf_counter()-started >= greedy_deadline:
             break
         width = math.ceil((footprint_width/columns+2*thickness)/increment)*increment-2*thickness
         remaining, poses, layers = list(units), [], []
         column_tops = [margin[2]] * columns
-        while remaining and perf_counter()-started < time_limit:
+        while remaining and perf_counter()-started < greedy_deadline:
             options = []
             anchor = max(remaining, key=lambda u:math.prod(u["dimensions"]))["unit_id"] if anchor_required else None
             for height in remaining_height_bands(remaining, increment, heights):
-                if perf_counter()-started >= time_limit:
+                if perf_counter()-started >= greedy_deadline:
                     break
                 packed = pack_strip(remaining,width, height,gap,depth=depth,allow_partial=True,priority_unit=anchor)
                 if not packed["placements"]:
@@ -132,24 +160,53 @@ def design_layers(request, units, time_limit=5):
         if remaining:
             continue
         cavity = [columns*(width+2*thickness), depth+2*thickness, max(column_tops)-margin[2]]
-        external = [math.ceil((cavity[k]+2*(wall[k]+margin[k])+(reserve if k==2 else 0))/increment)*increment for k in range(3)]
-        if maximum and any(a>b for a,b in zip(external,maximum)):
+        accept(poses,layers,cavity,"greedy_height_bands")
+        if columns == 1:
+            estimated_volume = math.prod(cavity[k]+2*(wall[k]+margin[k])+(reserve if k==2 else 0) for k in range(3))
+            sequence_seeds.append((estimated_volume,width,depth,cavity[2]))
+    from .layer_sequences import search_sequences
+    visited = set()
+    plans = []
+    for seed in sorted(sequence_seeds):
+        if (seed[1],seed[2]) not in {(p[1],p[2]) for p in plans}:
+            plans.append(seed)
+        if refine_footprints and len(plans) == 3:
+            break
+    initial_count = len(plans)
+    step = max(increment,math.ceil(side*.025/increment)*increment)
+    for index,(_,width,depth,incumbent_height) in enumerate(plans):
+        if (width,depth) in visited:
             continue
-        total = math.prod(external)
-        if best and total >= best["volume_mm3"]:
-            continue
-        problem = {"units": "mm", "items": deepcopy(request["items"]), "gap_mm":gap,
-                   "inner_wall_mm": thickness,
-                   "container": {"inner_mm": [external[k]-2*wall[k] for k in range(3)],
-                                 "wall_mm":list(wall),"protection_mm":list(margin),"reserved_top_mm":reserve}}
-        layout = {"placements": poses,"layers":layers,"status":"feasible"}
-        certificate = validate_layered(problem,layout)
-        attempts.append({"external_mm":external,"valid":certificate["valid"],"layer_count":len(layers)})
-        if certificate["valid"]:
-            packaging = [{"id":layer["id"],"quantity":1,"type":"closed_rectangular_inner_carton",
-                          "inner_mm":layer["inner_mm"],"external_mm":[d+2*thickness for d in layer["inner_mm"]],
-                          "wall_mm":thickness,"manufacturing_status":"Dimension specification; production dieline and strength qualification pending"}
-                         for layer in layers]
-            best = {"input":problem,"layout":layout,"validation":certificate,"volume_mm3":total,"external_mm":external,
-                    "packaging_bom":packaging}
+        visited.add((width,depth))
+        remaining_seconds = time_limit-(perf_counter()-started)
+        if remaining_seconds <= 0:
+            break
+        previous_volume = best["volume_mm3"] if best else float("inf")
+        result = search_sequences(units,width,depth,thickness,gap,increment,heights,
+                                  time_limit=min(remaining_seconds,time_limit*((.1 if index<initial_count else .04) if refine_footprints else .12)),
+                                  incumbent_height=incumbent_height)
+        layers,poses,z = [],[],margin[2]
+        for packed in result["layers"] or []:
+            height = math.ceil((packed["usable_mm"][2]+2*thickness)/increment)*increment-2*thickness
+            lid = "layer-"+str(len(layers)+1)
+            position = [margin[0],margin[1],z]
+            layers.append({"id":lid,"inner_mm":[width,depth,height],"wall_mm":thickness,"position_mm":position})
+            poses.extend({**p,"layer_id":lid,"position_mm":[p["position_mm"][k]+position[k]+thickness for k in range(3)]}
+                         for p in packed["placements"])
+            z += height+2*thickness
+        if layers:
+            accept(poses,layers,[width+2*thickness,depth+2*thickness,z-margin[2]],"alternative_layer_sequences")
+        # Refine the current independently generated footprint on the material
+        # lattice. This explores sizes between coarse volume-derived samples.
+        if refine_footprints and best and (best["volume_mm3"] < previous_volume or index == initial_count-1):
+            centre = best["layout"]["layers"][0]["inner_mm"][:2]
+            if len({l["position_mm"][0] for l in best["layout"]["layers"]}) > 1:
+                centre = [width,depth]
+            for dx,dy in ((-1,0),(0,-1),(1,0),(0,1),(-1,-1),(1,1),(-2,0),(0,-2),(2,0),(0,2)):
+                w,d = centre[0]+dx*step,centre[1]+dy*step
+                if min(w,d)<=0 or (w,d) in visited:
+                    continue
+                exterior_xy = [math.ceil((s+2*thickness+2*(wall[k]+margin[k]))/increment)*increment for k,s in enumerate((w,d))]
+                bound = best["volume_mm3"]/math.prod(exterior_xy)-2*(wall[2]+margin[2])-reserve
+                plans.append((0,w,d,bound))
     return {"candidate":best,"attempts":attempts,"elapsed_seconds":perf_counter()-started}

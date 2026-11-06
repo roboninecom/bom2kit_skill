@@ -1,5 +1,6 @@
 from hashlib import sha256
 import json
+from pathlib import Path
 
 import pytest
 
@@ -21,7 +22,8 @@ def test_pair_search_emits_independent_mesh_certificate(tmp_path):
         items.append({"id": str(index), "quantity": 1,
                       "mesh": {"path": str(path), "sha256": sha256(path.read_bytes()).hexdigest()}})
     problem = {"units": "mm", "container": {"inner_mm": [12, 12, 5]}, "clearance_mm": .1, "items": items}
-    result = solve_mesh_pair(problem, time_limit=5, pitch_mm=.5)
+    cache = {}
+    result = solve_mesh_pair(problem, time_limit=5, pitch_mm=.5,voxel_cache=cache)
     assert result["status"] == "validated_static_layout", result
     assert result["validation"]["valid"]
     assert result["envelope_volume_l"] < result["separate_envelope_volume_l"]
@@ -33,3 +35,10 @@ def test_pair_search_emits_independent_mesh_certificate(tmp_path):
     assert timing["rotations_checked"] > 0
     assert sum(timing[k] for k in ("preparation_seconds", "search_seconds", "verification_seconds")) == pytest.approx(
         timing["total_elapsed_seconds_including_validation"], abs=.01)
+    reused = solve_mesh_pair(problem,time_limit=5,pitch_mm=.5,voxel_cache=cache)
+    assert reused["search"]["voxel_cache_hits"] == 2
+    assert reused["validation"]["valid"]
+    assert reused["envelope_volume_l"] == pytest.approx(result["envelope_volume_l"])
+    Path(items[0]["mesh"]["path"]).write_text("changed source")
+    with pytest.raises(ValueError,match="hash"):
+        solve_mesh_pair(problem,time_limit=5,pitch_mm=.5,voxel_cache=cache)

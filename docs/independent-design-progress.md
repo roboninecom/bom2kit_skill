@@ -86,6 +86,43 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Alternative layer sequences and footprint refinement
+
+The layered constructor now retains multiple remaining-part states instead of
+always selecting the densest next layer. Equal remaining inventories discard
+taller prefixes. Only complete stacks are returned, and the existing independent
+hierarchy validator checks each accepted result. A synthetic regression case
+shrinks a 33 mm stack to 26 mm without losing a part or reducing walls.
+
+The broad sequence mode (`policy.carton.refine_footprints: false`) explores
+more of the generated coarse footprints. The default refinement mode spends
+part of the budget exploring nearby manufacturing-grid sizes around its own
+incumbent. It never receives an engineer footprint or volume target. These are
+different bounded searches; neither dominates the other on every kit.
+
+The initial broad-mode experiments produced **300 x 216 x 319 mm = 20.6712 L**
+for 101 and **308 x 221 x 341 mm = 23.211188 L** for 102. Evidence is in each
+kit's `layer-sequence-design/result.json`. Refinement improved 102 further to
+**276 x 258 x 318 mm = 22.644144 L**, but gave 21.1302 L for 101, so the better
+101 incumbent is retained. Refinement evidence is in each kit's
+`refined-sequence-design/result.json`. Source BOM and original mesh/motion checks
+pass. All volumes remain above their separate engineer references.
+
+The current code reproduces the 101 broad result in
+`broad-sequence-design/result.json`, using
+`packaging-inputs/independent/101/broad-sequence-policy.json`. Fresh hierarchy
+and declared-BOM checks pass for that result and the 102 refined result. The
+complete suite passes **118 tests**. No final no-worse comparison, manufactured
+packaging qualification or final illustrated delivery is claimed.
+
+Pair proposals now reuse immutable voxel grids keyed by verified source hash,
+3MF instance/frame and pitch. The original mesh hash is checked even on a cache
+hit, and every retained placement still receives independent triangle checks.
+Containment queries reuse local-mesh acceleration structures by transforming
+sample points with the rigid inverse. Tests exercise cache reuse and rejection
+of a changed source. A fresh nested 102 experiment retained the known four-arm
+group but found no improved group; no whole-kit speedup is claimed from that run.
+
 ### Independent 101 input reconciliation
 
 `scripts/extract_xlsx_bom.py SOURCE.xlsx --output ROWS.json` reads a single

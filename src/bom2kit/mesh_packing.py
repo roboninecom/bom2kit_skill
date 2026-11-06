@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 
 
-def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=12):
+def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=12, voxel_cache=None):
     import numpy as np
     import trimesh
     from scipy.signal import fftconvolve
@@ -26,7 +26,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         raise ValueError("candidates_per_rotation must be a positive integer")
     if problem.get("units") != "mm":
         raise ValueError("Explicit mm units required")
-    units, meshes = [], []
+    units, meshes, mesh_hashes = [], [], []
     for item in problem["items"]:
         quantity = item.get("quantity", 1)
         if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 1:
@@ -48,6 +48,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         for index in range(quantity):
             units.append((item["id"], f'{item["id"]}#{index + 1}'))
             meshes.append(mesh.copy())
+            mesh_hashes.append((ref["sha256"],ref.get("instance_id"),ref.get("frame","object")))
     if len(meshes) != 2 or len(set(u[1] for u in units)) != 2:
         raise ValueError("Pair search requires exactly two distinct unit instances")
     inner = np.array(vector(problem["container"]["inner_mm"], "inner_mm", True))
@@ -62,20 +63,34 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
     if not math.isfinite(clearance) or clearance < 0:
         raise ValueError("Invalid clearance")
     transforms, grids = [], []
-    for mesh in meshes:
+    cache_hits = 0
+    for mesh,mesh_hash in zip(meshes,mesh_hashes):
         transform = np.eye(4)
         transform[:3, 3] = -mesh.bounds[0]
         transforms.append(transform)
         mesh.apply_transform(transform)
-        voxel = mesh.voxelized(pitch_mm).fill()
-        # Normalized min bounds yield a zero voxel-grid origin. Explicit check
-        # avoids silently confusing voxel indices with physical coordinates.
-        if not np.allclose(voxel.transform[:3, 3], 0, atol=1e-8):
-            raise ValueError("Unsupported nonzero normalized voxel origin")
-        grids.append(voxel.matrix.astype(np.float32))
+        cache_key = (*mesh_hash,pitch_mm)
+        if voxel_cache is not None and cache_key in voxel_cache:
+            grid = voxel_cache[cache_key]
+            cache_hits += 1
+        else:
+            voxel = mesh.voxelized(pitch_mm).fill()
+            # Only proposal grids are reused; source hashes and all retained
+            # original triangle geometry are still checked on every call.
+            if not np.allclose(voxel.transform[:3, 3], 0, atol=1e-8):
+                raise ValueError("Unsupported nonzero normalized voxel origin")
+            grid = voxel.matrix.astype(np.float32)
+            grid.flags.writeable = False
+            if voxel_cache is not None:
+                voxel_cache[cache_key] = grid
+        grids.append(grid)
     fixed, moving = meshes
     manager = trimesh.collision.CollisionManager()
     manager.add_object("fixed", fixed)
+    samples = []
+    for mesh in meshes:
+        components = trimesh.graph.connected_components(mesh.edges_unique,nodes=np.arange(len(mesh.vertices)))
+        samples.append(mesh.vertices[[int(c[0]) for c in components]])
     search_started = perf_counter()
     checked, rotations_done, best = 0, 0, None
 
@@ -95,11 +110,13 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         checked += 1
         if manager.in_collision_single(candidate):
             return
-        for source, target in ((fixed, candidate), (candidate, fixed)):
-            components = trimesh.graph.connected_components(source.edges_unique, nodes=np.arange(len(source.vertices)))
-            if target.contains(source.vertices[[int(c[0]) for c in components]]).any():
-                return
         if manager.min_distance_single(candidate) + 1e-8 < clearance:
+            return
+        # Query each immutable local mesh so its ray acceleration structure can
+        # be reused. Rigid inverse mapping preserves the containment predicate.
+        if moving.contains((samples[0]-shift)@rotation).any():
+            return
+        if fixed.contains(samples[1]@rotation.T+shift).any():
             return
         offset = np.eye(4)
         offset[:3, 3] = margin - low
@@ -151,6 +168,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
               "search": {"pitch_mm": pitch_mm, "checked_mesh_candidates": checked,
                          "rotations_checked": rotations_done, "elapsed_seconds": perf_counter() - start,
                          "preparation_seconds": search_started - start,
+                         "voxel_cache_hits": cache_hits,
                          "search_seconds": perf_counter() - search_started,
                          "time_limit_seconds": time_limit, "optimality_proven": False}}
     verification_started = perf_counter()

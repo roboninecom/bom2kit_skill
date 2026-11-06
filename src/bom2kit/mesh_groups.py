@@ -129,6 +129,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
             empty = a["box_volume"] + b["box_volume"] - a["mesh"].volume - b["mesh"].volume
             proposals.append((-float(empty), i, j))
     attempts, alternatives = [], []
+    voxel_cache = {}
     source_members = {index:set(entry["item"].get("source_members",[entry["item"]["id"]]))
                       for index,entry in enumerate(prepared)}
     for _, i, j in rank_pair_proposals(proposals, max_pairs, source_members):
@@ -143,7 +144,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
                    "container": {"inner_mm": [span] * 3}, "items": [
                        {"id": name, "quantity": 1, "mesh": entry["ref"]}
                        for name, entry in (("a", a), ("b", b))]}
-        result = solve_mesh_pair(problem, time_limit=min(pair_seconds, remaining), pitch_mm=2)
+        result = solve_mesh_pair(problem, time_limit=min(pair_seconds, remaining), pitch_mm=2,voxel_cache=voxel_cache)
         attempt = {"members": [a["item"]["id"], b["item"]["id"]], "search": result["search"],
                    "status": result["status"]}
         attempts.append(attempt)

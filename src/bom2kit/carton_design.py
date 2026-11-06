@@ -35,7 +35,7 @@ def design_carton(request, time_limit=5):
         raise ValueError("Explicit mm units required")
     policy = request.get("policy", {})
     allowed_policy = {"wall_mm", "protection_mm", "reserved_top_mm", "gap_mm",
-                      "dimension_increment_mm", "max_external_mm", "inner_wall_mm"}
+                      "dimension_increment_mm", "max_external_mm", "inner_wall_mm", "refine_footprints"}
     if not isinstance(policy, dict) or set(policy) - allowed_policy:
         raise ValueError("Unsupported packing policy field")
     allowed_item = {"id", "quantity", "dimensions_mm", "allowed_rotations"}
