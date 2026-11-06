@@ -19,6 +19,13 @@ experiments with cached independent groups, not fresh end-to-end design.
 Evidence: `packaging-results/independent/{101,102}/volume-order-design/`.
 Full regression suite: 124 tests passed in 16.27 seconds.
 
+A broader 102 pair search (`expanded-pair-search/`) used a 240-second soft
+budget, five seconds per pair and at most 40 proposals. It checked 29 proposals
+in 241.23 seconds and retained 15 assembly-checked alternatives, including new
+mixed printed/purchased groups. A whole-kit evaluation with these alternatives
+plus the existing independently generated groups is required before claiming
+any volume improvement. Pair savings alone do not satisfy the objective.
+
 ## Current search and review improvements
 
 The shared Codex/Claude skill now launches independent group discovery and
