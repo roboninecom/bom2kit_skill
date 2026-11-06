@@ -86,6 +86,29 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Pair discovery experiment
+
+`scripts/design_grouped_meshes.py LIBRARY POLICY --output OUTPUT` now runs
+geometry-ranked pair discovery, workbench assembly checks along six cardinal
+directions, quantity-aware group selection and original-part expansion into a
+new outer layout. The runner retains the smaller verified result between the
+singleton baseline and grouped candidate. Full source geometry and internal
+assembly certificates are checked again before composition. Bounds, orientations
+and pair membership come from source geometry, not Alan's arrangement.
+
+The first 102 printed-only experiment produced three assembly-checked arm pair
+alternatives. Their envelope-volume ratios to separate part boxes were roughly
+0.853, 0.890 and 0.882. Greedy selection chose two disjoint same-type pairs.
+However, the resulting whole carton was **144 x 749 x 299 mm = 32.248944 L**,
+worse than the 21.156228 L singleton baseline. All 44 original parts and group
+insertion paths passed geometry checks. This is evidence that local savings
+alone are the wrong selection objective; it is not packing improvement.
+
+Next optimization work must jointly evaluate group alternatives and outer
+carton shape, improve constructive multilayer candidates, and keep the best
+complete layout. Current grouping is greedy and does not satisfy that requirement.
+The full shipping BOM, physical packaging design and comparison remain open.
+
 1. Prepare complete neutral 101/102 input libraries, including figures, purchased
    items, BOM mapping and protection. Robot 102 source topology is resolved.
 2. Generate orientations and small group candidates from geometry; verify their
