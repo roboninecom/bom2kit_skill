@@ -81,7 +81,7 @@ def render_mesh_report(problem, layout, output_dir):
         ax.set_title(title, fontsize=11)
         ax.tick_params(labelsize=7)
     fig.suptitle(f"Static mesh placement: {checked['placed_units']} / {checked['expected_units']} units", fontsize=15)
-    fig.subplots_adjust(top=.91, bottom=.06, left=.03, right=.97, hspace=.12, wspace=.08)
+    fig.subplots_adjust(top=.91, bottom=.06, left=.03, right=.97, hspace=.26, wspace=.08)
     picture = output / 'mesh-views.png'
     fig.savefig(picture, dpi=140)
     plt.close(fig)
