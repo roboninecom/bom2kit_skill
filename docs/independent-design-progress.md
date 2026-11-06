@@ -123,6 +123,20 @@ unsearched `SO102.02.060` pair also becomes feasible with ratio 0.94961.
 Evidence: `packaging-results/independent/102/diverse-pairs-timed/pairs.json`.
 These are pair-level savings, not yet whole-carton improvement.
 
+Extending the independently found incumbent grouping with new alternatives
+whose part identities do not conflict reduces the complete 102 result to
+**265 x 222 x 433 mm = 25.47339 L**, about 2.0% below 25.993856 L. The extension
+rule uses only source membership, never Alan's grouping or poses. Its saved
+portfolio and result are in
+`packaging-results/independent/102/extended-column-design/`. All 108 packing
+units remain present; declared BOM, original mesh, assembly/insertion and an
+independently rerun carton hierarchy check pass. The envelope-design substage
+took 39.42 s (6.14 s geometry preparation, 14.60 s carton design, 18.68 s triangle
+and motion validation); this excludes pair discovery and group composition.
+The complete-kit volume remains above the separate 20.06336 L reference for
+102. The objective is still open, including independent 101 completion,
+transport-equivalent protection, manufacturing and final illustrated reports.
+
 ### Supported multilayer cartons
 
 Optional `policy.carton.inner_wall_mm` now enables geometry-derived closed inner
