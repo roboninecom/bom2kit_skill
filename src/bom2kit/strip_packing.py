@@ -1,8 +1,9 @@
 """Constructive maximal-free-rectangle strip packing with bounded part height."""
+import math
 
 
 def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, priority_unit=None,
-               placement_score="bottom_left"):
+               placement_score="bottom_left", item_order="area"):
     """Place envelope units on the floor, selecting individual orientations.
 
     Free rectangles may overlap one another, but each is empty. All rectangles
@@ -10,6 +11,8 @@ def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, pri
     """
     if placement_score not in ("bottom_left","short_side","area"):
         raise ValueError("Unknown rectangle placement score")
+    if item_order not in ("area","volume"):
+        raise ValueError("Unknown item order")
     available = []
     for unit in units:
         choices = [(r, s) for r, s in unit["orientations"] if s[0] <= width + 1e-8 and s[2] <= height + 1e-8]
@@ -18,7 +21,8 @@ def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, pri
                 continue
             return None
         available.append((unit, choices))
-    available.sort(key=lambda entry: (entry[0]["unit_id"] != priority_unit, -max(s[0]*s[1] for _, s in entry[1]),
+    available.sort(key=lambda entry: (entry[0]["unit_id"] != priority_unit,
+                                     -max(math.prod(s) if item_order == "volume" else s[0]*s[1] for _, s in entry[1]),
                                      -max(max(s[:2]) for _, s in entry[1]), entry[0]["unit_id"]))
     length = sum(max(s[1] for _, s in choices) + gap for _, choices in available)
     if depth is not None:

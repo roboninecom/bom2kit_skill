@@ -19,3 +19,16 @@ def test_strip_rejects_unavailable_orientations():
     problem = {"container": {"inner_mm": [10,10,10]}, "items": [
         {"id": "upright", "dimensions_mm": [2,2,8], "allowed_rotations": "fixed"}]}
     assert pack_strip(normalize(problem)["units"], 10, 3) is None
+
+
+def test_volume_order_preserves_tall_items_when_floor_area_is_scarce():
+    problem = {"container":{"inner_mm":[10,10,10]},"items":[
+        {"id":"thin","dimensions_mm":[10,10,1],"allowed_rotations":"fixed"},
+        {"id":"dense","dimensions_mm":[9,9,10],"allowed_rotations":"fixed"}]}
+    units = normalize(problem)["units"]
+    area = pack_strip(units,10,10,depth=10,allow_partial=True)
+    volume = pack_strip(units,10,10,depth=10,allow_partial=True,item_order="volume")
+    assert area["placements"][0]["item_id"] == "thin"
+    assert volume["placements"][0]["item_id"] == "dense"
+    with pytest.raises(ValueError,match="item order"):
+        pack_strip(units,10,10,item_order="unknown")

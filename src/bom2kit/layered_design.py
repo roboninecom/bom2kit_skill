@@ -76,6 +76,7 @@ def design_layers(request, units, time_limit=5):
     started = perf_counter()
     time_limit = number(time_limit,"time_limit",True)
     policy = request["policy"]
+    item_order = policy.get("item_order","area")
     placement_score = policy.get("placement_score","bottom_left")
     refine_footprints = policy.get("refine_footprints",True)
     if type(refine_footprints) is not bool:
@@ -137,7 +138,7 @@ def design_layers(request, units, time_limit=5):
                 if perf_counter()-started >= greedy_deadline:
                     break
                 packed = pack_strip(remaining,width, height,gap,depth=depth,allow_partial=True,priority_unit=anchor,
-                                    placement_score=placement_score)
+                                    placement_score=placement_score,item_order=item_order)
                 if not packed["placements"]:
                     continue
                 if anchor and not any(p["unit_id"] == anchor for p in packed["placements"]):
@@ -186,7 +187,7 @@ def design_layers(request, units, time_limit=5):
         previous_volume = best["volume_mm3"] if best else float("inf")
         result = search_sequences(units,width,depth,thickness,gap,increment,heights,
                                   time_limit=min(remaining_seconds,time_limit*((.1 if index<initial_count else .04) if refine_footprints else .12)),
-                                  incumbent_height=incumbent_height,placement_score=placement_score)
+                                  incumbent_height=incumbent_height,placement_score=placement_score,item_order=item_order)
         layers,poses,z = [],[],margin[2]
         for packed in result["layers"] or []:
             height = math.ceil((packed["usable_mm"][2]+2*thickness)/increment)*increment-2*thickness

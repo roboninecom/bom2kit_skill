@@ -35,9 +35,11 @@ def design_carton(request, time_limit=5):
         raise ValueError("Explicit mm units required")
     policy = request.get("policy", {})
     allowed_policy = {"wall_mm", "protection_mm", "reserved_top_mm", "gap_mm",
-                      "dimension_increment_mm", "max_external_mm", "inner_wall_mm", "refine_footprints", "placement_score"}
+                      "dimension_increment_mm", "max_external_mm", "inner_wall_mm", "refine_footprints", "placement_score", "item_order"}
     if not isinstance(policy, dict) or set(policy) - allowed_policy:
         raise ValueError("Unsupported packing policy field")
+    if policy.get("item_order","area") not in ("area","volume"):
+        raise ValueError("Unknown item order")
     if policy.get("placement_score","bottom_left") not in ("bottom_left","short_side","area"):
         raise ValueError("Unknown rectangle placement score")
     allowed_item = {"id", "quantity", "dimensions_mm", "allowed_rotations"}
@@ -133,7 +135,7 @@ def design_carton(request, time_limit=5):
         for width in strip_widths:
             if perf_counter() - started >= time_limit * .65:
                 break
-            strip = pack_strip(units, width, height, gap,placement_score=policy.get("placement_score","bottom_left"))
+            strip = pack_strip(units, width, height, gap,placement_score=policy.get("placement_score","bottom_left"),item_order=policy.get("item_order","area"))
             if strip is None:
                 continue
             problem = problem_for(strip["usable_mm"])

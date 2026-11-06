@@ -3,6 +3,22 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Height-utilization experiment
+
+The retained 101 layers occupy 86–98% of their floor area but 71–91% of their
+volume; 102 layers occupy 90–97% of floor area and 71–90% of volume. These are
+protected-envelope occupancies, not solid-material density. This motivates
+height-aware grouping rather than only improving two-dimensional floor packing.
+
+An optional `carton.item_order: "volume"` prioritizes bulky units; the default
+remains `"area"`. With unchanged independently discovered groups and protection,
+90-second carton budgets produced 20.898000 L for 101 and 22.889412 L for 102.
+Both passed original geometry, assembly and complete declared BOM checks, but
+both were worse than the retained incumbents. These runs are carton-search
+experiments with cached independent groups, not fresh end-to-end design.
+Evidence: `packaging-results/independent/{101,102}/volume-order-design/`.
+Full regression suite: 124 tests passed in 16.27 seconds.
+
 ## Current search and review improvements
 
 The shared Codex/Claude skill now launches independent group discovery and

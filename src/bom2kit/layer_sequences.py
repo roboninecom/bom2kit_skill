@@ -5,7 +5,7 @@ from .strip_packing import pack_strip
 
 
 def search_sequences(units, width, depth, thickness, gap, increment, heights,
-                     time_limit=5, beam_width=4, incumbent_height=float("inf"),placement_score="bottom_left"):
+                     time_limit=5, beam_width=4, incumbent_height=float("inf"),placement_score="bottom_left",item_order="area"):
     """Return a shorter complete stack, never an incomplete packing prefix."""
     from .layered_design import remaining_height_bands
 
@@ -24,7 +24,7 @@ def search_sequences(units, width, depth, thickness, gap, increment, heights,
                     if perf_counter()-started >= time_limit:
                         break
                     packed = pack_strip(remaining,width,height,gap,depth=depth,allow_partial=True,priority_unit=priority,
-                                        placement_score=placement_score)
+                                        placement_score=placement_score,item_order=item_order)
                     if not packed["placements"]:
                         continue
                     used = frozenset(p["unit_id"] for p in packed["placements"])
