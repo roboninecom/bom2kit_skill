@@ -33,6 +33,16 @@ python -m pytest -q
 
 `reconcile` checks declared SKU counts and revisions independently of geometry; see
 [the BOM mapping contract](docs/bom-reconciliation.md). It cannot infer a packet's contents.
+
+For a fully assembled mesh manifest, run
+`python -m bom2kit assess BOM.json input.json layout.json --output assessment.json`.
+The input must specify `reference.external_mm` and the container's explicit
+`wall_mm` offset from its stated inner dimensions to the shipping exterior.
+Acceptance requires independently valid geometry, complete declared BOM counts,
+and external volume no larger than the reference. Estimated packet envelopes stay
+visible. Physical qualification and insertion paths remain separate checks;
+the supplied BOM must itself represent the complete intended kit.
+
 `optimize` compares the original carton and explicit `container_candidates`, retaining
 wall/foam protection and top reservation. Its `input.json` contains the selected actual
 carton; `request.json` preserves the original request. Search is deterministic and

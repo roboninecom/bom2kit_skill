@@ -71,6 +71,11 @@ def parser():
     reconcile.add_argument("bom", type=Path)
     reconcile.add_argument("input", type=Path)
     reconcile.add_argument("--output", type=Path)
+    assess = commands.add_parser("assess", help="Check complete declared mesh BOM and compare external carton volume")
+    assess.add_argument("bom", type=Path)
+    assess.add_argument("input", type=Path)
+    assess.add_argument("layout", type=Path)
+    assess.add_argument("--output", type=Path)
     report = commands.add_parser("report", help="Render illustrated HTML from canonical coordinates")
     report.add_argument("input", type=Path)
     report.add_argument("layout", type=Path)
@@ -106,6 +111,16 @@ def main(argv=None):
                 _write(args.output, result)
             print(json.dumps(result, indent=2))
             return 0 if result['complete'] else 1
+        if args.command == "assess":
+            from .assessment import assess_mesh_kit
+
+            result = assess_mesh_kit(_read(args.bom), problem, _read(args.layout))
+            if args.output:
+                _write(args.output, result)
+            print(json.dumps({"computational_acceptance": result["computational_acceptance"],
+                              "external_volume_l": result["external_volume_l"],
+                              "physical_qualification": False}))
+            return 0 if result["computational_acceptance"] else 1
         if args.command == "mesh-pair":
             from .mesh_packing import solve_mesh_pair
             from .mesh_validation import validate_mesh_layout

@@ -10,6 +10,7 @@ pytest.importorskip("fcl")
 pytest.importorskip("rtree")
 
 from bom2kit.mesh_validation import validate_mesh_layout
+from bom2kit.assessment import assess_mesh_kit
 
 
 def problem_and_layout(tmp_path, meshes):
@@ -66,6 +67,26 @@ def test_aabb_shortcut_preserves_diagonal_clearance(tmp_path):
     assert not result["valid"]
     assert result["pair_checks"]["narrow_phase_pairs"] == 1
     assert any("Pair clearance" in error for error in result["errors"])
+
+
+def test_complete_kit_assessment_requires_counts_geometry_and_volume(tmp_path):
+    problem, layout = problem_and_layout(tmp_path, [trimesh.creation.box([2, 2, 2])])
+    problem["container"]["wall_mm"] = 1
+    problem["reference"] = {"external_mm": [33, 33, 33]}
+    problem["items"][0]["dimension_basis"] = "Synthetic estimated envelope"
+    bom = {"components": [{"id": "part-0", "quantity": 1}]}
+    result = assess_mesh_kit(bom, problem, layout)
+    assert result["computational_acceptance"]
+    assert result["assumed_items"][0]["basis"] == "Synthetic estimated envelope"
+    assert not result["physical_qualification"]
+    bom["components"][0]["quantity"] = 2
+    assert not assess_mesh_kit(bom, problem, layout)["computational_acceptance"]
+    bom["components"][0]["quantity"] = 1
+    problem["reference"]["external_mm"] = [31, 31, 31]
+    assert not assess_mesh_kit(bom, problem, layout)["computational_acceptance"]
+    problem["reference"]["external_mm"] = [33, 33, 33]
+    layout["placements"][0]["transform"][0][3] = 0
+    assert not assess_mesh_kit(bom, problem, layout)["computational_acceptance"]
 
 
 def test_source_units_rigidity_quantities_and_containment(tmp_path):
