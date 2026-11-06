@@ -10,8 +10,8 @@ Use the repository's shared Python engine for coordinates, quantities, validatio
 ## Establish comparable inputs
 
 - Discover the BOM, quantity/revision information, actual packed-state envelopes, protection requirements, and source documents. Keep private inputs under `packaging-inputs/` and generated artifacts under `packaging-results/`.
-- Preserve variant and assembly identity. A CAD solid is not necessarily one BOM item. Cable coils, fastener bags, and sealed factory boxes need measured packed envelopes.
-- Record missing geometry and contradictory source instructions. Never invent dimensions or silently replace deprecated geometry with production evidence.
+- Preserve variant and assembly identity. A CAD solid is not necessarily one BOM item. Prefer measured packed envelopes for cable coils, fastener bags, and sealed factory boxes. When the user permits BOM-based estimates, record their dimensions, source and assumed packing state explicitly and continue.
+- Record missing geometry and contradictory source instructions. Never present estimates as measurements or silently replace deprecated geometry with production evidence. Ask only about uncertainties that materially change the result and cannot be covered by authorized assumptions.
 - Keep usable cavity dimensions separate from external shipping dimensions. Compare complete matching kits with the same protective materials and packed states.
 
 ## Search and validate
@@ -21,6 +21,11 @@ Use the repository's shared Python engine for coordinates, quantities, validatio
 3. Run `validate` independently on the resulting input/layout pair. Correct input errors or reject invalid candidates before generating operating instructions.
 4. Use `optimize` with explicit `container_candidates` to compare permitted cartons. The rectangular search is deterministic: changing `seed` does not diversify it. Change permitted grouping/orientations only when supported by the input rules. Preserve all required items and protection. A timeout means incomplete search, not impossibility or optimality.
 5. Render diagrams and packing sequence from the canonical layout. State exactly which checks passed and which remain unimplemented or unverified.
+
+If the reference's individual inner boxes block a solution, try regrouping while
+preserving the complete BOM and the external-volume target. Separate functional
+groups using labeled bags or dividers allowed by the packing rules. Revalidate
+the combined contents and outer arrangement; extra space alone is not a fit result.
 
 ## Compare and deliver
 
@@ -45,5 +50,9 @@ full-kit acceptance false. With `[report]` installed, run
 `python scripts/build_comparison_pdf.py` to generate the concise visual comparison.
 Do not infer the reported 50 L failure from these inputs: its original layout
 has not been supplied, so it is not a reproducible baseline.
+
+For these local cases, follow `docs/benchmark-assumptions.md`: the user permits
+BOM-based assumptions and bagged bearings. Physical qualification remains distinct
+from complete computational packing; it is not a prerequisite for that deliverable.
 
 The authoritative skill is `skills/bom-to-kit/SKILL.md`. After editing it, run `python skills/bom-to-kit/scripts/sync_skill.py` to update the Codex and Claude Code copies.
