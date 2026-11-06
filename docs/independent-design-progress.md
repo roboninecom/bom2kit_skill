@@ -26,6 +26,9 @@ synthetic mixed-size kit exercises actual unequal-width output and rejects a
 carton moved into its neighbor. Full suite: 125 tests passed in 15.30 seconds.
 The first 102 trial matched the existing 22.340736 L envelope exactly, so it
 was not accepted as an improvement.
+The corresponding 101 trial reused its older single-group portfolio and matched
+20.671200 L; it also provided no improvement. Both trials are under each kit's
+`unequal-column-design/`. The latest 101 incumbent remains 20.612862 L.
 
 ## Height-utilization experiment
 
