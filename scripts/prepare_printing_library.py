@@ -8,7 +8,10 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import sys
 from time import perf_counter
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 
 def read_rows(text):
@@ -28,8 +31,8 @@ def read_rows(text):
     return rows
 
 
-def prepare(document, models, output):
-    import trimesh
+def prepare(document, models, output, step_models=None):
+    from bom2kit.mesh_preparation import load_print_mesh
 
     started = perf_counter()
     document, models, output = Path(document).resolve(), Path(models).resolve(), Path(output).resolve()
@@ -50,9 +53,12 @@ def prepare(document, models, output):
     for row, path in zip(rows, sources):
         # STL has no units: this adapter's explicit contract is source mm.
         # Merge shared vertices for topology checks; never rescale dimensions.
-        mesh = trimesh.load_mesh(path, process=True)
-        if not isinstance(mesh, trimesh.Trimesh) or not len(mesh.faces):
-            raise ValueError(f"Expected one triangle mesh: {path}")
+        step_matches = [p for p in Path(step_models).rglob("*")
+                        if p.is_file() and p.suffix.lower() in (".stp", ".step")
+                        and p.stem.casefold() == path.stem.casefold()] if step_models else []
+        if len(step_matches) > 1:
+            raise ValueError(f"Ambiguous STEP source for {path.stem}")
+        mesh, audit = load_print_mesh(path, step_matches[0] if step_matches else None)
         translation = -mesh.bounds[0]
         mesh.apply_translation(translation)
         geometry = {"units": "mm", "vertices_mm": mesh.vertices.tolist(), "triangles": mesh.faces.tolist()}
@@ -64,6 +70,7 @@ def prepare(document, models, output):
                         "source_to_local_translation_mm": translation.tolist(),
                         "dimensions_mm": mesh.extents.tolist(), "volume_mm3": float(mesh.volume),
                         "watertight_positive_volume": bool(mesh.is_volume),
+                        "preparation_audit": audit,
                         "frame_policy": "Source orientation retained; source translation removed; no packing pose"})
     result = {"units": "mm", "scope": "Printed parts only; not a complete shipping BOM",
               "source_bom": str(document), "source_bom_sha256": sha256(raw).hexdigest(),
@@ -80,6 +87,8 @@ if __name__ == "__main__":
     parser.add_argument("document", type=Path)
     parser.add_argument("models", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--step-models", type=Path, help="Matching STEP sources for invalid STL topology")
     args = parser.parse_args()
-    result = prepare(args.document, args.models, args.output)
+    result = prepare(args.document, args.models, args.output, args.step_models)
     print(json.dumps({key: result[key] for key in ("part_types", "part_count", "preparation_seconds", "all_meshes_valid_volumes")}))
+    raise SystemExit(0 if result["all_meshes_valid_volumes"] else 1)

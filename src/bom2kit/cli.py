@@ -47,6 +47,11 @@ def parser():
     design.add_argument("input", type=Path)
     design.add_argument("--output", type=Path, required=True)
     design.add_argument("--time-limit", type=_positive_seconds, default=5.0)
+    mesh_design = commands.add_parser("design-mesh-baseline", help="Reference-free singleton envelope baseline from a neutral mesh library")
+    mesh_design.add_argument("input", type=Path)
+    mesh_design.add_argument("--policy", type=Path, required=True)
+    mesh_design.add_argument("--output", type=Path, required=True)
+    mesh_design.add_argument("--time-limit", type=_positive_seconds, default=5.0)
     validate = commands.add_parser("validate", help="Independently check a layout against its input")
     validate.add_argument("input", type=Path)
     validate.add_argument("layout", type=Path)
@@ -107,6 +112,14 @@ def main(argv=None):
         from .validation import validate
 
         problem = _read(args.input)
+        if args.command == "design-mesh-baseline":
+            from .mesh_envelope_design import design_mesh_envelopes
+
+            _write(args.output / "result.json", {"status": "running", "valid": False})
+            result = design_mesh_envelopes(problem, _read(args.policy), time_limit=args.time_limit)
+            _write(args.output / "result.json", result)
+            print(json.dumps({"status": result["status"], "timing": result.get("timing")}))
+            return 0 if result["status"] == "validated_mesh_envelope_baseline" else 1
         if args.command == "design-envelopes":
             from .carton_design import design_carton
 
