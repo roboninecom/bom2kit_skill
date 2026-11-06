@@ -1,8 +1,9 @@
 # BOM to Kit
 
-**Status:** independent packaging design from BOM/CAD is not yet complete.
-The supplied 101/102 layouts adapt prepared recipes and Alan's carton targets;
-they do not demonstrate design from scratch. See the
+**Status:** reference-free group and carton search works, but the complete
+no-worse 101/102 benchmark and final illustrated delivery remain unfinished.
+Historical layouts adapted prepared recipes and Alan's carton targets; those
+are not evidence of design from scratch. See the
 [implementation audit and proposed replacement pipeline](docs/from-scratch-design-review.md).
 The [independent implementation progress](docs/independent-design-progress.md)
 documents the new reference-free carton stage and remaining work.
@@ -23,7 +24,27 @@ python -m pip install -e ".[cad]"
 
 Box packing and HTML reports use the standard library; CAD is loaded only when requested.
 
-## Run
+## Independent design
+
+Prepare an individual-part library, explicit protection policy and independently
+reconciled expected BOM using the source adapters described in the
+[shared skill](skills/bom-to-kit/SKILL.md). Install the optional mesh dependencies
+with `python -m pip install -e ".[mesh]"`.
+
+```powershell
+python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6
+```
+
+This command discovers groups, generates inner/outer cartons, checks original
+geometry and retains a verified incumbent. It accepts no reference carton or
+prepared packing poses. `run.json` names the selected result; `coverage.json`
+checks the declared BOM. A `not_improved` candidate is rejected before expensive
+original-pose checks and is not a certified layout. Budgets are per stage and
+soft; record the whole run's elapsed time. Reference comparison happens only
+after the selected result is frozen. Current benchmark assumptions and remaining
+gaps are documented in [implementation progress](docs/independent-design-progress.md).
+
+## Fixed-container utilities
 
 ```powershell
 python -m bom2kit solve packaging-inputs/job.json --output packaging-results/job --time-limit 5 --seed 0

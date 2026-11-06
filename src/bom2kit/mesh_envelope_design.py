@@ -13,13 +13,15 @@ from .carton_design import design_carton
 from .models import number
 
 
-def design_mesh_envelopes(library, policy, time_limit=5):
+def design_mesh_envelopes(library, policy, time_limit=5, incumbent_volume_mm3=None):
     import numpy as np
     import trimesh
     from .mesh_validation import validate_mesh_layout
     from .mesh_motion import check_vertical_sequence
 
     started = perf_counter()
+    if incumbent_volume_mm3 is not None:
+        incumbent_volume_mm3 = number(incumbent_volume_mm3,"incumbent_volume_mm3",True)
     if library.get("units") != "mm" or not library.get("all_meshes_valid_volumes"):
         raise ValueError("A verified mm part library is required")
     if set(policy) != {"carton", "item_padding_mm", "clearance_mm", "allow_all_rotations"}:
@@ -57,6 +59,11 @@ def design_mesh_envelopes(library, policy, time_limit=5):
     candidate = design["candidate"]
     if not candidate:
         return {"status": "no_verified_candidate", "envelope_design": design}
+    if incumbent_volume_mm3 is not None and candidate["volume_mm3"] >= incumbent_volume_mm3:
+        return {"status":"not_improved","envelope_design":design,
+                "scope":"Envelope rejected against the caller's verified incumbent; original poses and motion were not certified",
+                "timing":{"geometry_preparation_seconds":preparation,"carton_design_seconds":design["search"]["total_seconds"],
+                          "mesh_validation_and_motion_seconds":0,"total_seconds":perf_counter()-started}}
     poses = []
     for placement in candidate["layout"]["placements"]:
         frame, size = frames[placement["item_id"]]

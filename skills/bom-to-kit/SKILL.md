@@ -1,85 +1,98 @@
 ---
 name: bom-to-kit
-description: Convert a BOM with measured packing envelopes or CAD into traceable packing layouts and illustrated kitting instructions, and compare them with an engineer's reference using the local bom2kit engine.
+description: Design grouped packaging from a BOM and individual CAD or declared envelopes using the local bom2kit engine, validate geometry and quantities, and compare a frozen result with an engineer reference.
 ---
 
 # BOM to Kit
 
-Use the repository's shared Python engine for coordinates, quantities, validation, and diagrams. Read `README.md` for installation and commands; inspect the input schema before preparing a new job. Run from the repository root with `python -m bom2kit` after installation.
+Use this repository's shared Python engine from its root. The same instructions
+apply to Codex and Claude Code. Install `python -m pip install -e ".[mesh,cad,test]"`
+as needed; `[report]` enables mesh visualization. Read
+`docs/independent-design-progress.md` for capabilities and remaining gaps.
+The complete no-worse 101/102 objective is still open.
 
-## Establish comparable inputs
+## Prepare independent inputs
 
-- Discover the BOM, quantity/revision information, actual packed-state envelopes, protection requirements, and source documents. Keep private inputs under `packaging-inputs/` and generated artifacts under `packaging-results/`.
-- Preserve variant and assembly identity. A CAD solid is not necessarily one BOM item. Prefer measured packed envelopes for cable coils, fastener bags, and sealed factory boxes. When the user permits BOM-based estimates, record their dimensions, source and assumed packing state explicitly and continue.
-- Record missing geometry and contradictory source instructions. Never present estimates as measurements or silently replace deprecated geometry with production evidence. Ask only about uncertainties that materially change the result and cannot be covered by authorized assumptions.
-- Keep usable cavity dimensions separate from external shipping dimensions. Compare complete matching kits under the authorized packing rules. Disclose changed cartons, sleeves, bagging and protective thicknesses; geometric acceptance does not establish equivalent cushioning or shipping performance.
+Keep private sources in `packaging-inputs/` and results in `packaging-results/`.
+Preserve original files and record hashes, units, quantities, revisions, packing
+state and dimension evidence. Prefer measured envelopes for factory cartons,
+cables and bags. Explicitly authorized estimates remain estimates; do not
+silently change them to hit a comparison target.
 
-## Search and validate
+Use the source adapters' `--help`:
 
-1. Normalize verified dimensions and constraints into the engine's JSON input. Use `reconcile BOM.json job.json` to check declared SKU quantities and revisions; do not treat grouped packet counts as an expanded hardware BOM. Use `inspect` for STEP evidence when available; CAD import is optional for measured envelopes.
-2. Run `solve` with a bounded time budget and write the layout and validation to an ignored output directory.
-3. Run `validate` independently on the resulting input/layout pair. Correct input errors or reject invalid candidates before generating operating instructions.
-4. Use `optimize` with explicit `container_candidates` to compare permitted cartons. The rectangular search is deterministic: changing `seed` does not diversify it. Change permitted grouping/orientations only when supported by the input rules. Preserve all required items and protection. A timeout means incomplete search, not impossibility or optimality.
-5. Render diagrams and packing sequence from the canonical layout. State exactly which checks passed and which remain unimplemented or unverified.
+- `scripts/extract_bom_tables.py`: Markdown quantity tables.
+- `scripts/extract_xlsx_bom.py`: one XLSX worksheet with cell evidence.
+- `scripts/prepare_printing_library.py`: part-number tables and STL/STEP.
+- `scripts/prepare_3mf_library.py`: physical parts in object coordinates.
+- `scripts/prepare_hardware_library.py`: purchased shapes and count-preserving packets.
+- `scripts/combine_part_libraries.py`: verified, uniquely identified libraries.
 
-If the reference's individual inner boxes block a solution, try regrouping while
-preserving the complete BOM and the external-volume target. Separate functional
-groups using labeled bags or dividers allowed by the packing rules. Revalidate
-the combined contents and outer arrangement; extra space alone is not a fit result.
+Expand printed sets, retain attached color shells, exclude printer modifiers,
+and avoid counting included parts twice. Packet `contents` must preserve
+individual quantities. Document revision overrides and shipping additions.
+Track the booklet and generated packaging separately. A table sum is not
+necessarily a physical component count.
 
-## Compare and deliver
+A neutral library has `units: "mm"`, `all_meshes_valid_volumes: true`, and
+items with `id`, `quantity`, and `mesh: {path, sha256}`. Mesh JSON contains
+`units`, `vertices_mm` and `triangles`. The engine rechecks source geometry;
+the flag alone certifies nothing. Supply an independent expected BOM with a
+`components` list of SKU quantities and required revisions.
 
-Report external volume, complete-kit coverage, implemented constraint checks, and measured runtime. Label engineer-template replay separately from search from scratch. A solution matching an engineer's outer box is not proof that all its contents fit.
+## Design from scratch
 
-Run `assess BOM.json input.json layout.json --output assessment.json` on the
-complete combined mesh manifest. It freshly verifies source hashes, geometry,
-declared BOM coverage and external volume. Require `computational_acceptance:
-true` before claiming the complete declared kit is no worse. Supply explicit
-`container.wall_mm` and `reference.external_mm`; inner cavities are not shipping
-dimensions. Read the current user corrections before reusing any geometry.
+Search consumes individual geometry, quantities and protection/manufacturing
+policy. Do not import an engineer's carton sizes, grouping, poses, target volume,
+printer-plate positions or prepared packing recipes. No manual coordinate tuning
+or SKU-specific placement scripts. Reference data belongs only to a separate
+evaluator after freezing a result.
 
-For operating instructions, check paths separately with
-`bom2kit.mesh_motion.check_vertical_sequence`. If parts must enter together,
-verify each small group's internal assembly on a work surface as well as its
-external insertion. Map local directions back into the carton coordinate frame.
-Keep support, handling and physical qualification distinct from collision-free
-paths. Bind diagrams and certificates to the exact input, layout and source hashes.
+The policy requires `carton`, `item_padding_mm`, `clearance_mm` and
+`allow_all_rotations: true`. Carton fields include `wall_mm`,
+`protection_mm`, `inner_wall_mm`, `reserved_top_mm`, `gap_mm` and
+`dimension_increment_mm`. Choose values from actual requirements.
+`refine_footprints` switches local size refinement versus broader sequence
+search. `placement_score` accepts `bottom_left`, `short_side` or `area`.
+Neither heuristic dominates every kit; preserve protection while comparing them.
 
-Distinguish rectangular-envelope validation, actual CAD collision validation, and physical packing/transport trials. Report unresolved evidence as a limitation; never call a preliminary result production-approved. If the requested no-worse result cannot be demonstrated, deliver the working tool and explicit evidence gap without claiming the objective was met.
+```powershell
+python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --pair-seconds 8 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6
+```
 
-## Irregular parts and local benchmarks
+The runner discovers pairs, optionally extends groups, compares compatible
+groupings and generates cartons. It retains a verified incumbent. `run.json`
+identifies the selected result. `not_improved` candidates lack original-pose
+certification and are not accepted plans. Budgets are soft and per stage.
+Report total runtime separately from preparation, search and validation;
+certificate replay is not cold design.
 
-Install the optional `[mesh]` dependencies to check triangle geometry. Use
-`mesh-validate input.json layout.json` for supplied rigid transforms. Use
-`mesh-pair input.json --output packaging-results/pair --time-limit 30` for a
-bounded two-part nesting search; this is not a complete-kit optimizer.
-Use `mesh-solve input.json --output packaging-results/group --time-limit 300`
-for mixed groups with JSON triangle sources. It retains alternative rigid poses;
-an exhausted beam is not proof of infeasibility. Use `--seed-layout recipe.json`
-to validate and reuse a complete recipe or continue a partial arrangement. Report
-recipe replay separately from new search, including its measured runtime.
-Reject scaling, changed source hashes and missing instances. Voxel arrangements
-and printer-plate positions are proposals, never packing certificates. Reusing
-a recipe requires matching part revisions and quantities; unchanged labels alone
-are insufficient.
+## Validate, illustrate and compare
 
-Run `python scripts/run_benchmarks.py` when the private 101/102 evidence manifests
-are available. This compares seven closed boxes per kit and intentionally leaves
-full-kit acceptance false. With `[report]` installed, run
-`python scripts/build_comparison_pdf.py` to generate the concise visual comparison.
-Do not infer the reported 50 L failure from these inputs: its original layout
-has not been supplied, so it is not a reproducible baseline.
+Require expected-BOM reconciliation, original triangle validation, internal
+group assembly and external insertion checks. For layered envelopes, also run
+`bom2kit.layered_design.validate_layered` on the nested envelope candidate's
+input/layout. Mesh checks alone do not certify carton walls or support.
+An exhausted search is not proof of impossibility.
 
-For complete-kit evidence, use each `packaging-results/so-arm-*/complete-kit/`
-directory's `bom.json`, `input.json` and `layout.json`, then rerun `assess`.
-`python scripts/build_complete_comparison_pdf.py` refuses a final comparison
-unless both complete kits freshly pass, including the corrected custom 106 mm
-clamp requirement. `--draft-101` produces an explicitly limited 101-only draft.
-Follow `docs/101-validated-layout.md` for the current 101 recipe; earlier nominal
-or alternate subgroup reports are not the final complete-kit certificate.
+Freeze source hashes, policy and selected result before evaluation. `assess`
+may check a separate copy carrying `reference.external_mm`; do not feed it back
+into search. Compare external shipping volume, matching contents and comparable
+protection. Continue improving when the requested no-worse criterion fails.
+Green tests or a partial kit do not close that objective.
 
-For these local cases, follow `docs/benchmark-assumptions.md`: the user permits
-BOM-based assumptions and bagged bearings. Physical qualification remains distinct
-from complete computational packing; it is not a prerequisite for that deliverable.
+Render the exact validated coordinates. `mesh-report` is a geometric review,
+not an assembly instruction. Instructions must show each carton, its contents,
+group assembly order/direction and carton insertion order. Bind visuals to the
+frozen result. Dimension specifications are not production dielines; geometric
+padding is not a manufactured sleeve. Hand access and transport qualification
+remain separate from collision-free paths.
 
-The authoritative skill is `skills/bom-to-kit/SKILL.md`. After editing it, run `python skills/bom-to-kit/scripts/sync_skill.py` to update the Codex and Claude Code copies.
+For local 101/102 cases, read `docs/benchmark-assumptions.md`: preserve accepted
+content revisions and the user-confirmed 106 mm custom clamp frame. Old
+`assemble_*` scripts and complete-kit comparison recipes do not establish
+from-scratch design. The reported 50 L example has no supplied reproducible
+layout; do not invent a measured baseline.
+
+Edit this authoritative file, then run
+`python skills/bom-to-kit/scripts/sync_skill.py` to synchronize both agent copies.

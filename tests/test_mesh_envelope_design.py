@@ -28,3 +28,10 @@ def test_oblique_source_frame_becomes_valid_rigid_packing(tmp_path):
     assert result["envelope_design"]["search"]["reference_used"] is False
     from bom2kit.bom import reconcile_bom
     assert reconcile_bom({"components": [{"id": "screw", "quantity": 111}]}, result["input"])["complete"]
+    rejected = design_mesh_envelopes(library,policy,time_limit=.1,incumbent_volume_mm3=1)
+    assert rejected["status"] == "not_improved"
+    assert "layout" not in rejected and "validation" not in rejected
+    assert rejected["timing"]["mesh_validation_and_motion_seconds"] == 0
+    source.write_text("changed source")
+    with pytest.raises(ValueError,match="hash"):
+        design_mesh_envelopes(library,policy,time_limit=.1,incumbent_volume_mm3=1)

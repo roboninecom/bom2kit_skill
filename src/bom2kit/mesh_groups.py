@@ -31,6 +31,45 @@ def rank_pair_proposals(proposals, limit, source_members=None):
     return selected
 
 
+def diversify_cavity_proposals(ranked, proposals, shapes, limit, clearance_mm):
+    """Reserve alternating proposals for dense items inside hollow bounds.
+
+    Bounds and occupancy only nominate pairs; they never prove cavity fit.
+    The usual triangle and assembly checks remain mandatory downstream.
+    """
+    candidates = []
+    for proposal in proposals:
+        _, i, j = proposal
+        if i == j:
+            continue
+        saving = 0.0
+        for outer, inner in ((shapes[i], shapes[j]), (shapes[j], shapes[i])):
+            outer_box, inner_box = outer["box_volume"], inner["box_volume"]
+            if outer["volume"] / outer_box > .65 or inner["volume"] / inner_box < .8:
+                continue
+            if inner_box > outer_box - outer["volume"]:
+                continue
+            if all(a + 2 * clearance_mm <= b for a, b in
+                   zip(sorted(inner["extents"]), sorted(outer["extents"]))):
+                saving = max(saving, inner_box)
+        if saving:
+            candidates.append((-saving, proposal))
+    cavity = [p for _, p in sorted(candidates)]
+    selected = []
+    queues = [list(ranked), cavity]
+    while len(selected) < limit:
+        changed = False
+        for queue in queues:
+            while queue and queue[0] in selected:
+                queue.pop(0)
+            if queue and len(selected) < limit:
+                selected.append(queue.pop(0))
+                changed = True
+        if not changed:
+            break
+    return selected
+
+
 def check_workbench_axes(problem, layout):
     """Check straight assembly along six source-frame axes on an open workbench."""
     import numpy as np
@@ -132,7 +171,11 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
     voxel_cache = {}
     source_members = {index:set(entry["item"].get("source_members",[entry["item"]["id"]]))
                       for index,entry in enumerate(prepared)}
-    for _, i, j in rank_pair_proposals(proposals, max_pairs, source_members):
+    ranked = rank_pair_proposals(proposals, max_pairs, source_members)
+    shapes = [{"box_volume": e["box_volume"], "volume": float(e["mesh"].volume),
+               "extents": e["mesh"].extents.tolist()} for e in prepared]
+    ranked = diversify_cavity_proposals(ranked, proposals, shapes, max_pairs, clearance_mm)
+    for _, i, j in ranked:
         remaining = time_limit - (perf_counter() - started)
         if remaining <= 0:
             break

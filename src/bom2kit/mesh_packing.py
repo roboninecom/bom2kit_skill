@@ -16,6 +16,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
     import numpy as np
     import trimesh
     from scipy.signal import fftconvolve
+    from scipy.ndimage import binary_dilation
     from .mesh_validation import validate_mesh_layout
     from .models import vector
 
@@ -91,11 +92,18 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
     for mesh in meshes:
         components = trimesh.graph.connected_components(mesh.edges_unique,nodes=np.arange(len(mesh.vertices)))
         samples.append(mesh.vertices[[int(c[0]) for c in components]])
+    proposal_grids = [(grids[0],0)]
+    if clearance > 0:
+        radius = math.ceil(clearance/pitch_mm)
+        coordinates = np.indices((2*radius+1,)*3)-radius
+        sphere = np.sum(coordinates**2,axis=0) <= radius**2
+        expanded = binary_dilation(np.pad(grids[0].astype(bool),radius),structure=sphere).astype(np.float32)
+        proposal_grids.insert(0,(expanded,radius))
     search_started = perf_counter()
-    checked, rotations_done, best = 0, 0, None
+    checked, rotations_done, best, best_spread = 0, 0, None, -1.
 
     def accept(rotation, shift):
-        nonlocal checked, best
+        nonlocal checked, best, best_spread
         transform = np.eye(4)
         transform[:3, :3] = rotation
         transform[:3, 3] = shift
@@ -105,7 +113,10 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         high = np.maximum(fixed.bounds[1], candidate.bounds[1])
         dimensions = high - low
         volume = float(np.prod(dimensions))
-        if np.any(dimensions > inner - 2 * margin + 1e-8) or (best and volume >= best[0]):
+        spread = float(np.linalg.norm(candidate.bounds.mean(axis=0)-fixed.bounds.mean(axis=0)))
+        if np.any(dimensions > inner - 2 * margin + 1e-8):
+            return
+        if best and (round(volume,6),-spread) >= (round(best[0],6),-best_spread):
             return
         checked += 1
         if manager.in_collision_single(candidate):
@@ -121,6 +132,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         offset = np.eye(4)
         offset[:3, 3] = margin - low
         best = (volume, [offset @ transforms[0], offset @ transform @ transforms[1]], dimensions)
+        best_spread = spread
 
     # Always try simple non-nested adjacency as a valid fallback.
     for axis in range(3):
@@ -142,24 +154,26 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
                 if sign < 0:
                     grid = np.flip(grid, axis=axis)
                     correction[axis] = (grid.shape[axis] - 1) * pitch_mm
-            correlations = fftconvolve(grids[0], grid[::-1, ::-1, ::-1], mode="full")
-            indices = np.argwhere(correlations < 0.5)
-            shifts = indices - (np.array(grid.shape) - 1)
-            low = np.minimum(0, shifts)
-            high = np.maximum(np.array(grids[0].shape), shifts + np.array(grid.shape))
-            # Rank candidates inside the requested aspect constraints first.
-            # One pitch of slack per face accounts for voxel rounding; exact
-            # transformed-vertex bounds remain the acceptance criterion.
-            possible = np.all((high - low) * pitch_mm <= inner - 2 * margin + 2 * pitch_mm, axis=1)
-            shifts, low, high = shifts[possible], low[possible], high[possible]
-            volumes = np.prod(high - low, axis=1)
-            count = min(candidates_per_rotation, len(volumes))
-            if count:
-                selected = np.argpartition(volumes, count - 1)[:count]
-                for index in selected[np.argsort(volumes[selected])]:
-                    if perf_counter() - search_started >= time_limit:
-                        break
-                    accept(rotation, correction + shifts[index] * pitch_mm)
+            for proposal_grid,padded_cells in proposal_grids:
+                if perf_counter()-search_started >= time_limit:
+                    break
+                correlations = fftconvolve(proposal_grid, grid[::-1, ::-1, ::-1], mode="full")
+                indices = np.argwhere(correlations < 0.5)
+                # Padding moves the proposal grid origin. Physical poses and
+                # volume ranking must remain in the original source frame.
+                shifts = indices-(np.array(grid.shape)-1)-padded_cells
+                low = np.minimum(0, shifts)
+                high = np.maximum(np.array(grids[0].shape), shifts+np.array(grid.shape))
+                possible = np.all((high-low)*pitch_mm <= inner-2*margin+2*pitch_mm,axis=1)
+                shifts,low,high = shifts[possible],low[possible],high[possible]
+                volumes = np.prod(high-low,axis=1)
+                count = min(candidates_per_rotation,len(volumes))
+                if count:
+                    selected = np.argpartition(volumes,count-1)[:count]
+                    for index in selected[np.argsort(volumes[selected])]:
+                        if perf_counter()-search_started >= time_limit:
+                            break
+                        accept(rotation,correction+shifts[index]*pitch_mm)
             rotations_done += 1
         if perf_counter() - search_started >= time_limit:
             break
@@ -169,6 +183,8 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
                          "rotations_checked": rotations_done, "elapsed_seconds": perf_counter() - start,
                          "preparation_seconds": search_started - start,
                          "voxel_cache_hits": cache_hits,
+                         "proposal_clearance_dilation": clearance > 0,
+                         "equal_volume_tiebreak":"Separate part centres to avoid occupying the middle of a reusable cavity",
                          "search_seconds": perf_counter() - search_started,
                          "time_limit_seconds": time_limit, "optimality_proven": False}}
     verification_started = perf_counter()

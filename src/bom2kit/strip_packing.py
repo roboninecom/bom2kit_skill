@@ -1,12 +1,15 @@
 """Constructive maximal-free-rectangle strip packing with bounded part height."""
 
 
-def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, priority_unit=None):
+def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, priority_unit=None,
+               placement_score="bottom_left"):
     """Place envelope units on the floor, selecting individual orientations.
 
     Free rectangles may overlap one another, but each is empty. All rectangles
     overlapping a placement are split. No support or artificial filler is needed.
     """
+    if placement_score not in ("bottom_left","short_side","area"):
+        raise ValueError("Unknown rectangle placement score")
     available = []
     for unit in units:
         choices = [(r, s) for r, s in unit["orientations"] if s[0] <= width + 1e-8 and s[2] <= height + 1e-8]
@@ -28,8 +31,14 @@ def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, pri
             for rotation, size in choices:
                 dx, dy = size[0] + gap, size[1] + gap
                 if dx <= w + 1e-8 and dy <= h + 1e-8:
-                    options.append(((max(used_y, y + size[1]), min(w-dx, h-dy), y, x, size),
-                                    x, y, rotation, size))
+                    short,long = min(w-dx,h-dy),max(w-dx,h-dy)
+                    if placement_score == "short_side":
+                        score = (short,long,max(used_y,y+size[1]),y,x,size)
+                    elif placement_score == "area":
+                        score = (w*h-dx*dy,short,max(used_y,y+size[1]),y,x,size)
+                    else:
+                        score = (max(used_y,y+size[1]),short,y,x,size)
+                    options.append((score,x,y,rotation,size))
         if not options:
             if allow_partial:
                 continue

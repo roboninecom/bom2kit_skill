@@ -8,7 +8,7 @@ trimesh = pytest.importorskip("trimesh")
 pytest.importorskip("fcl")
 pytest.importorskip("scipy")
 pytest.importorskip("rtree")
-from bom2kit.mesh_groups import discover_pairs, check_workbench_axes, rank_pair_proposals
+from bom2kit.mesh_groups import discover_pairs, check_workbench_axes, rank_pair_proposals, diversify_cavity_proposals
 from bom2kit.mesh_motion import check_vertical_sequence
 from bom2kit.group_design import design_grouped_library
 from bom2kit.nested_groups import extend_groups
@@ -26,6 +26,17 @@ def test_compound_names_do_not_hide_repeated_original_shapes():
     proposals = [(-200,0,1),(-190,2,3),(-150,4,5)]
     members = {0:{"a","b"},1:{"c"},2:{"a","b"},3:{"d"},4:{"e"},5:{"f"}}
     assert rank_pair_proposals(proposals,2,members) == [(-200,0,1),(-150,4,5)]
+
+
+def test_dense_cavity_proposals_get_budget_without_displacing_first_pair():
+    shapes = [{"box_volume": 1000, "volume": 300, "extents": [10,10,10]},
+              {"box_volume": 512, "volume": 512, "extents": [8,8,8]},
+              {"box_volume": 1000, "volume": 200, "extents": [10,10,10]}]
+    proposals = [(-1400,0,2),(-1300,0,0),(-700,0,1)]
+    ranked = rank_pair_proposals(proposals,2)
+    assert diversify_cavity_proposals(ranked,proposals,shapes,2,.5) == [proposals[0],proposals[2]]
+    assert diversify_cavity_proposals(ranked,proposals,shapes,2,2) == ranked
+    assert diversify_cavity_proposals(ranked,list(reversed(proposals)),shapes,2,.5) == [proposals[0],proposals[2]]
 
 
 def sources(tmp_path):
@@ -69,9 +80,10 @@ def test_open_workbench_frame_is_explicit(tmp_path):
     assert np.linalg.det(np.array(result["source_to_workbench"])[:3, :3]) == pytest.approx(1)
 
 
-def test_nested_groups_expand_original_units_without_reusing_unavailable_parts(tmp_path):
+@pytest.mark.parametrize("radius",[2,4])
+def test_nested_groups_expand_original_units_without_reusing_unavailable_parts(tmp_path,radius):
     items = sources(tmp_path)
-    mesh = trimesh.creation.cylinder(radius=2,height=4,sections=24)
+    mesh = trimesh.creation.cylinder(radius=radius,height=2*radius,sections=24)
     path = tmp_path/"smaller-cylinder.json"
     path.write_text(json.dumps({"units":"mm","vertices_mm":mesh.vertices.tolist(),"triangles":mesh.faces.tolist()}))
     items[1]["mesh"] = {"path":str(path),"sha256":sha256(path.read_bytes()).hexdigest()}

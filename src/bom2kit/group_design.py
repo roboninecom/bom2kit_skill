@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 
-def design_grouped_library(library, portfolio, policy, output, time_limit=5):
+def design_grouped_library(library, portfolio, policy, output, time_limit=5, incumbent_volume_mm3=None):
     import numpy as np
     import trimesh
     from .mesh_envelope_design import design_mesh_envelopes
@@ -79,7 +79,11 @@ def design_grouped_library(library, portfolio, policy, output, time_limit=5):
             expansion[iid + "#" + str(copy + 1)] = [{"item_id": iid, "unit_id": iid + "#" + str(assigned[iid]), "transform": np.eye(4).tolist()}]
     grouped_library = {"units": "mm", "all_meshes_valid_volumes": True,
                        "scope": library.get("scope"), "items": grouped}
-    candidate = design_mesh_envelopes(grouped_library, policy, time_limit=time_limit)
+    candidate = design_mesh_envelopes(grouped_library, policy, time_limit=time_limit,incumbent_volume_mm3=incumbent_volume_mm3)
+    if candidate["status"] == "not_improved":
+        result = {"status":"not_improved","envelope_candidate":candidate,"source_library_sha256":library_hash}
+        (output/"result.json").write_text(json.dumps(result,allow_nan=False))
+        return result
     if candidate["status"] != "validated_mesh_envelope_baseline":
         return {"status": "group_envelope_failure", "candidate": candidate}
     placements, groups = [], {}

@@ -3,6 +3,51 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Current search and review improvements
+
+The shared Codex/Claude skill now launches independent group discovery and
+carton design. Compatible anchored group portfolios replace redundant individual
+evaluations. A candidate whose envelope volume cannot improve an already
+verified incumbent is marked `not_improved`; its original poses are deliberately
+not certified and it cannot become the selected result.
+
+Pair proposals now include clearance-expanded voxels, with original-grid fallback
+and unchanged exact triangle checks. Equal-volume ties prefer separated part
+centres, allowing successive parts to occupy a cavity. Synthetic ring tests
+verify insertion of two cylinders without changing their source geometry.
+An additional alternating proposal queue nominates dense small parts inside
+hollow bounds. Occupancy and bounds nominate candidates only; exact fit and
+assembly still require validation. This heuristic is not a measured kit-volume
+improvement until a complete candidate passes.
+
+Alternative short-side rectangle scoring was tested with unchanged inputs and
+protection: 101 produced 21.902400 L and 102 produced 23.771088 L. Both were
+worse than retained candidates (20.671200 and 22.644144 L respectively).
+These unsuccessful experiments remain under each kit's `short-side-design/`.
+
+`scripts/render_design_review.py RESULT BOM --output OUTPUT` freshly checks BOM,
+source triangles, carton hierarchy, original-part containment in assigned inner
+cartons and exact diagram membership. It creates top-view PNGs and an HTML
+review bound to source/result hashes. The five-carton reviews cover all 79 and
+108 packing units for 101 and 102. They are geometric reviews, not assembly
+instructions or shipping qualification. Final instructions, comparison and the
+no-worse gate remain unfinished.
+
+Validation after these changes: 123 tests passed in 15.28 seconds. A fresh 102
+run under `clean-portfolio-run/` was launched before the new cavity-priority
+queue; its result must not be attributed to that later change.
+
+That fresh run finished in **699.62 seconds** from the prepared source library
+(source import time is excluded). It independently generated eight group
+alternatives and evaluated six configurations. The selected `packing-0/result.json`
+is **258 x 264 x 328 mm = 22.340736 L**, with complete declared BOM coverage
+and passing original-source geometry and motion checks. Five other configurations
+were rejected as non-improving. This improves the prior 22.644144 L incumbent
+by 0.303408 L, but is still **11.35% larger** than the 20.063360 L reference.
+The 101 incumbent remains 20.671200 L versus 19.423040 L. Neither kit passes
+the requested comparison gate. Separate aggregate preparation/search/validation
+timing and faster end-to-end execution remain necessary.
+
 ## Implemented foundation
 
 `python -m bom2kit design-envelopes request.json --output OUTPUT --time-limit 5`

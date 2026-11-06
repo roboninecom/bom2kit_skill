@@ -11,6 +11,7 @@ from bom2kit.group_design import design_grouped_library
 from bom2kit.mesh_envelope_design import design_mesh_envelopes
 from bom2kit.bom import reconcile_bom
 from bom2kit.nested_groups import extend_groups
+from bom2kit.group_portfolio import group_configurations
 
 
 def main():
@@ -26,7 +27,7 @@ def main():
                         help="Optional group/part or group/group extension rounds, each using the pair budget")
     parser.add_argument("--carton-budget", type=float, default=10)
     parser.add_argument("--group-configurations", type=int, default=4,
-                        help="Maximum complete carton evaluations: all alternatives, then individual alternatives")
+                        help="Maximum distinct grouping evaluations: greedy, compatible anchored groups, and singles")
     args = parser.parse_args()
     if args.group_configurations < 1 or args.nesting_rounds < 0:
         parser.error("--group-configurations must be positive and --nesting-rounds nonnegative")
@@ -54,16 +55,15 @@ def main():
     if baseline["status"] == "validated_mesh_envelope_baseline":
         box = baseline["envelope_design"]["candidate"]
         choices.append((box["volume_mm3"], "baseline.json", box["external_mm"]))
-    configurations = [portfolio["alternatives"]]
-    if len(portfolio["alternatives"]) > 1:
-        configurations += [[alternative] for alternative in portfolio["alternatives"]]
+    configurations = group_configurations(library,portfolio["alternatives"],args.group_configurations)
     evaluations = []
     for index, alternatives in enumerate(configurations[:args.group_configurations]):
         if not alternatives:
             continue
         directory = f"packing-{index}"
         result = design_grouped_library(library, {**portfolio, "alternatives": alternatives}, policy,
-                                       args.output / directory, time_limit=args.carton_budget)
+                                       args.output / directory, time_limit=args.carton_budget,
+                                       incumbent_volume_mm3=min(choice[0] for choice in choices) if choices else None)
         record = {"directory": directory, "status": result["status"],
                   "members": [alternative["members"] for alternative in alternatives]}
         if result["status"] == "validated_grouped_geometry":
