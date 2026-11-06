@@ -22,6 +22,12 @@ def test_pair_budget_explores_different_shapes_without_losing_top_candidate():
     assert len(rank_pair_proposals(proposals, 100)) == len(proposals)
 
 
+def test_compound_names_do_not_hide_repeated_original_shapes():
+    proposals = [(-200,0,1),(-190,2,3),(-150,4,5)]
+    members = {0:{"a","b"},1:{"c"},2:{"a","b"},3:{"d"},4:{"e"},5:{"f"}}
+    assert rank_pair_proposals(proposals,2,members) == [(-200,0,1),(-150,4,5)]
+
+
 def sources(tmp_path):
     meshes = [trimesh.creation.annulus(r_min=12, r_max=20, height=8, sections=24),
               trimesh.creation.cylinder(radius=4, height=8, sections=24)]

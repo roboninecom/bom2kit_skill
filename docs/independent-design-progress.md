@@ -86,6 +86,58 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Independent 101 input reconciliation
+
+`scripts/extract_xlsx_bom.py SOURCE.xlsx --output ROWS.json` reads a single
+worksheet BOM without modifying it. It records worksheet/cell addresses and
+the source hash, preserves variants, and rejects fractional, zero or unevaluated
+formula quantities. The 101 source contains 25 rows with mixed units: individual
+hardware, printed sets, booklet and packaging. Its sum of 200 is not a physical
+component count.
+
+The explicitly confirmed R3 content revision overrides C001/C046 quantities
+from 1/3 to 2/2 and supersedes the older named PSU selections with 12V5A and
+5V4A supplies. Only content identities/counts are used; reference box assignments,
+dimensions and poses are excluded. Raw cell evidence is retained beside each
+override in `packaging-inputs/independent/101/hardware-source-rows.json`.
+
+The source printing-order document requests one follower set (including its
+camera wrist mount), one leader set, ten colored figures, disassembled ArUco
+and both nameplate colors. These expand to 43 verified source meshes. Camera
+mount is not counted again. Nineteen purchased rows expand to 194 components;
+two regional cords and two USB adapters from R3 add four more. The resulting
+neutral library contains **79 packing units covering 241 product components**.
+Booklet reserve, generated outer carton and its label are tracked separately;
+their full packaging acceptance remains open.
+
+Factory servo cartons are retained as explicitly estimated 65 x 45 x 35 mm
+envelopes. Purchased electronics, cable folds, fastener cells and other
+unmeasured dimensions are listed in `hardware-specification.json`. They are
+assumptions, not source measurements. The custom clamp keeps its confirmed
+106 mm frame. Source reconciliation and preparation are stored under
+`packaging-inputs/independent/101/`; the clean search reads no historical layouts.
+
+The first complete-product singleton baseline is **260 x 303 x 274 mm =
+21.58572 L**, with source geometry and insertion checks passing. It is above
+the engineer comparison and is not acceptance. Evidence:
+`packaging-results/independent/101/complete-first-run/baseline.json`.
+
+The clean 101 run then discovered five valid pair alternatives and evaluated
+three group configurations. In **259.85 s** including the initial baseline,
+pair discovery and full geometry checks, it selected **258 x 300 x 273 mm =
+21.1302 L**. All 79 source packing units and 241 declared product components are
+preserved. Original triangles, assembly/insertion and an independently rerun
+carton hierarchy check pass. `complete-first-run/run.json` selects
+`packing-2/result.json`; `coverage.json` records the count reconciliation. This
+still exceeds the separate 19.42304 L reference and does not close the objective.
+
+The second 102 nesting round mostly rediscovered the four-arm group. Proposal
+diversity now uses original source identities inside compounds, so renaming the
+same shapes as different groups does not hide repeated exploration. A fresh
+141.52 s experiment explored other combinations but produced no additional
+verified savings. The 23.557248 L incumbent remains unchanged. The full suite
+passes 115 tests, including source-cell extraction and compound-overlap ranking.
+
 ### Adaptive heights and larger groups
 
 Layer search now adds height bands weighted by the volume and quantities of

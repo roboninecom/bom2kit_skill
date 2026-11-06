@@ -7,7 +7,7 @@ from pathlib import Path
 from time import perf_counter
 
 
-def rank_pair_proposals(proposals, limit):
+def rank_pair_proposals(proposals, limit, source_members=None):
     """Balance potential void savings against repeatedly explored part types.
 
     Each proposal is (negative empty volume, first index, second index).
@@ -17,12 +17,16 @@ def rank_pair_proposals(proposals, limit):
     remaining = list(proposals)
     exposure = {}
     selected = []
+    def identities(proposal):
+        if source_members is None:
+            return set(proposal[1:])
+        return set().union(*(source_members[index] for index in proposal[1:]))
     while remaining and len(selected) < limit:
         proposal = min(remaining, key=lambda p: (
-            p[0] / (1 + sum(exposure.get(i, 0) for i in set(p[1:]))), p))
+            p[0] / (1 + sum(exposure.get(i, 0) for i in identities(p))), p))
         remaining.remove(proposal)
         selected.append(proposal)
-        for index in set(proposal[1:]):
+        for index in identities(proposal):
             exposure[index] = exposure.get(index, 0) + 1
     return selected
 
@@ -125,7 +129,9 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
             empty = a["box_volume"] + b["box_volume"] - a["mesh"].volume - b["mesh"].volume
             proposals.append((-float(empty), i, j))
     attempts, alternatives = [], []
-    for _, i, j in rank_pair_proposals(proposals, max_pairs):
+    source_members = {index:set(entry["item"].get("source_members",[entry["item"]["id"]]))
+                      for index,entry in enumerate(prepared)}
+    for _, i, j in rank_pair_proposals(proposals, max_pairs, source_members):
         remaining = time_limit - (perf_counter() - started)
         if remaining <= 0:
             break
