@@ -1,6 +1,8 @@
 # BOM-to-Kit Implementation Plan
 
-Status: proposed; implementation has not started.
+Status: implementation in progress. Rectangular search, independent validation,
+CAD inspection, shared agent skills and nominal 101/102 benchmarks run locally.
+Full-kit equivalence remains open; see [evidence status](evidence-status.md).
 
 Research date: 2026-11-06.
 
@@ -16,7 +18,7 @@ The initial target is a local workflow for robot kits with dozens of packing uni
 
 - The reviewed SO-ARM101 reference specifies a 364 × 290 × 184 mm outer carton, equivalent to 19.423 L. Its EPE drawing specifies a 320 × 246 × 140 mm usable cavity, equivalent to 11.021 L. External shipping volume and usable packing volume must remain separate metrics.
 - The reference uses nested parts, inner boxes, and layered outer packing. Independent bounding boxes for every part will lose useful nesting opportunities.
-- The available instructions disagree about BOX4 contents and the assembly state of the ArUco set. Resolve these differences before creating a benchmark or issuing new production instructions.
+- The user selected Visual Layout R3 for 101: electronics in BOX4 and disassembled ArUco in BOX7. This supersedes the conflicting older kitting instruction for the benchmark.
 - Seven downloaded STEP models were read successfully with CadQuery. A single local diagnostic run took 18.638 seconds overall: 17.010 seconds to import the library and approximately 1.628 seconds to read the models and calculate axis-aligned bounds, volumes, and solid counts.
 - This diagnostic did not optimize packing, validate a complete kit, or establish production performance. The STEP files were in a `Deprecated` directory and are not automatically approved production inputs.
 - The reported 50 L language-model result has not been inspected. Its BOM, protection requirements, dimensions, and assembly state must match the engineer's reference before comparing volumes.
@@ -200,7 +202,7 @@ Provisional acceptance targets, to be confirmed on the frozen reference:
 
 - Complete and correct component accounting.
 - No violations of implemented geometric and operational constraints.
-- External volume within 10% of the approximately 20 L engineer reference under equivalent assumptions.
+- External volume no greater than Alan's reference for the complete matching kit: 19.42304 L for 101 and 20.06336 L for 102. A box-only match does not satisfy full-kit acceptance.
 - A repeated similar kit within one minute with a prepared library.
 - A new layout within one to five minutes with prepared geometry.
 - A separate deeper-search mode with a five-to-fifteen-minute budget.

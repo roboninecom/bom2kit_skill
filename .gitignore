@@ -1,2 +1,8 @@
 /packaging-inputs/
 /packaging-results/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+/build/
+/dist/
