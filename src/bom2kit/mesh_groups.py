@@ -1,5 +1,6 @@
 """Discover small assembly-checked groups from individual geometry, without recipes."""
 from copy import deepcopy
+from collections import Counter
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -54,7 +55,8 @@ def check_workbench_axes(problem, layout):
     return None
 
 
-def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5, max_pairs=8):
+def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5, max_pairs=8,
+                   required_item_ids=None, source_quantities=None):
     """Generate a bounded portfolio balancing empty volume and shape diversity.
 
     Returns alternatives, not an asserted best complete-kit grouping. Original
@@ -113,6 +115,13 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
             b = prepared[j]
             if i == j and a["item"]["quantity"] < 2:
                 continue
+            if required_item_ids is not None and not required_item_ids.intersection((a["item"]["id"],b["item"]["id"])):
+                continue
+            if source_quantities is not None:
+                needed = Counter(a["item"].get("source_members",[a["item"]["id"]]))
+                needed.update(b["item"].get("source_members",[b["item"]["id"]]))
+                if any(count > source_quantities.get(iid,0) for iid,count in needed.items()):
+                    continue
             empty = a["box_volume"] + b["box_volume"] - a["mesh"].volume - b["mesh"].volume
             proposals.append((-float(empty), i, j))
     attempts, alternatives = [], []

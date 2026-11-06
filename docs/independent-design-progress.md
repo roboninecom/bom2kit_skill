@@ -86,6 +86,32 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Adaptive heights and larger groups
+
+Layer search now adds height bands weighted by the volume and quantities of
+the remaining units. It retains the original sampled heights as alternatives.
+This avoids overlooking a useful height merely because it falls between the
+ten globally sampled bands. On the complete 102 library and unchanged grouping
+and protection, it produced **312 x 222 x 351 mm = 24.311664 L**. Declared BOM,
+original triangles and group insertion pass. Evidence:
+`packaging-results/independent/102/adaptive-height-design/result.json`.
+The result remains above the independent engineer comparison threshold.
+
+`nested_groups.extend_groups` can now search group/part and group/group
+combinations. Previously discovered groups become temporary rigid source meshes;
+proposals exceeding any original SKU quantity are excluded before search. Every
+retained candidate is expanded back to original source poses and receives a new
+whole-group assembly certificate. It is not accepted on a compound bounding box
+or an earlier pair certificate alone. Synthetic tests cover a three-part group,
+source identity expansion and preventing reuse of an unavailable ring.
+
+The clean runner exposes `--nesting-rounds 1` (default 0). Each round receives
+the declared pair budget; this is additional work, not free acceleration. It
+reads groups found during that same command. Reference geometry, reference
+cartons and prepared engineer placements are never inputs. Whole-kit selection
+remains bounded and greedy; larger local groups do not guarantee a smaller
+shipping carton.
+
 ### Diverse pairs and adjacent carton stacks
 
 Pair proposal ranking now discounts repeatedly explored part types. A limited

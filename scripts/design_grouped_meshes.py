@@ -10,6 +10,7 @@ from bom2kit.mesh_groups import discover_pairs
 from bom2kit.group_design import design_grouped_library
 from bom2kit.mesh_envelope_design import design_mesh_envelopes
 from bom2kit.bom import reconcile_bom
+from bom2kit.nested_groups import extend_groups
 
 
 def main():
@@ -21,12 +22,14 @@ def main():
     parser.add_argument("--pair-budget", type=float, default=60)
     parser.add_argument("--pair-seconds", type=float, default=8)
     parser.add_argument("--max-pairs", type=int, default=8)
+    parser.add_argument("--nesting-rounds", type=int, default=0,
+                        help="Optional group/part or group/group extension rounds, each using the pair budget")
     parser.add_argument("--carton-budget", type=float, default=10)
     parser.add_argument("--group-configurations", type=int, default=4,
                         help="Maximum complete carton evaluations: all alternatives, then individual alternatives")
     args = parser.parse_args()
-    if args.group_configurations < 1:
-        parser.error("--group-configurations must be positive")
+    if args.group_configurations < 1 or args.nesting_rounds < 0:
+        parser.error("--group-configurations must be positive and --nesting-rounds nonnegative")
     library = json.loads(args.library.read_text(encoding="utf-8-sig"))
     policy = json.loads(args.policy.read_text(encoding="utf-8-sig"))
     expected_bom = json.loads(args.bom.read_text(encoding="utf-8-sig")) if args.bom else None
@@ -41,6 +44,12 @@ def main():
     portfolio = discover_pairs(library, args.output / "pair-candidates",
                                clearance_mm=max(policy["clearance_mm"], 2 * policy["item_padding_mm"]),
                                time_limit=args.pair_budget, pair_seconds=args.pair_seconds, max_pairs=args.max_pairs)
+    for round_index in range(args.nesting_rounds):
+        extensions = extend_groups(library,portfolio,args.output/f"nested-{round_index}",
+                                   time_limit=args.pair_budget,pair_seconds=args.pair_seconds,max_pairs=args.max_pairs)
+        if not extensions["alternatives"]:
+            break
+        portfolio = {**portfolio,"alternatives":portfolio["alternatives"]+extensions["alternatives"]}
     choices = []
     if baseline["status"] == "validated_mesh_envelope_baseline":
         box = baseline["envelope_design"]["candidate"]

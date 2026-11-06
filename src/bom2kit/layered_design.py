@@ -9,6 +9,18 @@ from .strip_packing import pack_strip
 from .validation import validate
 
 
+def remaining_height_bands(units, increment, fallback, limit=8):
+    """Favor heights shared by a large volume of the remaining packing units."""
+    weights = {}
+    for unit in units:
+        volume = math.prod(unit["dimensions"])
+        heights = {math.ceil(s[2]/increment)*increment for _,s in unit["orientations"]}
+        for height in heights:
+            weights[height] = weights.get(height,0) + volume
+    ranked = sorted(weights,key=lambda h:(-weights[h],h))[:limit]
+    return sorted(set(fallback).union(ranked))
+
+
 def validate_layered(problem, layout):
     """Check source coverage, each inner cavity, and supported outer carton stack."""
     try:
@@ -92,7 +104,7 @@ def design_layers(request, units, time_limit=5):
         while remaining and perf_counter()-started < time_limit:
             options = []
             anchor = max(remaining, key=lambda u:math.prod(u["dimensions"]))["unit_id"] if anchor_required else None
-            for height in heights:
+            for height in remaining_height_bands(remaining, increment, heights):
                 if perf_counter()-started >= time_limit:
                     break
                 packed = pack_strip(remaining,width, height,gap,depth=depth,allow_partial=True,priority_unit=anchor)

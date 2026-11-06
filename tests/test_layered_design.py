@@ -1,6 +1,14 @@
 from copy import deepcopy
 from bom2kit.models import normalize
-from bom2kit.layered_design import design_layers, validate_layered
+from bom2kit.layered_design import design_layers, validate_layered, remaining_height_bands
+
+
+def test_height_bands_follow_remaining_quantities_and_keep_fallbacks():
+    items = [{"id":"small","quantity":10,"dimensions_mm":[10,10,17.1],"allowed_rotations":"fixed"},
+             {"id":"large","quantity":1,"dimensions_mm":[20,20,30],"allowed_rotations":"fixed"}]
+    units = normalize({"items":items,"container":{"inner_mm":[100]*3}})["units"]
+    assert remaining_height_bands(units,1,[5],limit=1) == [5,18]
+    assert remaining_height_bands([u for u in units if u["item_id"]=="large"],1,[5],limit=1) == [5,30]
 
 
 def test_supported_layers_preserve_counts_walls_and_detect_floating_cartons():

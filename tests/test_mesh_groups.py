@@ -11,6 +11,7 @@ pytest.importorskip("rtree")
 from bom2kit.mesh_groups import discover_pairs, check_workbench_axes, rank_pair_proposals
 from bom2kit.mesh_motion import check_vertical_sequence
 from bom2kit.group_design import design_grouped_library
+from bom2kit.nested_groups import extend_groups
 
 
 def test_pair_budget_explores_different_shapes_without_losing_top_candidate():
@@ -60,3 +61,20 @@ def test_open_workbench_frame_is_explicit(tmp_path):
     result = check_workbench_axes(problem, layout)
     assert result["certificate"]["valid"]
     assert np.linalg.det(np.array(result["source_to_workbench"])[:3, :3]) == pytest.approx(1)
+
+
+def test_nested_groups_expand_original_units_without_reusing_unavailable_parts(tmp_path):
+    items = sources(tmp_path)
+    mesh = trimesh.creation.cylinder(radius=2,height=4,sections=24)
+    path = tmp_path/"smaller-cylinder.json"
+    path.write_text(json.dumps({"units":"mm","vertices_mm":mesh.vertices.tolist(),"triangles":mesh.faces.tolist()}))
+    items[1]["mesh"] = {"path":str(path),"sha256":sha256(path.read_bytes()).hexdigest()}
+    items[1]["quantity"] = 2
+    library = {"units":"mm","all_meshes_valid_volumes":True,"items":items}
+    portfolio = discover_pairs(library,tmp_path/"pairs",clearance_mm=.2,time_limit=15,pair_seconds=5,max_pairs=1)
+    nested = extend_groups(library,portfolio,tmp_path/"nested",time_limit=15,pair_seconds=5,max_pairs=1)
+    assert nested["alternatives"], nested
+    group = nested["alternatives"][0]
+    assert sorted(group["members"]) == ["0","1","1"]
+    assert {p["unit_id"] for p in group["layout"]["placements"]} == {"0#1","1#1","1#2"}
+    assert check_vertical_sequence(group["assembly"]["input"],group["assembly"]["layout"])["valid"]
