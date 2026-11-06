@@ -55,6 +55,7 @@ The policy requires `carton`, `item_padding_mm`, `clearance_mm` and
 `refine_footprints` switches local size refinement versus broader sequence
 search. `placement_score` accepts `bottom_left`, `short_side`, `area` or
 `height_fill` (prefer taller allowed orientations within a layer).
+`portfolio` compares both bottom-left and height-oriented choices per layer.
 No heuristic dominates every kit; preserve protection while comparing them.
 `item_order` accepts `area` or `volume`; `unequal_columns: true` also searches
 adjacent stacks of different widths. Keep the best fully verified result across
@@ -94,6 +95,13 @@ group assembly order/direction and carton insertion order. Bind visuals to the
 frozen result. Dimension specifications are not production dielines; geometric
 padding is not a manufactured sleeve. Hand access and transport qualification
 remain separate from collision-free paths.
+
+`python scripts/build_assembly_plan.py RESULT.json EXPECTED.json --output PLAN.json`
+rechecks the BOM, carton hierarchy, original insertion paths, internal templates,
+rigid copy mappings and part-to-carton containment. It produces a machine-readable
+geometric plan, including workbench poses and carton insertion order. Use this
+as the source for illustrated steps; the JSON alone is not the finished operator
+instruction. Its fingerprints bind parsed result/BOM objects, not raw file bytes.
 
 For local 101/102 cases, read `docs/benchmark-assumptions.md`: preserve accepted
 content revisions and the user-confirmed 106 mm custom clamp frame. Old

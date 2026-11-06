@@ -3,6 +3,32 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Bound geometric assembly plans
+
+`scripts/build_assembly_plan.py RESULT BOM --output PLAN.json` now freshly checks
+the BOM, original insertion sequence, closed-carton hierarchy, external wall
+dimensions and actual part containment in each assigned carton. Internal group
+templates are replayed on the workbench and every final copy must be a common
+rigid transform of that template. Unexplained multi-part groups, cross-carton
+sequences and altered memberships fail. Output includes per-copy unit mapping,
+workbench-to-final transforms and the outer carton insertion order, bound by
+canonical result and expected-BOM fingerprints.
+
+Both retained height-fill candidates pass this new check. Their plans are saved
+at `packaging-results/independent/{101,102}/height-fill-review/assembly-plan.json`.
+Fresh replay took 12.77 s for 101 and 21.86 s for 102 in this run (not cold design
+times). These are machine-readable geometric instructions; illustrated operator
+steps, handling/stability and transport qualification remain unfinished.
+Full suite: 129 tests passed in 18.67 seconds, including rejection of altered
+carton assignments, incorrect exterior dimensions and missing group templates.
+
+`carton.placement_score: "portfolio"` additionally compares bottom-left and
+height-fill alternatives inside the same layer sequence search. Three 102
+grouping experiments produced 22.880880, 24.504480 and 22.927600 L envelopes;
+all were rejected against the 22.087296 L verified incumbent. Broader search
+does not automatically improve a fixed wall-time budget. Evidence is under
+`102/mixed-layer-group-search/`; the equivalent 101 experiment is separate.
+
 ## Height-oriented placement improves 102
 
 `carton.placement_score: "height_fill"` prefers taller permitted orientations

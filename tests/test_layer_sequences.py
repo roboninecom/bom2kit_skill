@@ -1,14 +1,16 @@
 from bom2kit.layer_sequences import search_sequences
 from bom2kit.layered_design import validate_layered
 from bom2kit.models import normalize
+import pytest
 
 
-def test_sequence_search_avoids_a_dense_layer_that_leaves_a_tall_remainder():
+@pytest.mark.parametrize("mode",["bottom_left","portfolio"])
+def test_sequence_search_avoids_a_dense_layer_that_leaves_a_tall_remainder(mode):
     items = [{"id":"large","quantity":1,"dimensions_mm":[12,12,12],"allowed_rotations":"fixed"},
              {"id":"medium","quantity":3,"dimensions_mm":[10,10,5],"allowed_rotations":"fixed"},
              {"id":"small","quantity":4,"dimensions_mm":[8,8,10],"allowed_rotations":"fixed"}]
     units = normalize({"items":items,"container":{"inner_mm":[100]*3}})["units"]
-    result = search_sequences(units,20,20,1,0,1,[5,10,12],time_limit=1,incumbent_height=33)
+    result = search_sequences(units,20,20,1,0,1,[5,10,12],time_limit=1,incumbent_height=33,placement_score=mode)
     assert result["height_mm"] == 26
     layers,poses,z = [],[],0
     for index,packed in enumerate(result["layers"]):

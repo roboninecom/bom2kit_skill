@@ -5,7 +5,7 @@ import math
 from time import perf_counter
 
 from .models import normalize, number, vector
-from .strip_packing import pack_strip
+from .strip_packing import pack_strip, placement_modes
 from .validation import validate
 
 
@@ -145,15 +145,16 @@ def design_layers(request, units, time_limit=5):
                 for height in remaining_height_bands(remaining, increment, heights):
                     if perf_counter()-started >= greedy_deadline:
                         break
-                    packed = pack_strip(remaining,width, height,gap,depth=depth,allow_partial=True,priority_unit=anchor,
-                                        placement_score=placement_score,item_order=item_order)
-                    if not packed["placements"]:
-                        continue
-                    if anchor and not any(p["unit_id"] == anchor for p in packed["placements"]):
-                        continue
-                    used = sum(math.prod(p["dimensions_mm"]) for p in packed["placements"])
-                    score = used / ((width+2*thickness)*(depth+2*thickness)*(packed["usable_mm"][2]+2*thickness))
-                    options.append((score,len(packed["placements"]),packed))
+                    for mode in placement_modes(placement_score):
+                        packed = pack_strip(remaining,width, height,gap,depth=depth,allow_partial=True,priority_unit=anchor,
+                                            placement_score=mode,item_order=item_order)
+                        if not packed["placements"]:
+                            continue
+                        if anchor and not any(p["unit_id"] == anchor for p in packed["placements"]):
+                            continue
+                        used = sum(math.prod(p["dimensions_mm"]) for p in packed["placements"])
+                        score = used / ((width+2*thickness)*(depth+2*thickness)*(packed["usable_mm"][2]+2*thickness))
+                        options.append((score,len(packed["placements"]),packed))
                 if options:
                     break
             if not options:

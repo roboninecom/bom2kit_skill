@@ -13,7 +13,7 @@ from time import perf_counter
 from .models import normalize, number, vector
 from .solver import solve
 from .validation import validate
-from .strip_packing import pack_strip
+from .strip_packing import pack_strip, placement_modes
 
 
 def _fingerprint(value):
@@ -40,7 +40,7 @@ def design_carton(request, time_limit=5):
         raise ValueError("Unsupported packing policy field")
     if policy.get("item_order","area") not in ("area","volume"):
         raise ValueError("Unknown item order")
-    if policy.get("placement_score","bottom_left") not in ("bottom_left","short_side","area","height_fill"):
+    if policy.get("placement_score","bottom_left") not in ("bottom_left","short_side","area","height_fill","portfolio"):
         raise ValueError("Unknown rectangle placement score")
     allowed_item = {"id", "quantity", "dimensions_mm", "allowed_rotations"}
     if not isinstance(request.get("items"), list) or any(
@@ -135,7 +135,7 @@ def design_carton(request, time_limit=5):
         for width in strip_widths:
             if perf_counter() - started >= time_limit * .65:
                 break
-            strip = pack_strip(units, width, height, gap,placement_score=policy.get("placement_score","bottom_left"),item_order=policy.get("item_order","area"))
+            strip = pack_strip(units, width, height, gap,placement_score=placement_modes(policy.get("placement_score","bottom_left"))[0],item_order=policy.get("item_order","area"))
             if strip is None:
                 continue
             problem = problem_for(strip["usable_mm"])

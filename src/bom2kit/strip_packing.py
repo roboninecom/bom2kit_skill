@@ -2,6 +2,11 @@
 import math
 
 
+def placement_modes(score):
+    """Expand the mixed layer policy into concrete placement heuristics."""
+    return ("bottom_left", "height_fill") if score == "portfolio" else (score,)
+
+
 def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, priority_unit=None,
                placement_score="bottom_left", item_order="area"):
     """Place envelope units on the floor, selecting individual orientations.

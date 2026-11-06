@@ -1,7 +1,7 @@
 """Bounded alternative layer sequences for one geometry-derived footprint."""
 import math
 from time import perf_counter
-from .strip_packing import pack_strip
+from .strip_packing import pack_strip, placement_modes
 
 
 def search_sequences(units, width, depth, thickness, gap, increment, heights,
@@ -20,16 +20,17 @@ def search_sequences(units, width, depth, thickness, gap, increment, heights,
             anchor = max(remaining,key=lambda u:volumes[u["unit_id"]])["unit_id"]
             options = {}
             for height in remaining_height_bands(remaining,increment,heights):
-                for priority in (anchor,None):
-                    if perf_counter()-started >= time_limit:
-                        break
-                    packed = pack_strip(remaining,width,height,gap,depth=depth,allow_partial=True,priority_unit=priority,
-                                        placement_score=placement_score,item_order=item_order)
-                    if not packed["placements"]:
-                        continue
-                    used = frozenset(p["unit_id"] for p in packed["placements"])
-                    layer_height = math.ceil((packed["usable_mm"][2]+2*thickness)/increment)*increment
-                    options.setdefault((used,layer_height),packed)
+                for mode in placement_modes(placement_score):
+                    for priority in (anchor,None):
+                        if perf_counter()-started >= time_limit:
+                            break
+                        packed = pack_strip(remaining,width,height,gap,depth=depth,allow_partial=True,priority_unit=priority,
+                                            placement_score=mode,item_order=item_order)
+                        if not packed["placements"]:
+                            continue
+                        used = frozenset(p["unit_id"] for p in packed["placements"])
+                        layer_height = math.ceil((packed["usable_mm"][2]+2*thickness)/increment)*increment
+                        options.setdefault((used,layer_height),packed)
             for (used,layer_height),packed in options.items():
                 explored += 1
                 height = height_so_far+layer_height
