@@ -16,7 +16,8 @@ def test_oblique_source_frame_becomes_valid_rigid_packing(tmp_path):
     source = tmp_path / "mesh.json"
     source.write_text(json.dumps({"units": "mm", "vertices_mm": mesh.vertices.tolist(), "triangles": mesh.faces.tolist()}))
     library = {"units": "mm", "all_meshes_valid_volumes": True, "items": [
-        {"id": "oblique", "quantity": 3, "mesh": {"path": str(source), "sha256": sha256(source.read_bytes()).hexdigest()}}]}
+        {"id": "oblique", "quantity": 3, "contents": {"screw": 37},
+         "mesh": {"path": str(source), "sha256": sha256(source.read_bytes()).hexdigest()}}]}
     policy = {"carton": {"wall_mm": 1.5, "protection_mm": 2}, "item_padding_mm": 1,
               "clearance_mm": .1, "allow_all_rotations": True}
     result = design_mesh_envelopes(library, policy, time_limit=.3)
@@ -25,3 +26,5 @@ def test_oblique_source_frame_becomes_valid_rigid_packing(tmp_path):
     assert result["motion"]["valid"]
     assert len(result["layout"]["placements"]) == 3
     assert result["envelope_design"]["search"]["reference_used"] is False
+    from bom2kit.bom import reconcile_bom
+    assert reconcile_bom({"components": [{"id": "screw", "quantity": 111}]}, result["input"])["complete"]

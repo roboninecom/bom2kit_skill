@@ -50,7 +50,8 @@ def design_mesh_envelopes(library, policy, time_limit=5):
         envelopes.append({"id": item["id"], "quantity": item["quantity"],
                           "dimensions_mm": (size + 2 * padding).tolist(),
                           "allowed_rotations": [list(p) for p in permutations(range(3))]})
-        items.append({"id": item["id"], "quantity": item["quantity"], "mesh": ref})
+        items.append({key: value for key, value in item.items() if key in
+                      {"id", "quantity", "mesh", "contents", "contents_revisions", "revision", "dimension_basis", "packing_state"}})
     preparation = perf_counter() - started
     design = design_carton({"units": "mm", "items": envelopes, "policy": policy["carton"]}, time_limit=time_limit)
     candidate = design["candidate"]

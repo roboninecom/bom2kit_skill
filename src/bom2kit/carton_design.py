@@ -72,11 +72,15 @@ def design_carton(request, time_limit=5):
 
     def accept(problem, layout, method):
         nonlocal best, validation_seconds
+        external = normalize(problem)["external"]
+        volume = math.prod(external)
+        if best is not None and volume >= best["volume_mm3"] - 1e-8:
+            attempts.append({"method": method, "external_mm": list(external), "valid": None,
+                             "status": "not_better_than_verified_incumbent"})
+            return
         tick = perf_counter()
         certificate = validate(problem, layout)
         validation_seconds += perf_counter() - tick
-        external = normalize(problem)["external"]
-        volume = math.prod(external)
         attempts.append({"method": method, "external_mm": list(external), "valid": certificate["valid"]})
         if certificate["valid"] and (best is None or volume < best["volume_mm3"] - 1e-8):
             best = {"input": deepcopy(problem), "layout": deepcopy(layout), "validation": certificate,

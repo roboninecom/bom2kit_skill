@@ -86,6 +86,50 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Complete 102 hardware input and first full search
+
+`prepare_hardware_library.py` reads the extracted source rows and an explicit
+geometry specification. Every nonalternative row must be represented exactly
+once. Small monotype hardware is automatically assigned a conservative regular
+cell grid and a bag envelope; source quantities become packet `contents`, not
+discarded counts. Packet contents and variant identities now survive final mesh
+layout composition. `design_grouped_meshes.py --bom EXPECTED.json` checks expected
+counts before search and again on the selected output.
+
+The 102 specification is under
+`packaging-inputs/independent/102/hardware-specification.json`. It includes the
+confirmed 106 mm clamp frame with retained intrinsic proxy primitives, 2 mm servo
+sleeves, BOM-sized bearings/rods, and explicitly estimated protected electronics,
+power supplies, cables and tools. STS3235/3250 envelope equivalence to the archived
+servo model remains an estimate. No former clamp packing poses are copied.
+
+```powershell
+python scripts/prepare_hardware_library.py packaging-inputs/independent/102/hardware-source-rows.json packaging-inputs/independent/102/hardware-specification.json --output packaging-inputs/independent/102/hardware
+python scripts/combine_part_libraries.py packaging-inputs/independent/102/all-printed.json packaging-inputs/independent/102/hardware/library.json --output packaging-inputs/independent/102/complete-library.json
+python scripts/design_grouped_meshes.py packaging-inputs/independent/102/complete-library.json packaging-inputs/independent/102/printed-baseline-policy.json --bom packaging-inputs/independent/102/expected-complete-bom.json --output packaging-results/independent/102/complete-design --max-pairs 3
+```
+
+The input represents **108 packing units**, covering **335 individually enumerated
+components plus one factory-accessory packet**. Factory screws are counted in the
+BOM fastener rows and are excluded from that extra packet; unlisted horns and
+supplied leads remain retained in its estimated envelope. The expected count
+ledger and full output pass declared BOM reconciliation.
+
+The first full search, before the latest carton-validation scheduling improvement,
+took **302.24 s** and selected **373 x 577 x 207 mm = 44.550747 L**. Original-source
+geometry, internal assembly and external insertion checks pass, but the volume
+is unacceptable. Evidence: `packaging-results/independent/102/complete-first-run/`.
+The full kit replaces the earlier partial-kit experiment; no 19.6144 L complete-kit
+claim is made.
+
+Protected singleton boxes total approximately 10.947 L before carton voids and
+outer protection. The current single-floor constructive layouts waste substantial
+space. The next optimization priority is supported multilayer construction and
+larger geometry-driven clusters, without lowering declared protection. A carton
+experiment that avoids validating non-improving proposals reduced the same
+singleton-envelope design to 36.059814 L; it is only an envelope-stage result,
+not a freshly certified full mesh layout.
+
 ### Complete printed-source inventory
 
 The new `prepare_3mf_library.py` source adapter splits manufacturing objects into

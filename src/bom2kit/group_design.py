@@ -88,7 +88,9 @@ def design_grouped_library(library, portfolio, policy, output, time_limit=5):
         groups["assembly-" + pose["unit_id"]] = [p["unit_id"] for p in group_members]
         for member in group_members:
             placements.append({**member, "transform": (np.asarray(pose["transform"]) @ np.asarray(member["transform"])).tolist()})
-    problem = {**candidate["input"], "items": [{"id": i["id"], "quantity": i["quantity"], "mesh": i["mesh"]} for i in library["items"]]}
+    problem = {**candidate["input"], "items": [{key: value for key,value in i.items() if key in
+               {"id", "quantity", "mesh", "contents", "contents_revisions", "revision", "dimension_basis", "packing_state"}}
+               for i in library["items"]]}
     layout = {"units": "mm", "placements": placements}
     validation = validate_mesh_layout(problem, layout)
     motion = check_vertical_sequence(problem, layout, groups=groups) if validation["valid"] else None

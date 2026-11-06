@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from bom2kit.mesh_groups import discover_pairs
 from bom2kit.group_design import design_grouped_library
 from bom2kit.mesh_envelope_design import design_mesh_envelopes
+from bom2kit.bom import reconcile_bom
 
 
 def main():
@@ -16,6 +17,7 @@ def main():
     parser.add_argument("library", type=Path)
     parser.add_argument("policy", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--bom", type=Path, help="Independent expected SKU counts, checked before and after packing")
     parser.add_argument("--pair-budget", type=float, default=60)
     parser.add_argument("--pair-seconds", type=float, default=8)
     parser.add_argument("--max-pairs", type=int, default=8)
@@ -27,6 +29,9 @@ def main():
         parser.error("--group-configurations must be positive")
     library = json.loads(args.library.read_text(encoding="utf-8-sig"))
     policy = json.loads(args.policy.read_text(encoding="utf-8-sig"))
+    expected_bom = json.loads(args.bom.read_text(encoding="utf-8-sig")) if args.bom else None
+    if expected_bom is not None and not reconcile_bom(expected_bom, library)["complete"]:
+        raise ValueError("Source library does not cover the expected BOM")
     started = perf_counter()
     args.output.mkdir(parents=True, exist_ok=True)
     status = args.output / "run.json"
@@ -66,9 +71,16 @@ def main():
                "scope": library.get("scope", "Declared library only")}
     if selected:
         summary["external_mm"] = selected[2]
+        if expected_bom is not None:
+            selected_result = json.loads((args.output / selected[1]).read_text())
+            coverage = reconcile_bom(expected_bom, selected_result["input"])
+            (args.output / "coverage.json").write_text(json.dumps(coverage, indent=2))
+            summary["declared_bom_complete"] = coverage["complete"]
+            if not coverage["complete"]:
+                summary["status"] = "bom_validation_failed"
     status.write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary))
-    return 0 if selected else 1
+    return 0 if summary["status"] == "validated_geometry_candidate" else 1
 
 
 if __name__ == "__main__":
