@@ -21,6 +21,12 @@ discovery means this experiment is not an end-to-end cold timing measurement.
 The shared skill documents this mode alongside other tested heuristics. Full
 regression suite: 127 tests passed in 15.55 seconds.
 
+The same height-oriented placement experiment on 101 also improved its verified
+candidate to **213 x 254 x 380 mm = 20.558760 L**, preserving all 79 packing
+units and complete declared BOM coverage. Geometry and assembly checks pass;
+it remains about **5.85% above** the reference. Evidence is under
+`101/height-fill-design/`, with exact-coordinate review under `height-fill-review/`.
+
 ## Orientation coverage under short search budgets
 
 The expanded 102 search revealed that several expensive pairs explored only
