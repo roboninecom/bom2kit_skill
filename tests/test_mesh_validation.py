@@ -40,7 +40,7 @@ def test_true_cavity_accepted_but_enclosed_solid_rejected(tmp_path, monkeypatch)
     assert not result["valid"]
     # Some FCL convex representations already detect enclosure. Verify that the
     # independent parity safeguard also detects it when surfaces report clear.
-    monkeypatch.setattr(trimesh.collision.CollisionManager, "in_collision_single", lambda *args, **kwargs: False)
+    monkeypatch.setattr(trimesh.collision.CollisionManager, "in_collision_other", lambda *args, **kwargs: False)
     result = validate_mesh_layout(problem, layout)
     assert any("Enclosed solid collision" in error for error in result["errors"])
 
@@ -51,6 +51,21 @@ def test_surface_overlap_rejected(tmp_path):
     result = validate_mesh_layout(problem, layout)
     assert not result["valid"]
     assert any("Surface collision" in e for e in result["errors"])
+
+
+def test_aabb_shortcut_preserves_diagonal_clearance(tmp_path):
+    problem, layout = problem_and_layout(tmp_path, [trimesh.creation.box([2, 2, 2])] * 2)
+    layout["placements"][1]["transform"][0][3] += 4
+    layout["placements"][1]["transform"][1][3] += 4
+    problem["clearance_mm"] = 2.5
+    result = validate_mesh_layout(problem, layout)
+    assert result["valid"]
+    assert result["pair_checks"]["aabb_separated_pairs"] == 1
+    problem["clearance_mm"] = 3
+    result = validate_mesh_layout(problem, layout)
+    assert not result["valid"]
+    assert result["pair_checks"]["narrow_phase_pairs"] == 1
+    assert any("Pair clearance" in error for error in result["errors"])
 
 
 def test_source_units_rigidity_quantities_and_containment(tmp_path):

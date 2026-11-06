@@ -11,7 +11,7 @@ pytest.importorskip("rtree")
 from bom2kit.mesh_search import solve_mesh_kit
 
 
-def test_beam_search_complete_certificate_and_checkpoint(tmp_path):
+def test_beam_search_complete_certificate_and_checkpoint(tmp_path, monkeypatch):
     mesh = trimesh.creation.box([2, 2, 2])
     source = tmp_path / "mesh.json"
     source.write_text(json.dumps({"units": "mm", "vertices_mm": mesh.vertices.tolist(),
@@ -26,11 +26,14 @@ def test_beam_search_complete_certificate_and_checkpoint(tmp_path):
     assert len(result["placements"]) == 3
     assert (tmp_path / "result" / "layout.json").is_file()
     assert not result["search"]["optimality_proven"]
+    def forbidden_voxelization(*args, **kwargs):
+        raise AssertionError("Complete recipe replay must not prepare voxel geometry")
+    monkeypatch.setattr(trimesh.Trimesh, "voxelized", forbidden_voxelization)
     replay = solve_mesh_kit(problem, time_limit=15, beam_width=2, pitch_mm=1,
                             seed_placements=result["placements"])
     assert replay["mode"] == "validated_seed_replay"
     assert replay["validation"]["valid"]
-    bad_seed = json.loads(json.dumps(result["placements"][:1]))
+    bad_seed = json.loads(json.dumps(result["placements"]))
     bad_seed[0]["transform"][0][3] = -100
     with pytest.raises(ValueError, match="Invalid seed"):
         solve_mesh_kit(problem, time_limit=15, pitch_mm=1, seed_placements=bad_seed)
@@ -51,3 +54,26 @@ def test_proxy_overlap_budget_cannot_accept_solid_collisions(tmp_path):
     assert result["search"]["voxel_overlap_cells"] == 100
     with pytest.raises(ValueError, match="voxel_overlap_cells"):
         solve_mesh_kit(problem, voxel_overlap_cells=True)
+
+
+def test_partial_recipe_skips_orientations_for_fully_seeded_type(tmp_path, monkeypatch):
+    mesh = trimesh.creation.box([2, 2, 2])
+    source = tmp_path / "mesh.json"
+    source.write_text(json.dumps({"units": "mm", "vertices_mm": mesh.vertices.tolist(),
+                                  "triangles": mesh.faces.tolist()}), encoding="utf8")
+    reference = {"path": str(source), "sha256": sha256(source.read_bytes()).hexdigest()}
+    problem = {"units": "mm", "container": {"inner_mm": [8, 3, 3]}, "clearance_mm": .5,
+               "items": [{"id": name, "quantity": 1, "mesh": reference} for name in ["seeded", "new"]]}
+    seed = [{"item_id": "seeded", "unit_id": "seeded#1",
+             "transform": [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [0, 0, 0, 1]]}]
+    voxelize = trimesh.Trimesh.voxelized
+    calls = []
+
+    def counted(mesh, *args, **kwargs):
+        calls.append(1)
+        return voxelize(mesh, *args, **kwargs)
+
+    monkeypatch.setattr(trimesh.Trimesh, "voxelized", counted)
+    result = solve_mesh_kit(problem, seed_placements=seed, pitch_mm=1, time_limit=15)
+    assert result["validation"]["valid"]
+    assert len(calls) == 2  # One unseeded-type grid and one transformed seed grid.

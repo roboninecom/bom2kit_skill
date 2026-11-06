@@ -24,6 +24,7 @@ def validate_mesh_layout(problem, layout):
     from .models import vector
 
     errors, placed, expected, sources = [], {}, {}, {}
+    pair_checks = {"aabb_separated_pairs": 0, "narrow_phase_pairs": 0}
     limitations = [
         "Static triangulated geometry only; no insertion-path or support validation.",
         "No protection performance, assembly identity, or physical trial validation.",
@@ -39,6 +40,7 @@ def validate_mesh_layout(problem, layout):
                            "triangle_surface_collision", "enclosed_solid_collision", "pair_clearance"],
                 "expected_units": len(expected), "placed_units": len(placed),
                 "sources": sources, "limitations": limitations,
+                "pair_checks": pair_checks,
                 "production_validated": False}
 
     if not isinstance(problem, dict) or not isinstance(layout, dict):
@@ -85,7 +87,8 @@ def validate_mesh_layout(problem, layout):
         try:
             ref = item["mesh"]
             path = Path(ref["path"])
-            actual_hash = sha256(path.read_bytes()).hexdigest()
+            source_bytes = path.read_bytes()
+            actual_hash = sha256(source_bytes).hexdigest()
             if actual_hash != ref["sha256"]:
                 raise ValueError("Source SHA256 mismatch")
             sources[iid] = {"path": str(path.resolve()), "sha256": actual_hash}
@@ -93,10 +96,12 @@ def validate_mesh_layout(problem, layout):
                 from .mesh_geometry import load_instance_mesh
 
                 geometry = load_instance_mesh(path, ref["instance_id"], ref.get("frame", "object"))
+                if sha256(path.read_bytes()).hexdigest() != actual_hash:
+                    raise ValueError("Source changed while loading 3MF")
                 if geometry["instance"]["classification"] == "excluded_nonpart":
                     raise ValueError("Explicit nonpart/support mesh cannot represent a BOM item")
             else:
-                geometry = json.loads(path.read_text(encoding="utf-8-sig"))
+                geometry = json.loads(source_bytes.decode("utf-8-sig"))
                 if geometry.get("units") != "mm":
                     raise ValueError("Mesh JSON must explicitly use mm")
             vertices = np.asarray(geometry["vertices_mm"], dtype=float)
@@ -159,7 +164,17 @@ def validate_mesh_layout(problem, layout):
         entries = list(placed.items())
         for index, (a_id, a) in enumerate(entries):
             for b_id, b in entries[index + 1:]:
-                if managers[a_id].in_collision_single(b):
+                # Distance between AABBs is a lower bound on surface distance.
+                # Strictly separated boxes cannot contain intersecting or enclosed
+                # solids. This skips expensive BVH queries without approximating fit.
+                separation = np.maximum(0, np.maximum(a.bounds[0] - b.bounds[1],
+                                                       b.bounds[0] - a.bounds[1]))
+                lower_bound = float(np.linalg.norm(separation))
+                if lower_bound > 1e-8 and lower_bound + 1e-8 >= clearance:
+                    pair_checks["aabb_separated_pairs"] += 1
+                    continue
+                pair_checks["narrow_phase_pairs"] += 1
+                if managers[a_id].in_collision_other(managers[b_id]):
                     errors.append(f"Surface collision/contact or convex overlap: {a_id}, {b_id}")
                     continue
                 # This catches nested solids missed by surface-intersection tests,
@@ -167,7 +182,7 @@ def validate_mesh_layout(problem, layout):
                 if a.contains(representatives[b_id]).any() or b.contains(representatives[a_id]).any():
                     errors.append(f"Enclosed solid collision: {a_id}, {b_id}")
                     continue
-                distance = managers[a_id].min_distance_single(b)
+                distance = managers[a_id].min_distance_other(managers[b_id])
                 if distance + 1e-8 < clearance:
                     errors.append(f"Pair clearance violated: {a_id}, {b_id}")
     except (ImportError, ValueError, RuntimeError) as error:

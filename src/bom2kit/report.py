@@ -35,7 +35,7 @@ def comparison(problem, layout):
         'volume_change_percent': 100 * (volume / reference_volume - 1) if reference_volume else None,
         'no_worse_nominal_carton_volume': no_worse,
         'full_kit_acceptance': False,
-        'full_kit_acceptance_reason': 'Part-level fit, dimensional tolerances, packaging strength and physical execution require separate evidence',
+        'full_kit_acceptance_reason': 'Complete contents and part-level fit require separate evidence; physical shipping qualification is a distinct step',
         'input_sha256': fingerprint(problem), 'layout_sha256': fingerprint(layout),
     }
 

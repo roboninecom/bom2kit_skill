@@ -64,6 +64,26 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
     if isinstance(clearance, bool) or not isinstance(clearance, (int, float)) or not math.isfinite(clearance) or clearance < 0:
         raise ValueError("Invalid clearance")
     shape = np.floor(usable / pitch_mm).astype(int) + 1
+    quantities = [item.get("quantity", 1) for item in problem.get("items", [])]
+    if (seed_placements and quantities
+            and all(isinstance(q, int) and not isinstance(q, bool) and q > 0 for q in quantities)
+            and len(seed_placements) == sum(quantities)):
+        # Complete reusable recipes require one fresh certificate, not a new
+        # voxel search. The validator binds every mesh to its supplied hash.
+        certificate = validate_mesh_layout(problem, {"units": "mm", "placements": seed_placements})
+        if not certificate["valid"]:
+            raise ValueError(f"Invalid seed placements: {certificate['errors']}")
+        result = {"units": "mm", "placements": seed_placements,
+                  "status": "validated_static_layout", "mode": "validated_seed_replay",
+                  "validation": certificate,
+                  "search": {"history": [], "elapsed_seconds": perf_counter() - started,
+                             "optimality_proven": False}}
+        if checkpoint_dir:
+            directory = Path(checkpoint_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "problem.json").write_text(json.dumps(problem, indent=2), encoding="utf8")
+            (directory / "layout.json").write_text(json.dumps(result, indent=2), encoding="utf8")
+        return result
     if np.prod(shape) > 20_000_000:
         raise ValueError("Voxel cavity too large; increase pitch")
     rotations = []
@@ -77,6 +97,7 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
             if np.linalg.det(rotation) > 0:
                 rotations.append(rotation)
     data, expected, originals = {}, {}, {}
+    seeded_ids = {pose.get("unit_id") for pose in (seed_placements or []) if isinstance(pose, dict)}
     for item in problem["items"]:
         iid, quantity = item["id"], item.get("quantity", 1)
         if not isinstance(iid, str) or not iid or iid in data:
@@ -95,6 +116,14 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
         if not mesh.is_volume or np.any(mesh.area_faces <= 0):
             raise ValueError(f"Source must be a nondegenerate watertight positive mesh: {iid}")
         originals[iid] = mesh.copy()
+        item_units = {f"{iid}#{index + 1}": iid for index in range(quantity)}
+        if set(item_units).issubset(seeded_ids):
+            # A partial recipe may already contain every unit of this type.
+            # Keep source geometry for validation and seed occupancy, but no
+            # orientation candidates are needed for an already placed type.
+            data[iid] = []
+            expected.update(item_units)
+            continue
         align = np.eye(4)
         hint = np.asarray(item.get("orientation_hint", np.eye(3)), dtype=float)
         if (hint.shape != (3, 3) or not np.isfinite(hint).all()
@@ -279,8 +308,11 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
                     if len(chosen) >= positions_per_rotation:
                         break
                 for j in chosen:
-                    candidates.append((float(scores[j]), parent_index, oi, shifts[j], bounds[j]))
-        candidates.sort(key=lambda candidate: candidate[0])
+                    overlap = float(overlaps[j]) if voxel_overlap_cells and state.placements else 0
+                    candidates.append((float(scores[j]), parent_index, oi, shifts[j], bounds[j], overlap))
+        # Cheap clean proposals come first. Otherwise volume ranking can spend
+        # the entire time budget on thousands of physically colliding proxies.
+        candidates.sort(key=lambda candidate: (candidate[5], candidate[0]))
         managers, representatives = {}, {}
         next_beam, seen_grids, parent_counts = [], set(), {}
         deferred = []
@@ -288,11 +320,11 @@ def solve_mesh_kit(problem, time_limit=600, beam_width=16, pitch_mm=2,
         # other parents. A second pass fills any otherwise unused beam slots.
         passes = [candidates, deferred]
         for pass_index, sequence in enumerate(passes):
-            for score, parent_index, oi, shift, bounds in sequence:
+            for score, parent_index, oi, shift, bounds, overlap in sequence:
                 if len(next_beam) >= beam_width or perf_counter() - started >= time_limit:
                     break
                 if pass_index == 0 and parent_counts.get(parent_index, 0) >= max(2, beam_width // 4):
-                    deferred.append((score, parent_index, oi, shift, bounds))
+                    deferred.append((score, parent_index, oi, shift, bounds, overlap))
                     continue
                 parent = beam[parent_index]
                 orientation = data[iid][oi]
