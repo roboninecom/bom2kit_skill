@@ -104,10 +104,34 @@ worse than the 21.156228 L singleton baseline. All 44 original parts and group
 insertion paths passed geometry checks. This is evidence that local savings
 alone are the wrong selection objective; it is not packing improvement.
 
-Next optimization work must jointly evaluate group alternatives and outer
-carton shape, improve constructive multilayer candidates, and keep the best
-complete layout. Current grouping is greedy and does not satisfy that requirement.
-The full shipping BOM, physical packaging design and comparison remain open.
+The subsequent carton update adds maximal-free-rectangle strip construction:
+each part can choose its own orientation within a geometry-derived height band,
+and smaller parts fill remaining floor rectangles. It needs no floating parts
+or unmodeled support material. Existing independent validation still checks every
+retained candidate.
+
+On the same 44-piece inputs and unchanged protection policy, this reduced the
+singleton baseline to **320 x 389 x 160 mm = 19.9168 L**, and the two-pair
+candidate to **298 x 362 x 175 mm = 18.8783 L**. Both original-source geometry
+and insertion checks pass. These are partial-kit measurements, not acceptance
+against a full engineer kit.
+
+The runner now evaluates all proposed alternatives together and individual
+alternatives separately (`--group-configurations`, default 4). It selects by
+validated whole-carton volume, retaining the baseline if no grouping improves it.
+This is a bounded joint comparison, not an exhaustive partition search. Genuine
+multilayer construction, larger clusters, the full shipping BOM, manufactured
+packaging and the final comparison remain open.
+
+The three individually evaluated alternatives produced 18.5952, **16.9104**, and
+18.62656 L respectively. The best uses the automatically discovered mixed
+left/right arm pair twice, and a **271 x 390 x 160 mm** outer box. All 44 original
+part poses, internal pair assembly and external group insertion pass. Compared
+with the earlier 21.156228 L independent singleton baseline, this is about 20.1%
+less volume for the same printed-only scope. It is not a full-kit comparison.
+Reproducible evidence is under `packaging-results/independent/102/strip-comparison/`;
+the best evaluated candidate is `alternative-1/result.json`. Pair proposals were
+reused from the independent `pairs-axes` search, never from Alan's reference.
 
 1. Prepare complete neutral 101/102 input libraries, including figures, purchased
    items, BOM mapping and protection. Robot 102 source topology is resolved.

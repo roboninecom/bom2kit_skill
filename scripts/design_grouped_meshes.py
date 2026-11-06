@@ -20,7 +20,11 @@ def main():
     parser.add_argument("--pair-seconds", type=float, default=8)
     parser.add_argument("--max-pairs", type=int, default=8)
     parser.add_argument("--carton-budget", type=float, default=10)
+    parser.add_argument("--group-configurations", type=int, default=4,
+                        help="Maximum complete carton evaluations: all alternatives, then individual alternatives")
     args = parser.parse_args()
+    if args.group_configurations < 1:
+        parser.error("--group-configurations must be positive")
     library = json.loads(args.library.read_text(encoding="utf-8-sig"))
     policy = json.loads(args.policy.read_text(encoding="utf-8-sig"))
     started = perf_counter()
@@ -32,18 +36,32 @@ def main():
     portfolio = discover_pairs(library, args.output / "pair-candidates",
                                clearance_mm=max(policy["clearance_mm"], 2 * policy["item_padding_mm"]),
                                time_limit=args.pair_budget, pair_seconds=args.pair_seconds, max_pairs=args.max_pairs)
-    result = design_grouped_library(library, portfolio, policy, args.output / "packing", time_limit=args.carton_budget)
     choices = []
     if baseline["status"] == "validated_mesh_envelope_baseline":
         box = baseline["envelope_design"]["candidate"]
         choices.append((box["volume_mm3"], "baseline.json", box["external_mm"]))
-    if result["status"] == "validated_grouped_geometry":
-        box = result["envelope_candidate"]["envelope_design"]["candidate"]
-        choices.append((box["volume_mm3"], "packing/result.json", box["external_mm"]))
+    configurations = [portfolio["alternatives"]]
+    if len(portfolio["alternatives"]) > 1:
+        configurations += [[alternative] for alternative in portfolio["alternatives"]]
+    evaluations = []
+    for index, alternatives in enumerate(configurations[:args.group_configurations]):
+        if not alternatives:
+            continue
+        directory = f"packing-{index}"
+        result = design_grouped_library(library, {**portfolio, "alternatives": alternatives}, policy,
+                                       args.output / directory, time_limit=args.carton_budget)
+        record = {"directory": directory, "status": result["status"],
+                  "members": [alternative["members"] for alternative in alternatives]}
+        if result["status"] == "validated_grouped_geometry":
+            box = result["envelope_candidate"]["envelope_design"]["candidate"]
+            choices.append((box["volume_mm3"], directory + "/result.json", box["external_mm"]))
+            record["external_volume_l"] = box["volume_mm3"] / 1e6
+        evaluations.append(record)
     selected = min(choices) if choices else None
     summary = {"status": "validated_geometry_candidate" if selected else "no_verified_candidate",
                "selected_result": selected[1] if selected else None,
                "pair_alternatives": len(portfolio["alternatives"]),
+               "group_evaluations": evaluations,
                "total_seconds": perf_counter() - started,
                "scope": library.get("scope", "Declared library only")}
     if selected:

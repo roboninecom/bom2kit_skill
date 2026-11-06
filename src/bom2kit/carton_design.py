@@ -13,6 +13,7 @@ from time import perf_counter
 from .models import normalize, number, vector
 from .solver import solve
 from .validation import validate
+from .strip_packing import pack_strip
 
 
 def _fingerprint(value):
@@ -110,6 +111,25 @@ def design_carton(request, time_limit=5):
             problem = problem_for([max_x, y + row_depth, height])
             if problem:
                 accept(problem, {"placements": poses, "status": "feasible"}, "generated_shelves")
+    # Fill two-dimensional voids instead of reserving an entire row per depth.
+    # Heights and widths are generated from geometry, with per-item rotations.
+    heights = sorted({s[2] for u in units for _, s in u["orientations"]})
+    heights = [h for h in heights if all(any(s[2] <= h + 1e-8 for _, s in u["orientations"]) for u in units)]
+    if len(heights) > 12:
+        heights = [heights[round(i*(len(heights)-1)/11)] for i in range(12)]
+    strip_widths = sorted({side*f for f in (.75,1,1.25,1.5,2)} | {max(s[0] for u in units for _,s in u["orientations"])})
+    for height in heights:
+        for width in strip_widths:
+            if perf_counter() - started >= time_limit * .65:
+                break
+            strip = pack_strip(units, width, height, gap)
+            if strip is None:
+                continue
+            problem = problem_for(strip["usable_mm"])
+            if problem:
+                for pose in strip["placements"]:
+                    pose["position_mm"] = [v + protection[k] for k,v in enumerate(pose["position_mm"])]
+                accept(problem, {"placements": strip["placements"], "status": "feasible"}, "generated_maximal_rectangles")
     # Search a compact dimension lattice, including stacked configurations.
     # Candidate feasibility is not monotone for this bounded heuristic, so do
     # not treat a failed search as an infeasibility proof or binary-search bound.
