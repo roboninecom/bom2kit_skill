@@ -43,6 +43,10 @@ def parser():
     optimize.add_argument("input", type=Path)
     optimize.add_argument("--output", type=Path, required=True)
     optimize.add_argument("--time-limit", type=_positive_seconds, default=5.0)
+    design = commands.add_parser("design-envelopes", help="Generate outer carton dimensions without a reference (protected envelopes only)")
+    design.add_argument("input", type=Path)
+    design.add_argument("--output", type=Path, required=True)
+    design.add_argument("--time-limit", type=_positive_seconds, default=5.0)
     validate = commands.add_parser("validate", help="Independently check a layout against its input")
     validate.add_argument("input", type=Path)
     validate.add_argument("layout", type=Path)
@@ -103,6 +107,21 @@ def main(argv=None):
         from .validation import validate
 
         problem = _read(args.input)
+        if args.command == "design-envelopes":
+            from .carton_design import design_carton
+
+            result = design_carton(problem, time_limit=args.time_limit)
+            _write(args.output / "design.json", result)
+            _write(args.output / "request.json", problem)
+            candidate = result["candidate"]
+            # Always replace status, including failures, so earlier certificates
+            # cannot be mistaken for a result of the current request.
+            for name in ("input", "layout", "validation"):
+                _write(args.output / (name + ".json"), candidate[name] if candidate else
+                       {"valid": False, "status": result["status"]})
+            print(json.dumps({"status": result["status"], "output": str(args.output.resolve()),
+                              "external_mm": candidate["external_mm"] if candidate else None}))
+            return 0 if candidate else 1
         if args.command == "reconcile":
             from .bom import reconcile_bom
 

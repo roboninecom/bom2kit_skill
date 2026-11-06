@@ -4,6 +4,8 @@
 The supplied 101/102 layouts adapt prepared recipes and Alan's carton targets;
 they do not demonstrate design from scratch. See the
 [implementation audit and proposed replacement pipeline](docs/from-scratch-design-review.md).
+The [independent implementation progress](docs/independent-design-progress.md)
+documents the new reference-free carton stage and remaining work.
 
 A local Python engine and shared Codex / Claude Code skill for reproducible packing plans. The engine searches rigid rectangular packing envelopes, independently checks layouts, and renders instructions from their coordinates. Optional STEP inspection supplies geometry evidence.
 
