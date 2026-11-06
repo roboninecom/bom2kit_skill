@@ -3,6 +3,36 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Latest 101 result and actual cavity search
+
+The final mixed-layer grouping experiment improved 101 to
+**254 x 254 x 311 mm = 20.064476 L**, still **3.30% above** its 19.423040 L
+reference. Complete declared BOM, original geometry, group assembly, carton
+hierarchy and a fresh bound assembly plan pass. Evidence:
+`101/mixed-layer-group-search/2/result.json` and `101/mixed-layer-best-review/`.
+The result uses three inner cartons. The current 102 incumbent is 22.087296 L.
+
+Allocating 90% instead of 50% of the same carton budget to hierarchical search
+did not improve either tested grouping. The default allocation was restored.
+Those runs are under `{101,102}/hierarchy-budget-design/`; they are not new
+incumbents and the 101 run used the preceding configuration 0 grouping.
+
+`bom2kit.cavity_groups` now uses three-dimensional occupancy prefix sums to
+find empty rectangular windows in actual voxel voids. It proposes proper rigid
+poses without enlarging the host bounds, then requires exact original-mesh
+clearance and workbench assembly checks. Initial 102 discovery retained twelve
+pairs in 24.73 seconds (`102/voxel-cavity-search/`). These are local alternatives,
+not a complete-kit volume improvement.
+
+The same method can extend independently discovered compounds, using original
+source quantity limits before proposing a new member and flattening accepted
+groups back to original part poses afterward. `--cavity-budget` enables both
+individual-host and compound-host discovery in the clean runner. Budgets remain
+soft and per stage; the global run time must be measured separately. The
+synthetic tests check actual empty windows, exact source/assembly certification
+and rejection of a reused unavailable source part. Full suite: 131 tests passed
+in 16.09 seconds. A fresh CLI smoke run also exercised the optional stage.
+
 ## Bound geometric assembly plans
 
 `scripts/build_assembly_plan.py RESULT BOM --output PLAN.json` now freshly checks

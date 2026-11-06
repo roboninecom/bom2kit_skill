@@ -2,6 +2,7 @@
 import argparse
 from hashlib import sha256
 import json
+import math
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -26,6 +27,8 @@ def main():
     parser.add_argument("--max-pairs", type=int, default=8)
     parser.add_argument("--cavity-proposals", action="store_true",
                         help="Experimental dense-part/hollow-part proposal queue in initial pair search")
+    parser.add_argument("--cavity-budget", type=float, default=0,
+                        help="Optional additional voxel-void discovery budget in seconds")
     parser.add_argument("--nesting-rounds", type=int, default=0,
                         help="Optional group/part or group/group extension rounds, each using the pair budget")
     parser.add_argument("--carton-budget", type=float, default=10)
@@ -34,6 +37,8 @@ def main():
     args = parser.parse_args()
     if args.group_configurations < 1 or args.nesting_rounds < 0:
         parser.error("--group-configurations must be positive and --nesting-rounds nonnegative")
+    if not math.isfinite(args.cavity_budget) or args.cavity_budget < 0:
+        parser.error("--cavity-budget must be finite and nonnegative")
     input_files, parsed = {}, {}
     for name,path in (("library",args.library),("policy",args.policy),("bom",args.bom)):
         if path:
@@ -58,6 +63,14 @@ def main():
                                time_limit=args.pair_budget, pair_seconds=args.pair_seconds, max_pairs=args.max_pairs,
                                cavity_proposals=args.cavity_proposals)
     stage_timings.append({"stage":"pair_discovery","seconds":perf_counter()-stage_started})
+    if args.cavity_budget:
+        from bom2kit.cavity_groups import discover_cavities
+        stage_started = perf_counter()
+        cavities = discover_cavities(library,args.output/"cavity-candidates",
+                                     clearance_mm=max(policy["clearance_mm"],2*policy["item_padding_mm"]),
+                                     time_limit=args.cavity_budget)
+        portfolio["alternatives"].extend(cavities["alternatives"])
+        stage_timings.append({"stage":"cavity_discovery","seconds":perf_counter()-stage_started})
     for round_index in range(args.nesting_rounds):
         stage_started = perf_counter()
         extensions = extend_groups(library,portfolio,args.output/f"nested-{round_index}",
@@ -66,6 +79,12 @@ def main():
         if not extensions["alternatives"]:
             break
         portfolio = {**portfolio,"alternatives":portfolio["alternatives"]+extensions["alternatives"]}
+    if args.cavity_budget and portfolio["alternatives"]:
+        stage_started = perf_counter()
+        extensions = extend_groups(library,portfolio,args.output/"nested-cavities",
+                                   time_limit=args.cavity_budget,max_pairs=args.max_pairs,cavities=True)
+        portfolio["alternatives"].extend(extensions["alternatives"])
+        stage_timings.append({"stage":"cavity_extension","seconds":perf_counter()-stage_started})
     choices = []
     if baseline["status"] == "validated_mesh_envelope_baseline":
         box = baseline["envelope_design"]["candidate"]

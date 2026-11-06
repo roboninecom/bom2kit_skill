@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 
 
-def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max_pairs=8):
+def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max_pairs=8, cavities=False):
     """Search group/part and group/group nesting without supplied carton targets.
 
     Existing groups are virtual rigid meshes only during proposal generation.
@@ -56,9 +56,15 @@ def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max
                       "mesh":{"path":str(path),"sha256":sha256(path.read_bytes()).hexdigest()}})
         expansions[iid] = alternative["layout"]["placements"]
     virtual = {"units":"mm","all_meshes_valid_volumes":True,"items":items}
-    candidates = discover_pairs(virtual,output/"virtual-pairs",portfolio["clearance_mm"],
-                                time_limit=time_limit,pair_seconds=pair_seconds,max_pairs=max_pairs,
-                                required_item_ids=set(expansions),source_quantities=quantities)
+    if cavities:
+        from .cavity_groups import discover_cavities
+        candidates = discover_cavities(virtual,output/"virtual-cavities",portfolio["clearance_mm"],
+                                      time_limit=time_limit,max_groups=max_pairs,host_item_ids=set(expansions),
+                                      dense_item_ids=set(sources),source_quantities=quantities)
+    else:
+        candidates = discover_pairs(virtual,output/"virtual-pairs",portfolio["clearance_mm"],
+                                    time_limit=time_limit,pair_seconds=pair_seconds,max_pairs=max_pairs,
+                                    required_item_ids=set(expansions),source_quantities=quantities)
     alternatives, attempts = [], []
     for candidate in candidates["alternatives"]:
         counts, poses = Counter(), []

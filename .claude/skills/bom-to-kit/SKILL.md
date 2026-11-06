@@ -75,6 +75,13 @@ certificate replay is not cold design.
 Stage times include their checks and exclude source import; they are not a
 disjoint preparation/search/validation breakdown.
 
+Optional `--cavity-budget 120` adds actual voxel-void discovery for dense parts
+inside hollow parts, followed by a cavity-extension round in discovered groups.
+The budget applies to each of these two stages. Original source quantities,
+triangle clearance and internal assembly are rechecked after flattening groups.
+Voxel emptiness alone never certifies a fit. This differs from the older
+`--cavity-proposals` bounds/occupancy ranking experiment.
+
 ## Validate, illustrate and compare
 
 Require expected-BOM reconciliation, original triangle validation, internal
