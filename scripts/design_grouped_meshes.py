@@ -23,6 +23,8 @@ def main():
     parser.add_argument("--pair-budget", type=float, default=60)
     parser.add_argument("--pair-seconds", type=float, default=8)
     parser.add_argument("--max-pairs", type=int, default=8)
+    parser.add_argument("--cavity-proposals", action="store_true",
+                        help="Experimental dense-part/hollow-part proposal queue in initial pair search")
     parser.add_argument("--nesting-rounds", type=int, default=0,
                         help="Optional group/part or group/group extension rounds, each using the pair budget")
     parser.add_argument("--carton-budget", type=float, default=10)
@@ -44,7 +46,8 @@ def main():
     (args.output / "baseline.json").write_text(json.dumps(baseline, allow_nan=False))
     portfolio = discover_pairs(library, args.output / "pair-candidates",
                                clearance_mm=max(policy["clearance_mm"], 2 * policy["item_padding_mm"]),
-                               time_limit=args.pair_budget, pair_seconds=args.pair_seconds, max_pairs=args.max_pairs)
+                               time_limit=args.pair_budget, pair_seconds=args.pair_seconds, max_pairs=args.max_pairs,
+                               cavity_proposals=args.cavity_proposals)
     for round_index in range(args.nesting_rounds):
         extensions = extend_groups(library,portfolio,args.output/f"nested-{round_index}",
                                    time_limit=args.pair_budget,pair_seconds=args.pair_seconds,max_pairs=args.max_pairs)

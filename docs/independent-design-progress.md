@@ -48,6 +48,14 @@ The 101 incumbent remains 20.671200 L versus 19.423040 L. Neither kit passes
 the requested comparison gate. Separate aggregate preparation/search/validation
 timing and faster end-to-end execution remain necessary.
 
+The first cavity-priority experiment (`cavity-diverse-pairs/`) finished in
+84.71 seconds. All five added dense/hollow nominations failed to save envelope
+volume; the five accepted alternatives were familiar same-part pairs. Therefore
+this queue is experimental and opt-in (`--cavity-proposals`), preserving the
+broader default proposal portfolio. Outer bounds alone do not describe useful
+interior voids; cavity size/shape screening needs improvement before allocating
+half of a short search budget to this strategy.
+
 ## Implemented foundation
 
 `python -m bom2kit design-envelopes request.json --output OUTPUT --time-limit 5`

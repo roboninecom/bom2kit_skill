@@ -99,7 +99,7 @@ def check_workbench_axes(problem, layout):
 
 
 def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5, max_pairs=8,
-                   required_item_ids=None, source_quantities=None):
+                   required_item_ids=None, source_quantities=None, cavity_proposals=False):
     """Generate a bounded portfolio balancing empty volume and shape diversity.
 
     Returns alternatives, not an asserted best complete-kit grouping. Original
@@ -174,7 +174,8 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
     ranked = rank_pair_proposals(proposals, max_pairs, source_members)
     shapes = [{"box_volume": e["box_volume"], "volume": float(e["mesh"].volume),
                "extents": e["mesh"].extents.tolist()} for e in prepared]
-    ranked = diversify_cavity_proposals(ranked, proposals, shapes, max_pairs, clearance_mm)
+    if cavity_proposals:
+        ranked = diversify_cavity_proposals(ranked, proposals, shapes, max_pairs, clearance_mm)
     for _, i, j in ranked:
         remaining = time_limit - (perf_counter() - started)
         if remaining <= 0:
@@ -223,6 +224,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
     result = {"scope": "Independent pair alternatives, not a complete-kit result",
               "source_library_sha256": sha256(json.dumps(library, sort_keys=True).encode()).hexdigest(),
               "clearance_mm": clearance_mm, "alternatives": alternatives, "attempts": attempts,
+              "cavity_proposals": cavity_proposals,
               "elapsed_seconds": perf_counter() - started, "time_budget_seconds": time_limit,
               "deadline_scope": "Soft search deadline; geometry and motion verification may overrun"}
     write(output / "pairs.json", result)
