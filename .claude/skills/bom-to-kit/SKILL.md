@@ -71,6 +71,11 @@ identifies the selected result. `not_improved` candidates lack original-pose
 certification and are not accepted plans. Budgets are soft and per stage.
 Report total runtime separately from preparation, search and validation;
 certificate replay is not cold design.
+The runner reuses only its own verified in-run footprints across grouping
+evaluations, with source-library and hierarchy checks. It generates new poses.
+Layered search also tries local repacking of its generated single-column layer
+memberships and nearby manufacturing dimensions; complete proposals require
+independent hierarchy validation. This is a heuristic, not an optimality proof.
 `run.json` records input-file hashes, parameters and per-stage wall times.
 Stage times include their checks and exclude source import; they are not a
 disjoint preparation/search/validation breakdown.

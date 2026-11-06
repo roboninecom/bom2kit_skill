@@ -3,6 +3,42 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Pause checkpoint: 2026-11-07
+
+Work is paused at the user's request. The objective is not achieved.
+The best validated complete-kit results remain:
+
+| Kit | External dimensions (mm) | Volume (L) | Reference (L) |
+| --- | --- | --- | --- |
+| 101 | 253 x 253 x 310 | 19.842790 | 19.423040 |
+| 102 | 252 x 264 x 332 | 22.087296 | 20.063360 |
+
+Local evidence under `packaging-results/independent/`:
+`101/diverse-host-design/result.json`,
+`101/diverse-host-review/assembly-plan.json`,
+`102/height-fill-design/result.json`, and
+`102/height-fill-review/assembly-plan.json`. These are cached search experiments
+with declared BOM and geometry checks, not a final cold-run acceptance report.
+
+The runner now carries its own verified incumbent footprints between grouping
+evaluations. Source-library identity and carton hierarchy are checked before
+reuse; the CLI accepts no external layout seed. Fresh coordinates are generated.
+The isolated footprint-reuse experiments did not improve either incumbent
+(101: 19.987200 L; 102: 22.372621 L).
+
+The latest update reserves part of the layered search budget for local repair:
+preserve a generated single-column layer membership, repack allowed orientations,
+and try nearby dimensions on the manufacturing increment. Complete proposals
+must pass the existing independent hierarchy validator. Multi-column repair is
+not implemented. The full suite passed: **135 tests in 16.22 seconds**.
+This new repair has not yet been benchmarked on the complete 101/102 kits;
+no volume improvement is attributed to it.
+
+On resumption, benchmark repair without changing protection or source geometry,
+retain the best validated result, and continue toward both reference thresholds.
+Cold-run reproducibility, final illustrated instructions, packaging material
+specifications and the concise visual comparison remain outstanding.
+
 ## Stable group frames and distributed cavity proposals
 
 Adding a part inside an existing group changed the approximate oriented-bounds

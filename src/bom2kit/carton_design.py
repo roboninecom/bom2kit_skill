@@ -20,7 +20,7 @@ def _fingerprint(value):
     return sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
-def design_carton(request, time_limit=5):
+def design_carton(request, time_limit=5, footprint_hints=()):
     """Generate dimensions from item spans and retain independently valid layouts.
 
     Time is bounded between candidates; an individual legacy solver call has a
@@ -66,7 +66,7 @@ def design_carton(request, time_limit=5):
     validation_seconds = 0.0
     if "inner_wall_mm" in policy:
         from .layered_design import design_layers
-        layered = design_layers(request, units, time_limit=time_limit*.5)
+        layered = design_layers(request, units, time_limit=time_limit*.5,footprint_hints=footprint_hints)
         best = layered["candidate"]
         attempts.extend({**a,"method":"generated_inner_carton_layers"} for a in layered["attempts"])
 
@@ -187,6 +187,7 @@ def design_carton(request, time_limit=5):
     return {"status": "validated_envelope_design" if best else "no_verified_candidate",
             "candidate": best, "request_sha256": _fingerprint(request),
             "search": {"attempts": attempts, "time_budget_seconds": time_limit,
+                       "in_run_footprints": [list(hint) for hint in footprint_hints],
                        "preparation_seconds": prepared - started,
                        "search_seconds": max(0, elapsed - (prepared - started) - validation_seconds),
                        "validation_seconds": validation_seconds, "total_seconds": elapsed,

@@ -67,6 +67,10 @@ def test_pair_discovery_uses_no_reference_and_verifies_source_assembly(tmp_path)
     assert len(packed["groups"]) == 1
     assert packed["motion"]["valid"]
     assert {p["unit_id"] for p in packed["layout"]["placements"]} == {"0#1", "1#1"}
+    # An incumbent from another source library must never steer the search.
+    wrong = {**packed,"source_library_sha256":"unrelated"}
+    with pytest.raises(ValueError,match="different source library"):
+        design_grouped_library(library,result,policy,tmp_path/"wrong-incumbent",incumbent_result=wrong)
 
 
 def test_open_workbench_frame_is_explicit(tmp_path):

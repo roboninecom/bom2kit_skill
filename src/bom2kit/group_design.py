@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 
 
-def design_grouped_library(library, portfolio, policy, output, time_limit=5, incumbent_volume_mm3=None):
+def design_grouped_library(library, portfolio, policy, output, time_limit=5, incumbent_volume_mm3=None,
+                           incumbent_result=None):
     import numpy as np
     import trimesh
     from .mesh_envelope_design import design_mesh_envelopes
@@ -12,6 +13,18 @@ def design_grouped_library(library, portfolio, policy, output, time_limit=5, inc
     from .mesh_motion import check_vertical_sequence
 
     library_hash = sha256(json.dumps(library, sort_keys=True).encode()).hexdigest()
+    footprint_hints = []
+    if incumbent_result is not None:
+        if incumbent_result.get("source_library_sha256") != library_hash:
+            raise ValueError("Incumbent belongs to a different source library")
+        if incumbent_result.get("status") not in ("validated_grouped_geometry","validated_mesh_envelope_baseline"):
+            raise ValueError("Only a verified in-run incumbent may supply footprints")
+        old = incumbent_result.get("envelope_candidate",incumbent_result)["envelope_design"]["candidate"]
+        if old["layout"].get("layers"):
+            from .layered_design import validate_layered
+            if not validate_layered(old["input"],old["layout"])["valid"]:
+                raise ValueError("Invalid incumbent carton hierarchy")
+            footprint_hints = list(dict.fromkeys(tuple(layer["inner_mm"][:2]) for layer in old["layout"]["layers"]))
     if portfolio["source_library_sha256"] != library_hash:
         raise ValueError("Pair portfolio belongs to a different source library")
     if portfolio["clearance_mm"] < max(policy["clearance_mm"], 2 * policy["item_padding_mm"]):
@@ -79,7 +92,8 @@ def design_grouped_library(library, portfolio, policy, output, time_limit=5, inc
             expansion[iid + "#" + str(copy + 1)] = [{"item_id": iid, "unit_id": iid + "#" + str(assigned[iid]), "transform": np.eye(4).tolist()}]
     grouped_library = {"units": "mm", "all_meshes_valid_volumes": True,
                        "scope": library.get("scope"), "items": grouped}
-    candidate = design_mesh_envelopes(grouped_library, policy, time_limit=time_limit,incumbent_volume_mm3=incumbent_volume_mm3)
+    candidate = design_mesh_envelopes(grouped_library, policy, time_limit=time_limit,
+                                     incumbent_volume_mm3=incumbent_volume_mm3,footprint_hints=footprint_hints)
     if candidate["status"] == "not_improved":
         result = {"status":"not_improved","envelope_candidate":candidate,"source_library_sha256":library_hash}
         (output/"result.json").write_text(json.dumps(result,allow_nan=False))

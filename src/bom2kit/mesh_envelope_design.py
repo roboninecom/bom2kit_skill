@@ -14,7 +14,7 @@ from .carton_design import design_carton
 from .models import number
 
 
-def design_mesh_envelopes(library, policy, time_limit=5, incumbent_volume_mm3=None):
+def design_mesh_envelopes(library, policy, time_limit=5, incumbent_volume_mm3=None, footprint_hints=()):
     import numpy as np
     import trimesh
     from .mesh_validation import validate_mesh_layout
@@ -56,7 +56,8 @@ def design_mesh_envelopes(library, policy, time_limit=5, incumbent_volume_mm3=No
         items.append({key: value for key, value in item.items() if key in
                       {"id", "quantity", "mesh", "contents", "contents_revisions", "revision", "dimension_basis", "packing_state"}})
     preparation = perf_counter() - started
-    design = design_carton({"units": "mm", "items": envelopes, "policy": policy["carton"]}, time_limit=time_limit)
+    design = design_carton({"units": "mm", "items": envelopes, "policy": policy["carton"]},
+                           time_limit=time_limit,footprint_hints=footprint_hints)
     candidate = design["candidate"]
     if not candidate:
         return {"status": "no_verified_candidate", "envelope_design": design}

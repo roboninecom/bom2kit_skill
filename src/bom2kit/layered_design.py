@@ -71,7 +71,7 @@ def validate_layered(problem, layout):
         return {"valid": False, "errors": [str(error)]}
 
 
-def design_layers(request, units, time_limit=5):
+def design_layers(request, units, time_limit=5, footprint_hints=()):
     """Search footprints and height bands without a reference or supplied poses."""
     started = perf_counter()
     time_limit = number(time_limit,"time_limit",True)
@@ -123,12 +123,19 @@ def design_layers(request, units, time_limit=5):
     unequal_columns = policy.get("unequal_columns", False)
     if type(unequal_columns) is not bool:
         raise ValueError("unequal_columns must be boolean")
-    greedy_deadline = time_limit*.65
+    greedy_deadline = time_limit*.55
     # Compete full-width trays with narrower independently supported columns.
     # Column dimensions derive from geometry, never a target reference carton.
     fractions = (None,.5,.35) if unequal_columns else (None,.5)
     configurations = [(w,d,anchor,fraction) for w in footprints for d in footprints
                       for fraction in fractions for anchor in (True,False)]
+    retained = []
+    for hint in footprint_hints:
+        if len(hint) != 2:
+            raise ValueError("An in-run footprint requires width and depth")
+        w,d = (number(value,"in-run footprint",True) for value in hint)
+        retained.extend((w,d,anchor,None) for anchor in (True,False))
+    configurations = list(dict.fromkeys(retained+configurations))
     for footprint_width, depth, anchor_required, fraction in configurations:
         if perf_counter()-started >= greedy_deadline:
             break
@@ -191,7 +198,7 @@ def design_layers(request, units, time_limit=5):
         if (width,depth) in visited:
             continue
         visited.add((width,depth))
-        remaining_seconds = time_limit-(perf_counter()-started)
+        remaining_seconds = time_limit*.85-(perf_counter()-started)
         if remaining_seconds <= 0:
             break
         previous_volume = best["volume_mm3"] if best else float("inf")
@@ -222,4 +229,22 @@ def design_layers(request, units, time_limit=5):
                 exterior_xy = [math.ceil((s+2*thickness+2*(wall[k]+margin[k]))/increment)*increment for k,s in enumerate((w,d))]
                 bound = best["volume_mm3"]/math.prod(exterior_xy)-2*(wall[2]+margin[2])-reserve
                 plans.append((0,w,d,bound))
+    from .layer_repair import repair_layer_stack
+    while best and perf_counter()-started < time_limit:
+        before = best["volume_mm3"]
+        repairs = repair_layer_stack(units,best,gap,thickness,increment,time_limit-(perf_counter()-started))
+        for proposal in repairs:
+            width,depth = proposal["width_mm"],proposal["depth_mm"]
+            layers,poses,z = [],[],margin[2]
+            for index,packed in enumerate(proposal["layers"],1):
+                height = math.ceil((packed["usable_mm"][2]+2*thickness)/increment)*increment-2*thickness
+                lid = "layer-"+str(index)
+                position = [margin[0],margin[1],z]
+                layers.append({"id":lid,"inner_mm":[width,depth,height],"wall_mm":thickness,"position_mm":position})
+                poses.extend({**p,"layer_id":lid,"position_mm":[p["position_mm"][k]+position[k]+thickness for k in range(3)]}
+                             for p in packed["placements"])
+                z += height+2*thickness
+            accept(poses,layers,[width+2*thickness,depth+2*thickness,z-margin[2]],"local_layer_repair")
+        if best["volume_mm3"] >= before:
+            break
     return {"candidate":best,"attempts":attempts,"elapsed_seconds":perf_counter()-started}

@@ -55,6 +55,7 @@ def main():
     status.write_text(json.dumps({"status": "running"}))
     stage_started = perf_counter()
     baseline = design_mesh_envelopes(library, policy, time_limit=args.carton_budget)
+    baseline["source_library_sha256"] = sha256(json.dumps(library,sort_keys=True).encode()).hexdigest()
     stage_timings.append({"stage":"baseline","seconds":perf_counter()-stage_started})
     (args.output / "baseline.json").write_text(json.dumps(baseline, allow_nan=False))
     stage_started = perf_counter()
@@ -86,9 +87,11 @@ def main():
         portfolio["alternatives"].extend(extensions["alternatives"])
         stage_timings.append({"stage":"cavity_extension","seconds":perf_counter()-stage_started})
     choices = []
+    best_result = None
     if baseline["status"] == "validated_mesh_envelope_baseline":
         box = baseline["envelope_design"]["candidate"]
         choices.append((box["volume_mm3"], "baseline.json", box["external_mm"]))
+        best_result = baseline
     configurations = group_configurations(library,portfolio["alternatives"],args.group_configurations)
     evaluations = []
     for index, alternatives in enumerate(configurations[:args.group_configurations]):
@@ -98,13 +101,15 @@ def main():
         stage_started = perf_counter()
         result = design_grouped_library(library, {**portfolio, "alternatives": alternatives}, policy,
                                        args.output / directory, time_limit=args.carton_budget,
-                                       incumbent_volume_mm3=min(choice[0] for choice in choices) if choices else None)
+                                       incumbent_volume_mm3=min(choice[0] for choice in choices) if choices else None,
+                                       incumbent_result=best_result)
         stage_timings.append({"stage":directory,"seconds":perf_counter()-stage_started})
         record = {"directory": directory, "status": result["status"],
                   "members": [alternative["members"] for alternative in alternatives]}
         if result["status"] == "validated_grouped_geometry":
             box = result["envelope_candidate"]["envelope_design"]["candidate"]
             choices.append((box["volume_mm3"], directory + "/result.json", box["external_mm"]))
+            best_result = result
             record["external_volume_l"] = box["volume_mm3"] / 1e6
         evaluations.append(record)
     selected = min(choices) if choices else None

@@ -69,3 +69,15 @@ def test_generated_unequal_columns_preserve_support_and_all_units():
     right = max(broken["layers"],key=lambda layer:layer["position_mm"][0])
     right["position_mm"][0] = 0
     assert not validate_layered(best["input"],broken)["valid"]
+
+
+def test_in_run_footprints_are_repacked_and_revalidated():
+    items = [{"id":"part","quantity":3,"dimensions_mm":[10,10,10],"allowed_rotations":"fixed"}]
+    request = {"units":"mm","items":items,"policy":{"inner_wall_mm":1.5}}
+    units = normalize({"items":items,"container":{"inner_mm":[100]*3}})["units"]
+    result = design_layers(request,units,time_limit=.4,footprint_hints=[(21,21)])
+    assert result["candidate"]["validation"]["valid"]
+    assert len(result["candidate"]["layout"]["placements"]) == 3
+    assert any(attempt["external_mm"][:2] == [24,24] for attempt in result["attempts"])
+    with pytest.raises(ValueError,match="footprint"):
+        design_layers(request,units,time_limit=.4,footprint_hints=[(0,21)])
