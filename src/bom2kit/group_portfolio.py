@@ -4,13 +4,17 @@ from .report import fingerprint
 
 
 def group_configurations(library, alternatives, limit):
-    """Compare greedy groups, forced anchors with compatible groups, and singles.
+    """Compare greedy groups, leave-one-out neighbors, anchors and singles.
 
     Skip pools that resolve to the same consumed source poses and quantities.
     No carton dimensions or comparison reference enter configuration generation.
     """
     ranked = sorted(alternatives,key=lambda a:a["group_box_volume_mm3"]-a["separate_box_volume_mm3"])
     pools = [ranked]
+    # A locally efficient group can impose a poor layer height. Explore nearby
+    # complete groupings before jumping to isolated single-group configurations.
+    for index in range(len(ranked)):
+        pools.append(ranked[:index]+ranked[index+1:])
     for anchor in ranked:
         members = set(anchor["members"])
         pools.append([anchor]+[a for a in ranked if members.isdisjoint(a["members"])])

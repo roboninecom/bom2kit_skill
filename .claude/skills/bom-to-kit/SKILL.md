@@ -60,12 +60,15 @@ Neither heuristic dominates every kit; preserve protection while comparing them.
 python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --pair-seconds 8 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6
 ```
 
-The runner discovers pairs, optionally extends groups, compares compatible
-groupings and generates cartons. It retains a verified incumbent. `run.json`
+The runner discovers pairs, optionally extends groups, compares greedy,
+leave-one-out and anchored groupings, and generates cartons. It retains a verified incumbent. `run.json`
 identifies the selected result. `not_improved` candidates lack original-pose
 certification and are not accepted plans. Budgets are soft and per stage.
 Report total runtime separately from preparation, search and validation;
 certificate replay is not cold design.
+`run.json` records input-file hashes, parameters and per-stage wall times.
+Stage times include their checks and exclude source import; they are not a
+disjoint preparation/search/validation breakdown.
 
 ## Validate, illustrate and compare
 

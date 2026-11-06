@@ -26,6 +26,19 @@ mixed printed/purchased groups. A whole-kit evaluation with these alternatives
 plus the existing independently generated groups is required before claiming
 any volume improvement. Pair savings alone do not satisfy the objective.
 
+The combined expanded portfolio produced a 269 x 220 x 381 mm envelope
+(22.547580 L), which was rejected before original-pose certification because it
+exceeded the verified incumbent. Group configuration generation now explores
+leave-one-out neighbors before isolated anchors, allowing a locally compact
+group to be removed when it makes the complete carton worse. Quantity-aware
+selection and equivalent-layout deduplication remain in force.
+
+The runner now saves exact library/policy/BOM file hashes, search parameters
+and per-stage wall times. A fresh two-cuboid smoke run exercised this output
+and selected a verified baseline in 4.21 seconds from prepared meshes. Each
+stage includes its own checks; these timings do not yet provide a disjoint
+aggregate preparation/search/validation breakdown or include source import.
+
 ## Current search and review improvements
 
 The shared Codex/Claude skill now launches independent group discovery and

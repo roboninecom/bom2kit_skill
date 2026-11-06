@@ -1,5 +1,6 @@
 """Run independent pair discovery and original-geometry group packing."""
 import argparse
+from hashlib import sha256
 import json
 from pathlib import Path
 import sys
@@ -29,7 +30,7 @@ def main():
                         help="Optional group/part or group/group extension rounds, each using the pair budget")
     parser.add_argument("--carton-budget", type=float, default=10)
     parser.add_argument("--group-configurations", type=int, default=4,
-                        help="Maximum distinct grouping evaluations: greedy, compatible anchored groups, and singles")
+                        help="Maximum distinct grouping evaluations: greedy, leave-one-out neighbors, anchors and singles")
     args = parser.parse_args()
     if args.group_configurations < 1 or args.nesting_rounds < 0:
         parser.error("--group-configurations must be positive and --nesting-rounds nonnegative")
@@ -39,18 +40,25 @@ def main():
     if expected_bom is not None and not reconcile_bom(expected_bom, library)["complete"]:
         raise ValueError("Source library does not cover the expected BOM")
     started = perf_counter()
+    stage_timings = []
     args.output.mkdir(parents=True, exist_ok=True)
     status = args.output / "run.json"
     status.write_text(json.dumps({"status": "running"}))
+    stage_started = perf_counter()
     baseline = design_mesh_envelopes(library, policy, time_limit=args.carton_budget)
+    stage_timings.append({"stage":"baseline","seconds":perf_counter()-stage_started})
     (args.output / "baseline.json").write_text(json.dumps(baseline, allow_nan=False))
+    stage_started = perf_counter()
     portfolio = discover_pairs(library, args.output / "pair-candidates",
                                clearance_mm=max(policy["clearance_mm"], 2 * policy["item_padding_mm"]),
                                time_limit=args.pair_budget, pair_seconds=args.pair_seconds, max_pairs=args.max_pairs,
                                cavity_proposals=args.cavity_proposals)
+    stage_timings.append({"stage":"pair_discovery","seconds":perf_counter()-stage_started})
     for round_index in range(args.nesting_rounds):
+        stage_started = perf_counter()
         extensions = extend_groups(library,portfolio,args.output/f"nested-{round_index}",
                                    time_limit=args.pair_budget,pair_seconds=args.pair_seconds,max_pairs=args.max_pairs)
+        stage_timings.append({"stage":f"nesting_{round_index}","seconds":perf_counter()-stage_started})
         if not extensions["alternatives"]:
             break
         portfolio = {**portfolio,"alternatives":portfolio["alternatives"]+extensions["alternatives"]}
@@ -64,9 +72,11 @@ def main():
         if not alternatives:
             continue
         directory = f"packing-{index}"
+        stage_started = perf_counter()
         result = design_grouped_library(library, {**portfolio, "alternatives": alternatives}, policy,
                                        args.output / directory, time_limit=args.carton_budget,
                                        incumbent_volume_mm3=min(choice[0] for choice in choices) if choices else None)
+        stage_timings.append({"stage":directory,"seconds":perf_counter()-stage_started})
         record = {"directory": directory, "status": result["status"],
                   "members": [alternative["members"] for alternative in alternatives]}
         if result["status"] == "validated_grouped_geometry":
@@ -79,6 +89,11 @@ def main():
                "selected_result": selected[1] if selected else None,
                "pair_alternatives": len(portfolio["alternatives"]),
                "group_evaluations": evaluations,
+               "stage_timings":stage_timings,
+               "timing_scope":"Wall time from prepared library; each stage includes its geometry checks. Source import is excluded.",
+               "input_files":{name:{"path":str(path.resolve()),"sha256":sha256(path.read_bytes()).hexdigest()}
+                              for name,path in (("library",args.library),("policy",args.policy),("bom",args.bom)) if path},
+               "parameters":{key:value for key,value in vars(args).items() if not isinstance(value,Path)},
                "total_seconds": perf_counter() - started,
                "scope": library.get("scope", "Declared library only")}
     if selected:
