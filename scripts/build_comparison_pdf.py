@@ -1,5 +1,7 @@
-"""Render the evidence-scoped local benchmark as a concise two-page PDF."""
+"""Render nominal benchmarks and available, verified BOX7 geometry evidence."""
 
+from hashlib import sha256
+from io import BytesIO
 import json
 from pathlib import Path
 import sys
@@ -7,7 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from bom2kit.report import comparison, COLORS
+from bom2kit.report import comparison, COLORS, fingerprint
 from bom2kit.validation import validate
 
 
@@ -21,6 +23,23 @@ def build(output_dir=None):
     pdf = canvas.Canvas(str(destination), pagesize=A4)
     pdf.setTitle('SO-ARM101 and SO-ARM102: packing comparison')
     width, height = A4
+    mesh_folders = [ROOT / 'packaging-results/so-arm-101/box7-mesh',
+                    ROOT / 'packaging-results/box7-nested-experiment']
+    appendix = all((folder / 'mesh-render.json').is_file() for folder in mesh_folders)
+    mesh_checks = []
+    if appendix:
+        from bom2kit.mesh_validation import validate_mesh_layout
+        for folder in mesh_folders:
+            job = json.loads((folder / 'input.json').read_text())
+            poses = json.loads((folder / 'layout.json').read_text())
+            rendered = json.loads((folder / 'mesh-render.json').read_text())
+            checked = validate_mesh_layout(job, poses)
+            if (not checked['valid'] or rendered['input_sha256'] != fingerprint(job)
+                    or rendered['layout_sha256'] != fingerprint(poses)
+                    or rendered['image_sha256'] != sha256((folder / 'mesh-views.png').read_bytes()).hexdigest()):
+                raise ValueError('BOX7 rendering is invalid or stale; regenerate mesh-report')
+            mesh_checks.append(checked)
+    page_count = 3 if appendix else 2
 
     def text(x, y, message, size=10, bold=False, color='#18364b'):
         pdf.setFillColor(HexColor(color))
@@ -87,7 +106,32 @@ def build(output_dir=None):
             text(36, 137 - 16 * line_index, line, 9)
         text(36, 63, 'Sources and hashes: evidence-manifest.json. Coordinates and contents: instruction.html.', 8)
         text(36, 47, 'Reproduce: python scripts/run_benchmarks.py && python scripts/build_comparison_pdf.py', 8)
-        text(width - 58, 27, f'{index + 1} / 2', 8)
+        text(width - 58, 27, f'{index + 1} / {page_count}', 8)
+        pdf.showPage()
+    if appendix:
+        from reportlab.lib.utils import ImageReader
+        import fitz
+
+        text(36, height - 48, 'BOX7 | actual part geometry', 20, True)
+        text(36, height - 73,
+             f'101: {mesh_checks[0]["placed_units"]}/{mesh_checks[0]["expected_units"]} pieces | '
+             f'102: {mesh_checks[1]["placed_units"]}/{mesh_checks[1]["expected_units"]} pieces | static checks passed', 12, True)
+        text(36, height - 96, 'Outer: 196 x 78 x 64 mm. Confirmed walls: 1.5 mm. Interior: 193 x 75 x 61 mm.', 9)
+        text(36, height - 126, "Alan's 102 reference: original packing PDF, page 6", 11, True)
+        source = next((ROOT / 'packaging-inputs/so-arm-102/kitting').rglob('SO102_Printing_and_Packing.pdf'))
+        with fitz.open(source) as document:
+            strip = document[5].get_pixmap(matrix=fitz.Matrix(2, 2), clip=fitz.Rect(28, 110, 568, 252))
+        pdf.drawImage(ImageReader(BytesIO(strip.tobytes('png'))), 36, height - 280,
+                      width=523, height=138, preserveAspectRatio=True, mask='auto')
+        text(36, height - 309, 'Computed 102: exact source triangles at checked rigid poses', 11, True)
+        pdf.drawImage(str(mesh_folders[1] / 'mesh-views.png'), 36, 166, width=523, height=349,
+                      preserveAspectRatio=True, mask='auto')
+        text(36, 146, '0.1 mm pair clearance. The two wrist holders nest; geometry is never scaled.', 9)
+        text(36, 129, '101 uses the same 17 figure poses, independently rechecked. Current ArUco -2.3mf selected.', 9)
+        text(36, 104, 'Scope: BOX7 static fit only. Remaining boxes and complete-kit acceptance are still open.', 9, True)
+        text(36, 87, 'Protective bags, support, manufacturing tolerances and physical handling remain unverified.', 9)
+        text(36, 60, 'Sources, exact poses and hashes: BOX7 input.json, layout.json and source-manifest.json.', 8)
+        text(width - 58, 27, '3 / 3', 8)
         pdf.showPage()
     pdf.save()
     return destination
