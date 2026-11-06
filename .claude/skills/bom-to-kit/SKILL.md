@@ -39,6 +39,11 @@ Install the optional `[mesh]` dependencies to check triangle geometry. Use
 `mesh-validate input.json layout.json` for supplied rigid transforms. Use
 `mesh-pair input.json --output packaging-results/pair --time-limit 30` for a
 bounded two-part nesting search; this is not a complete-kit optimizer.
+Use `mesh-solve input.json --output packaging-results/group --time-limit 300`
+for mixed groups with JSON triangle sources. It retains alternative rigid poses;
+an exhausted beam is not proof of infeasibility. Use `--seed-layout recipe.json`
+to validate and reuse a complete recipe or continue a partial arrangement. Report
+recipe replay separately from new search, including its measured runtime.
 Reject scaling, changed source hashes and missing instances. Voxel arrangements
 and printer-plate positions are proposals, never packing certificates. Reusing
 a recipe requires matching part revisions and quantities; unchanged labels alone

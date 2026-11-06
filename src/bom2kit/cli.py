@@ -60,6 +60,13 @@ def parser():
     mesh_pair.add_argument("--output", type=Path, required=True)
     mesh_pair.add_argument("--time-limit", type=_positive_seconds, default=30.0)
     mesh_pair.add_argument("--pitch-mm", type=_positive_seconds, default=2.0)
+    mesh_solve = commands.add_parser("mesh-solve", help="Bounded multi-part rigid mesh search; requires mesh extra")
+    mesh_solve.add_argument("input", type=Path)
+    mesh_solve.add_argument("--output", type=Path, required=True)
+    mesh_solve.add_argument("--time-limit", type=_positive_seconds, default=300.0)
+    mesh_solve.add_argument("--pitch-mm", type=_positive_seconds, default=2.0)
+    mesh_solve.add_argument("--beam-width", type=int, default=8)
+    mesh_solve.add_argument("--seed-layout", type=Path, help="Previously validated partial or complete recipe")
     reconcile = commands.add_parser("reconcile", help="Check declared SKU quantities and revisions independently of geometry")
     reconcile.add_argument("bom", type=Path)
     reconcile.add_argument("input", type=Path)
@@ -110,6 +117,25 @@ def main(argv=None):
             _write(args.output / "validation.json", validation)
             print(json.dumps({'output': str(args.output.resolve()), 'valid': validation['valid']}))
             return 0 if validation['valid'] else 1
+        if args.command == "mesh-solve":
+            from .mesh_search import solve_mesh_kit
+            from .mesh_validation import validate_mesh_layout
+
+            seed = _read(args.seed_layout).get("placements") if args.seed_layout else None
+            if args.seed_layout and not isinstance(seed, list):
+                raise ValueError("Seed layout must contain a placements list")
+            _write(args.output / "input.json", problem)
+            _write(args.output / "validation.json", {"valid": False,
+                   "errors": ["Search has not completed; previous results must not be reused."]})
+            result = solve_mesh_kit(problem, time_limit=args.time_limit,
+                                    pitch_mm=args.pitch_mm, beam_width=args.beam_width,
+                                    seed_placements=seed, checkpoint_dir=args.output)
+            validation = validate_mesh_layout(problem, result)
+            _write(args.output / "layout.json", result)
+            _write(args.output / "validation.json", validation)
+            print(json.dumps({"output": str(args.output.resolve()), "valid": validation["valid"],
+                              "status": result["status"]}))
+            return 0 if validation["valid"] else 1
         if args.command in ("solve", "optimize"):
             if args.command == "optimize":
                 from .optimization import optimize

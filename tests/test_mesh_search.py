@@ -1,0 +1,53 @@
+from hashlib import sha256
+import json
+
+import pytest
+
+trimesh = pytest.importorskip("trimesh")
+pytest.importorskip("fcl")
+pytest.importorskip("scipy")
+pytest.importorskip("rtree")
+
+from bom2kit.mesh_search import solve_mesh_kit
+
+
+def test_beam_search_complete_certificate_and_checkpoint(tmp_path):
+    mesh = trimesh.creation.box([2, 2, 2])
+    source = tmp_path / "mesh.json"
+    source.write_text(json.dumps({"units": "mm", "vertices_mm": mesh.vertices.tolist(),
+                                  "triangles": mesh.faces.tolist()}), encoding="utf8")
+    problem = {"units": "mm", "container": {"inner_mm": [8, 3, 3]}, "clearance_mm": .5,
+               "items": [{"id": "cube", "quantity": 3,
+                          "mesh": {"path": str(source), "sha256": sha256(source.read_bytes()).hexdigest()}}]}
+    result = solve_mesh_kit(problem, time_limit=15, beam_width=4, pitch_mm=1,
+                            checkpoint_dir=tmp_path / "result")
+    assert result["status"] == "validated_static_layout", result
+    assert result["validation"]["valid"]
+    assert len(result["placements"]) == 3
+    assert (tmp_path / "result" / "layout.json").is_file()
+    assert not result["search"]["optimality_proven"]
+    replay = solve_mesh_kit(problem, time_limit=15, beam_width=2, pitch_mm=1,
+                            seed_placements=result["placements"])
+    assert replay["mode"] == "validated_seed_replay"
+    assert replay["validation"]["valid"]
+    bad_seed = json.loads(json.dumps(result["placements"][:1]))
+    bad_seed[0]["transform"][0][3] = -100
+    with pytest.raises(ValueError, match="Invalid seed"):
+        solve_mesh_kit(problem, time_limit=15, pitch_mm=1, seed_placements=bad_seed)
+
+
+def test_proxy_overlap_budget_cannot_accept_solid_collisions(tmp_path):
+    mesh = trimesh.creation.box([2, 2, 2])
+    source = tmp_path / "mesh.json"
+    source.write_text(json.dumps({"units": "mm", "vertices_mm": mesh.vertices.tolist(),
+                                  "triangles": mesh.faces.tolist()}), encoding="utf8")
+    problem = {"units": "mm", "container": {"inner_mm": [3, 3, 3]},
+               "items": [{"id": "cube", "quantity": 2,
+                          "mesh": {"path": str(source), "sha256": sha256(source.read_bytes()).hexdigest()}}]}
+    result = solve_mesh_kit(problem, time_limit=15, beam_width=4, pitch_mm=1,
+                            voxel_overlap_cells=100, lookahead=True)
+    assert not result["validation"]["valid"]
+    assert len(result["placements"]) == 1
+    assert result["search"]["voxel_overlap_cells"] == 100
+    with pytest.raises(ValueError, match="voxel_overlap_cells"):
+        solve_mesh_kit(problem, voxel_overlap_cells=True)

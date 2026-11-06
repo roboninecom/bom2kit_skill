@@ -59,6 +59,21 @@ Voxel proposals are checked against actual triangles before acceptance. Its budg
 is a soft search bound; geometry preparation and final validation can add time.
 It does not solve a complete mixed kit or check an insertion path.
 
+For a mixed group, `mesh-solve` retains alternative placements in a bounded beam:
+
+```powershell
+python -m bom2kit mesh-solve packaging-inputs/group.json --output packaging-results/group --time-limit 300 --beam-width 8 --pitch-mm 2
+# Recheck and reuse an unchanged recipe, or complete a partial seed:
+python -m bom2kit mesh-solve packaging-inputs/group.json --output packaging-results/replay --seed-layout packaging-results/group/layout.json
+```
+
+This experimental search uses JSON triangle sources and optional proper rotation
+`orientation_hint` matrices per item. Complete recipes are independently checked
+before replay. Changed parts, quantities or cavities require fresh validation.
+Incomplete searches return exit code 1 and a checkpoint; they do not prove
+infeasibility. Coarse voxels can miss close-fitting arrangements, so vary grouping,
+orientation hints or grid pitch when necessary. Search time is a soft limit.
+
 `mesh-report` additionally needs `[report]`. It renders the actual checked triangles
 in four views, with no scaling to fit a suggested envelope. The view is a static
 geometry review, not a packing-order certificate.
