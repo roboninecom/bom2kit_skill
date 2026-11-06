@@ -86,6 +86,50 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Complete printed-source inventory
+
+The new `prepare_3mf_library.py` source adapter splits manufacturing objects into
+physical-part candidates. Explicit nonpart roles are excluded and unknown roles
+fail. Optional contact-shell joining preserves touching color/material islands
+with their printed panel; it must be enabled only after reviewing source semantics.
+Printer build positions are not packing positions. Individual source hashes,
+object/instance identifiers and component membership are preserved.
+
+For the current 102 sources, `colored_figures.3mf` yields 10 colored objects;
+`aruco_cube.3mf` yields the core and six separate marker panels. The marker islands
+remain attached to their panels, giving 17 physical figure parts rather than 35
+material shells. All extracted meshes pass positive watertight-volume checks.
+Combining these with the 44 robot parts gives **61 printed parts**.
+
+```powershell
+python scripts/prepare_3mf_library.py packaging-inputs/so-arm-102/repository-main/models/3mf/colored_figures.3mf packaging-inputs/so-arm-102/repository-main/models/3mf/aruco_cube.3mf --join-contacting-shells --output packaging-inputs/independent/102/figures
+python scripts/combine_part_libraries.py packaging-inputs/independent/102/printed/library.json packaging-inputs/independent/102/figures/library.json --output packaging-inputs/independent/102/all-printed.json
+python scripts/extract_bom_tables.py packaging-inputs/so-arm-102/repository-main/docs/bom.md --output packaging-inputs/independent/102/hardware-source-rows.json
+```
+
+The independent hardware-table extractor finds 25 rows and **267 components**
+excluding optional alternative rows. It preserves distinct servo variants,
+source lines, every column and the source fingerprint. This is not a complete
+shipping reconciliation: two additional long cables, tools, regional power cords
+and included factory accessories still need explicit handling. Hardware geometry
+and protection are not inferred from a quantity table.
+
+The clean 61-piece run (fresh pair discovery, baseline and four complete group
+configurations) finished in **272.16 s**. Its selected printed-only carton is
+**230 x 533 x 160 mm = 19.6144 L**, with all original mesh placements and group
+assembly/insertion checks passing. Output:
+`packaging-results/independent/102/all-printed-design/run.json`, selecting
+`packing-2/result.json`. This includes the figures, unlike the earlier 44-piece
+16.9104 L experiment. Purchased parts are still absent; this is not a successful
+complete-kit comparison and does not close the objective.
+
+The same adapter also reads the independent 101 manufacturing files: follower,
+leader, colored figures and ArUco produce 41 parts; the two separate logo/nameplate
+files produce two additional parts. These **43 source candidates** are stored
+under `packaging-inputs/independent/101/`, with separate nameplate identities.
+Their source meshes pass volume checks, but variant/quantity reconciliation
+against the 101 BOM remains a required gate before complete-kit acceptance.
+
 ### Pair discovery experiment
 
 `scripts/design_grouped_meshes.py LIBRARY POLICY --output OUTPUT` now runs
