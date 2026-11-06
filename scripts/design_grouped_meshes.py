@@ -34,9 +34,13 @@ def main():
     args = parser.parse_args()
     if args.group_configurations < 1 or args.nesting_rounds < 0:
         parser.error("--group-configurations must be positive and --nesting-rounds nonnegative")
-    library = json.loads(args.library.read_text(encoding="utf-8-sig"))
-    policy = json.loads(args.policy.read_text(encoding="utf-8-sig"))
-    expected_bom = json.loads(args.bom.read_text(encoding="utf-8-sig")) if args.bom else None
+    input_files, parsed = {}, {}
+    for name,path in (("library",args.library),("policy",args.policy),("bom",args.bom)):
+        if path:
+            raw = path.read_bytes()
+            input_files[name] = {"path":str(path.resolve()),"sha256":sha256(raw).hexdigest()}
+            parsed[name] = json.loads(raw.decode("utf-8-sig"))
+    library, policy, expected_bom = parsed["library"], parsed["policy"], parsed.get("bom")
     if expected_bom is not None and not reconcile_bom(expected_bom, library)["complete"]:
         raise ValueError("Source library does not cover the expected BOM")
     started = perf_counter()
@@ -91,8 +95,7 @@ def main():
                "group_evaluations": evaluations,
                "stage_timings":stage_timings,
                "timing_scope":"Wall time from prepared library; each stage includes its geometry checks. Source import is excluded.",
-               "input_files":{name:{"path":str(path.resolve()),"sha256":sha256(path.read_bytes()).hexdigest()}
-                              for name,path in (("library",args.library),("policy",args.policy),("bom",args.bom)) if path},
+               "input_files":input_files,
                "parameters":{key:value for key,value in vars(args).items() if not isinstance(value,Path)},
                "total_seconds": perf_counter() - started,
                "scope": library.get("scope", "Declared library only")}
