@@ -15,6 +15,11 @@ minor packaging details must not stop the search.
   and 10 mm thickness. Record bag allowance separately when provided.
 - Other purchased-part envelopes may be estimated from the BOM or supplied CAD.
   Label each estimate and its source; do not present it as a measurement.
+- The user confirmed the clamps were custom manufactured with a **106 mm frame**.
+  The catalogue drawing showing an 80 mm frame does not describe the supplied
+  clamps. Any layout using that smaller proxy is superseded and cannot support
+  acceptance. Preserve the existing custom-frame geometry; identify other
+  unmeasured dimensions separately.
 - Group membership and internal box dimensions may be optimized. Preserve the
   complete contents and compare the resulting external shipping volume with Alan.
 
