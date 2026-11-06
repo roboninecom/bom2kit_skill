@@ -125,10 +125,13 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
             return
         # Query each immutable local mesh so its ray acceleration structure can
         # be reused. Rigid inverse mapping preserves the containment predicate.
-        if moving.contains((samples[0]-shift)@rotation).any():
-            return
-        if fixed.contains(samples[1]@rotation.T+shift).any():
-            return
+        overlapping_bounds = np.all(np.minimum(fixed.bounds[1],candidate.bounds[1]) >
+                                    np.maximum(fixed.bounds[0],candidate.bounds[0]))
+        if overlapping_bounds:
+            if moving.contains((samples[0]-shift)@rotation).any():
+                return
+            if fixed.contains(samples[1]@rotation.T+shift).any():
+                return
         offset = np.eye(4)
         offset[:3, 3] = margin - low
         best = (volume, [offset @ transforms[0], offset @ transform @ transforms[1]], dimensions)
@@ -139,9 +142,11 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         shift = np.zeros(3)
         shift[axis] = fixed.extents[axis] + max(clearance, 0.01)
         accept(np.eye(3), shift)
+    pending = {}
+    proposal_budget = time_limit * .5
     for perm in permutations(range(3)):
         for signs in product((1, -1), repeat=3):
-            if perf_counter() - search_started >= time_limit:
+            if perf_counter() - search_started >= proposal_budget:
                 break
             rotation = np.zeros((3, 3))
             for row, col in enumerate(perm):
@@ -155,7 +160,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
                     grid = np.flip(grid, axis=axis)
                     correction[axis] = (grid.shape[axis] - 1) * pitch_mm
             for proposal_grid,padded_cells in proposal_grids:
-                if perf_counter()-search_started >= time_limit:
+                if perf_counter()-search_started >= proposal_budget:
                     break
                 correlations = fftconvolve(proposal_grid, grid[::-1, ::-1, ::-1], mode="full")
                 indices = np.argwhere(correlations < 0.5)
@@ -171,16 +176,32 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
                 if count:
                     selected = np.argpartition(volumes,count-1)[:count]
                     for index in selected[np.argsort(volumes[selected])]:
-                        if perf_counter()-search_started >= time_limit:
+                        if perf_counter()-search_started >= proposal_budget:
                             break
-                        accept(rotation,correction+shifts[index]*pitch_mm)
+                        shift = correction+shifts[index]*pitch_mm
+                        corners = np.array([moving.bounds[0],moving.bounds[1]])
+                        rotated = corners @ rotation.T + shift
+                        lo = np.minimum(fixed.bounds[0],rotated.min(axis=0))
+                        hi = np.maximum(fixed.bounds[1],rotated.max(axis=0))
+                        volume = float(np.prod(hi-lo))
+                        key = (*rotation.ravel(),*shift)
+                        pending[key] = (volume,rotation.copy(),shift.copy())
             rotations_done += 1
-        if perf_counter() - search_started >= time_limit:
+        if perf_counter() - search_started >= proposal_budget:
             break
+    proposal_seconds = perf_counter()-search_started
+    # Exact checks must compete across orientations, rather than allowing the
+    # first expensive orientation to consume the entire short search budget.
+    for _,rotation,shift in sorted(pending.values(),key=lambda p:p[0]):
+        if perf_counter()-search_started >= time_limit:
+            break
+        accept(rotation,shift)
     result = {"units": "mm", "status": "no_verified_candidate", "placements": [],
               "scope": "two_part_static_mesh_nesting",
               "search": {"pitch_mm": pitch_mm, "checked_mesh_candidates": checked,
-                         "rotations_checked": rotations_done, "elapsed_seconds": perf_counter() - start,
+                         "rotations_checked": rotations_done,
+                         "orientation_proposals":len(pending), "proposal_seconds":proposal_seconds,
+                         "rotation_count_scope":"Rotations with voxel proposals; exact candidates are counted separately", "elapsed_seconds": perf_counter() - start,
                          "preparation_seconds": search_started - start,
                          "voxel_cache_hits": cache_hits,
                          "proposal_clearance_dilation": clearance > 0,

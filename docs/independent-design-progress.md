@@ -3,6 +3,22 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Orientation coverage under short search budgets
+
+The expanded 102 search revealed that several expensive pairs explored only
+1–6 of 24 orientations before their search budget expired. Pair search now
+allocates the first half of its soft budget to collecting voxel proposals across
+orientations, then sorts the combined proposals by envelope volume before exact
+triangle/distance/containment checks. Adjacent non-overlapping bounds skip only
+the logically unnecessary containment query; collision, clearance and final
+independent validation remain required.
+
+Search metadata distinguishes orientation proposals from exact candidates and
+records proposal time. The small cavity regression explores all 24 rotations
+and preserves nested assembly checks. Full suite: 125 tests passed in 15.85 s.
+Whole-kit performance remains an empirical question; synthetic success does not
+establish a smaller 101/102 carton.
+
 ## Latest retained 101 candidate
 
 The expanded independently discovered portfolio was evaluated in three

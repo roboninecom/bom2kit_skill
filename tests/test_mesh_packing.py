@@ -32,7 +32,9 @@ def test_pair_search_emits_independent_mesh_certificate(tmp_path):
     assert timing["preparation_seconds"] > 0
     assert timing["search_seconds"] > 0
     assert timing["verification_seconds"] > 0
-    assert timing["rotations_checked"] > 0
+    assert timing["rotations_checked"] == 24
+    assert timing["orientation_proposals"] > 0
+    assert timing["proposal_seconds"] <= timing["search_seconds"]
     assert sum(timing[k] for k in ("preparation_seconds", "search_seconds", "verification_seconds")) == pytest.approx(
         timing["total_elapsed_seconds_including_validation"], abs=.01)
     reused = solve_mesh_pair(problem,time_limit=5,pitch_mm=.5,voxel_cache=cache)
