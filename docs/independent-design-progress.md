@@ -28,6 +28,11 @@ grouping experiments produced 22.880880, 24.504480 and 22.927600 L envelopes;
 all were rejected against the 22.087296 L verified incumbent. Broader search
 does not automatically improve a fixed wall-time budget. Evidence is under
 `102/mixed-layer-group-search/`; the equivalent 101 experiment is separate.
+Its first 101 configuration passed complete declared BOM, source geometry and
+assembly at **212 x 253 x 383 mm = 20.542588 L**, a further 0.016172 L reduction.
+This remains above the reference. The selected evidence is
+`101/mixed-layer-group-search/0/result.json`; the remaining configurations are
+not implied successful by this result.
 
 ## Height-oriented placement improves 102
 
