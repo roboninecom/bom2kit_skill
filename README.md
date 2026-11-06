@@ -1,5 +1,10 @@
 # BOM to Kit
 
+**Status:** independent packaging design from BOM/CAD is not yet complete.
+The supplied 101/102 layouts adapt prepared recipes and Alan's carton targets;
+they do not demonstrate design from scratch. See the
+[implementation audit and proposed replacement pipeline](docs/from-scratch-design-review.md).
+
 A local Python engine and shared Codex / Claude Code skill for reproducible packing plans. The engine searches rigid rectangular packing envelopes, independently checks layouts, and renders instructions from their coordinates. Optional STEP inspection supplies geometry evidence.
 
 This is a bounded packing tool, not a general concave CAD nesting optimizer. Envelope validation does not establish the contents of a grouped box, foam performance, or transport qualification. Keep these evidence levels explicit when comparing with an engineer.
