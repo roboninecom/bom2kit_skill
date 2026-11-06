@@ -3,6 +3,30 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Latest retained 101 candidate
+
+The expanded independently discovered portfolio was evaluated in three
+configurations with unchanged BOM and protection. The first two envelopes
+(20.674907 and 21.225945 L) did not improve the incumbent. Configuration 2
+passed original-source geometry, internal group assembly, external insertion
+and declared BOM reconciliation at **213 x 254 x 381 mm = 20.612862 L**.
+It uses six discovered group types and six inner cartons, covering all 79
+packing units. This is still **6.13% above** the 19.423040 L reference.
+
+Evidence: `packaging-results/independent/101/expanded-portfolio-design/2/`.
+`expanded-portfolio-review/` reruns geometry/BOM/carton checks and renders these
+exact coordinates. This experiment reused independent group discovery and is
+not a fresh complete source-to-carton timing measurement.
+
+The optional `carton.unequal_columns: true` now also generates two adjacent
+stacks with different widths from the total geometry-derived footprint. Each
+stack has closed cartons with the original wall thickness, full base support
+and independently checked containment. No reference dimensions are used. A
+synthetic mixed-size kit exercises actual unequal-width output and rejects a
+carton moved into its neighbor. Full suite: 125 tests passed in 15.30 seconds.
+The first 102 trial matched the existing 22.340736 L envelope exactly, so it
+was not accepted as an improvement.
+
 ## Height-utilization experiment
 
 The retained 101 layers occupy 86–98% of their floor area but 71–91% of their

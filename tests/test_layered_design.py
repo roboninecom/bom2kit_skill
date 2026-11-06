@@ -50,3 +50,22 @@ def test_adjacent_stacks_allow_different_heights_but_reject_unsupported_top():
     layout["layers"][2]["position_mm"][2] += 1
     layout["placements"][2]["position_mm"][2] += 1
     assert not validate_layered(problem,layout)["valid"]
+
+
+def test_generated_unequal_columns_preserve_support_and_all_units():
+    items = [{"id":str(i),"quantity":q,"dimensions_mm":size,"allowed_rotations":"fixed"}
+             for i,(q,size) in enumerate([(4,[40,70,40]),(2,[40,60,60]),(5,[100,40,30])])]
+    request = {"units":"mm","items":items,"policy":{"wall_mm":2,"inner_wall_mm":1.5,
+               "unequal_columns":True,"refine_footprints":False}}
+    units = normalize({"items":items,"container":{"inner_mm":[1000]*3}})["units"]
+    result = design_layers(request,units,time_limit=1)
+    best = result["candidate"]
+    assert any(a["strategy"] == "greedy_unequal_columns" and a["valid"] for a in result["attempts"])
+    assert validate_layered(best["input"],best["layout"])["valid"]
+    assert len(best["layout"]["placements"]) == 11
+    assert len({layer["inner_mm"][0] for layer in best["layout"]["layers"]}) == 2
+    broken = deepcopy(best["layout"])
+    # Moving one closed carton into the adjacent stack must not be accepted.
+    right = max(broken["layers"],key=lambda layer:layer["position_mm"][0])
+    right["position_mm"][0] = 0
+    assert not validate_layered(best["input"],broken)["valid"]

@@ -120,40 +120,49 @@ def design_layers(request, units, time_limit=5):
             best = {"input":problem,"layout":layout,"validation":certificate,"volume_mm3":total,"external_mm":external,
                     "packaging_bom":packaging}
 
+    unequal_columns = policy.get("unequal_columns", False)
+    if type(unequal_columns) is not bool:
+        raise ValueError("unequal_columns must be boolean")
     greedy_deadline = time_limit*.65
     # Compete full-width trays with narrower independently supported columns.
     # Column dimensions derive from geometry, never a target reference carton.
-    configurations = [(w,d,anchor,columns) for w in footprints for d in footprints
-                      for columns in (1,2) for anchor in (True,False)]
-    for footprint_width, depth, anchor_required, columns in configurations:
+    fractions = (None,.5,.35) if unequal_columns else (None,.5)
+    configurations = [(w,d,anchor,fraction) for w in footprints for d in footprints
+                      for fraction in fractions for anchor in (True,False)]
+    for footprint_width, depth, anchor_required, fraction in configurations:
         if perf_counter()-started >= greedy_deadline:
             break
-        width = math.ceil((footprint_width/columns+2*thickness)/increment)*increment-2*thickness
+        shares = [1] if fraction is None else [fraction,1-fraction]
+        widths = [math.ceil((footprint_width*share+2*thickness)/increment)*increment-2*thickness for share in shares]
+        columns = len(widths)
         remaining, poses, layers = list(units), [], []
         column_tops = [margin[2]] * columns
         while remaining and perf_counter()-started < greedy_deadline:
             options = []
             anchor = max(remaining, key=lambda u:math.prod(u["dimensions"]))["unit_id"] if anchor_required else None
-            for height in remaining_height_bands(remaining, increment, heights):
-                if perf_counter()-started >= greedy_deadline:
+            for column in sorted(range(columns),key=lambda c:(column_tops[c],-widths[c])):
+                width = widths[column]
+                for height in remaining_height_bands(remaining, increment, heights):
+                    if perf_counter()-started >= greedy_deadline:
+                        break
+                    packed = pack_strip(remaining,width, height,gap,depth=depth,allow_partial=True,priority_unit=anchor,
+                                        placement_score=placement_score,item_order=item_order)
+                    if not packed["placements"]:
+                        continue
+                    if anchor and not any(p["unit_id"] == anchor for p in packed["placements"]):
+                        continue
+                    used = sum(math.prod(p["dimensions_mm"]) for p in packed["placements"])
+                    score = used / ((width+2*thickness)*(depth+2*thickness)*(packed["usable_mm"][2]+2*thickness))
+                    options.append((score,len(packed["placements"]),packed))
+                if options:
                     break
-                packed = pack_strip(remaining,width, height,gap,depth=depth,allow_partial=True,priority_unit=anchor,
-                                    placement_score=placement_score,item_order=item_order)
-                if not packed["placements"]:
-                    continue
-                if anchor and not any(p["unit_id"] == anchor for p in packed["placements"]):
-                    continue
-                used = sum(math.prod(p["dimensions_mm"]) for p in packed["placements"])
-                score = used / ((width+2*thickness)*(depth+2*thickness)*(packed["usable_mm"][2]+2*thickness))
-                options.append((score,len(packed["placements"]),packed))
             if not options:
                 break
             _,_,packed = max(options,key=lambda option: option[:2])
             lid = "layer-"+str(len(layers)+1)
-            column = min(range(columns),key=lambda c:column_tops[c])
             layer_height = math.ceil((packed["usable_mm"][2]+2*thickness)/increment)*increment-2*thickness
             layer = {"id": lid, "inner_mm": [width,depth,layer_height], "wall_mm": thickness,
-                     "position_mm": [margin[0]+column*(width+2*thickness),margin[1],column_tops[column]]}
+                     "position_mm": [margin[0]+sum(w+2*thickness for w in widths[:column]),margin[1],column_tops[column]]}
             layers.append(layer)
             for pose in packed["placements"]:
                 poses.append({**pose,"layer_id":lid,"position_mm": [pose["position_mm"][k]+layer["position_mm"][k]+thickness for k in range(3)]})
@@ -162,8 +171,8 @@ def design_layers(request, units, time_limit=5):
             column_tops[column] += layer_height+2*thickness
         if remaining:
             continue
-        cavity = [columns*(width+2*thickness), depth+2*thickness, max(column_tops)-margin[2]]
-        accept(poses,layers,cavity,"greedy_height_bands")
+        cavity = [sum(w+2*thickness for w in widths), depth+2*thickness, max(column_tops)-margin[2]]
+        accept(poses,layers,cavity,"greedy_unequal_columns" if fraction not in (None,.5) else "greedy_height_bands")
         if columns == 1:
             estimated_volume = math.prod(cavity[k]+2*(wall[k]+margin[k])+(reserve if k==2 else 0) for k in range(3))
             sequence_seeds.append((estimated_volume,width,depth,cavity[2]))
