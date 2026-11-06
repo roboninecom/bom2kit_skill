@@ -7,6 +7,7 @@ from hashlib import sha256
 from itertools import permutations
 import json
 from pathlib import Path
+from .mesh_frames import packing_bounds
 from time import perf_counter
 
 from .carton_design import design_carton
@@ -44,7 +45,7 @@ def design_mesh_envelopes(library, policy, time_limit=5, incumbent_volume_mm3=No
         mesh = trimesh.Trimesh(source["vertices_mm"], source["triangles"], process=False)
         if not mesh.is_volume or np.any(mesh.area_faces <= 0):
             raise ValueError("Invalid mesh source")
-        frame, _ = trimesh.bounds.oriented_bounds(mesh)
+        frame, _ = packing_bounds(mesh)
         points = trimesh.transform_points(mesh.vertices, frame)
         frame[:3, 3] -= points.min(axis=0)
         size = np.ptp(points, axis=0)

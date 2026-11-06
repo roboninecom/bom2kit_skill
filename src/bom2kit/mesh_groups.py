@@ -4,6 +4,7 @@ from collections import Counter
 from hashlib import sha256
 import json
 from pathlib import Path
+from .mesh_frames import packing_bounds
 from time import perf_counter
 
 
@@ -142,7 +143,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
         mesh = trimesh.Trimesh(data["vertices_mm"], data["triangles"], process=False)
         if not mesh.is_volume or np.any(mesh.area_faces <= 0):
             raise ValueError("Invalid source geometry")
-        frame, _ = trimesh.bounds.oriented_bounds(mesh)
+        frame, _ = packing_bounds(mesh)
         mesh.apply_transform(frame)
         shift = -mesh.bounds[0]
         frame[:3, 3] += shift

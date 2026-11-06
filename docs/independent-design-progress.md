@@ -3,6 +3,34 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+## Stable group frames and distributed cavity proposals
+
+Adding a part inside an existing group changed the approximate oriented-bounds
+frame and slightly enlarged its box despite unchanged physical outer bounds.
+The shared `packing_bounds` helper now compares that approximation against the
+mesh's intrinsic axis-aligned bounds and retains the smaller-volume frame.
+Both frames come from source geometry or independently generated compounds;
+no reference orientation enters this choice. Exact triangle validation remains
+unchanged. On the examined 102 group, this preserved the known
+90 x 101.517013 x 154 mm unpadded bounds instead of an enlarged approximation.
+
+The 101 rerun passed full declared BOM, original geometry and assembly at
+**254 x 254 x 310 mm = 19.999960 L**, still above the 19.423040 L reference.
+Evidence: `101/stable-frame-design/result.json`. The 102 filled-cavity rerun
+still did not improve its incumbent: 22.590288 L was rejected. The earlier
+version had produced 23.050300 L; neither is an accepted whole-kit improvement.
+
+The first compound-cavity search found twelve valid five-part alternatives,
+all using the same host. A per-host quota now distributes the bounded portfolio
+across different hollow groups. Original-source bounds used only for ranking
+are cached within an extension call; source hash, geometry and assembly checks
+are still performed for each candidate. A regression verifies host diversity
+when one host could otherwise consume the whole proposal allowance.
+
+The frame change passed the complete 133-test suite in 15.36 seconds. Follow-up
+cavity/nested/frame tests passed after adding quota and ranking-cache changes.
+Whole-kit evaluation of the distributed portfolio remains a separate gate.
+
 ## Latest 101 result and actual cavity search
 
 The final mixed-layer grouping experiment improved 101 to

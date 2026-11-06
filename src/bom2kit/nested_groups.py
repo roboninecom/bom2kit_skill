@@ -3,6 +3,7 @@ from collections import Counter
 from hashlib import sha256
 import json
 from pathlib import Path
+from .mesh_frames import packing_bounds
 from time import perf_counter
 
 
@@ -66,6 +67,7 @@ def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max
                                     time_limit=time_limit,pair_seconds=pair_seconds,max_pairs=max_pairs,
                                     required_item_ids=set(expansions),source_quantities=quantities)
     alternatives, attempts = [], []
+    original_box_volumes = {}
     for candidate in candidates["alternatives"]:
         counts, poses = Counter(), []
         for parent in candidate["layout"]["placements"]:
@@ -86,10 +88,14 @@ def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max
         # virtual compounds (which may already contain substantial void savings).
         separate = 0.
         for iid,count in counts.items():
-            data = json.loads(Path(sources[iid]["mesh"]["path"]).read_text())
-            mesh = trimesh.Trimesh(data["vertices_mm"],data["triangles"],process=False)
-            _,extents = trimesh.bounds.oriented_bounds(mesh)
-            separate += count*float(np.prod(extents))
+            # Ranking bounds depend on the source, not the candidate pose.
+            # Exact source hashes and geometry are still checked per assembly.
+            if iid not in original_box_volumes:
+                data = json.loads(Path(sources[iid]["mesh"]["path"]).read_text())
+                mesh = trimesh.Trimesh(data["vertices_mm"],data["triangles"],process=False)
+                _,extents = packing_bounds(mesh)
+                original_box_volumes[iid] = float(np.prod(extents))
+            separate += count*original_box_volumes[iid]
         alternatives.append({"members":list(counts.elements()),"input":problem,"layout":layout,"assembly":assembly,
                              "envelope_mm":candidate["envelope_mm"],"separate_box_volume_mm3":separate,
                              "group_box_volume_mm3":candidate["group_box_volume_mm3"]})

@@ -42,3 +42,6 @@ def test_cavity_discovery_certifies_original_sources_and_preserves_host_bounds(t
     from bom2kit.nested_groups import extend_groups
     extension = extend_groups(library,result,tmp_path/"nested",time_limit=10,max_pairs=2,cavities=True)
     assert extension["alternatives"] == []
+    diverse = {**library,"items":items+[{**items[0],"id":"other-host"},{**items[1],"id":"other-part"}]}
+    groups = discover_cavities(diverse,tmp_path/"diverse",clearance_mm=.2,pitch_mm=1,time_limit=10,max_groups=2)
+    assert {g["members"][0] for g in groups["alternatives"]} == {"0","other-host"}

@@ -3,7 +3,9 @@ from collections import Counter
 from hashlib import sha256
 from itertools import permutations
 import json
+import math
 from pathlib import Path
+from .mesh_frames import packing_bounds
 from time import perf_counter
 
 
@@ -72,7 +74,7 @@ def discover_cavities(library, output, clearance_mm=2, pitch_mm=2, time_limit=12
         mesh = trimesh.Trimesh(data["vertices_mm"],data["triangles"],process=False)
         if not mesh.is_volume or np.any(mesh.area_faces <= 0):
             raise ValueError("Invalid source mesh")
-        frame,_ = trimesh.bounds.oriented_bounds(mesh)
+        frame,_ = packing_bounds(mesh)
         mesh.apply_transform(frame)
         shift = -mesh.bounds[0]
         mesh.apply_translation(shift)
@@ -84,6 +86,7 @@ def discover_cavities(library, output, clearance_mm=2, pitch_mm=2, time_limit=12
     dense = sorted((p for p in prepared if p["occupancy"] >= .8 and
                     (dense_item_ids is None or p["item"]["id"] in dense_item_ids)),key=lambda p:-p["box"])
     attempts, alternatives = [], []
+    per_host_limit = max(1,math.ceil(max_groups/max(1,len(hosts))))
     radius = int(np.ceil(clearance_mm/pitch_mm))
     coordinates = np.indices((2*radius+1,)*3)-radius
     sphere = np.sum(coordinates**2,axis=0) <= radius**2
@@ -93,8 +96,9 @@ def discover_cavities(library, output, clearance_mm=2, pitch_mm=2, time_limit=12
         voxel = host["mesh"].voxelized(pitch_mm).fill()
         grid = binary_dilation(voxel.matrix,structure=sphere)
         prefix = np.pad(grid.astype(np.int32),((1,0),)*3).cumsum(0).cumsum(1).cumsum(2)
+        host_groups = 0
         for part in dense:
-            if perf_counter()-started >= time_limit or len(alternatives) >= max_groups:
+            if perf_counter()-started >= time_limit or len(alternatives) >= max_groups or host_groups >= per_host_limit:
                 break
             if part["box"] > host["box"]*(1-host["occupancy"]):
                 continue
@@ -141,6 +145,7 @@ def discover_cavities(library, output, clearance_mm=2, pitch_mm=2, time_limit=12
                     alternatives.append({"members":record["members"],"input":problem,"layout":layout,"assembly":assembly,
                                          "envelope_mm":host["mesh"].extents.tolist(),"group_box_volume_mm3":host["box"],
                                          "separate_box_volume_mm3":host["box"]+part["box"]})
+                    host_groups += 1
                     accepted = True
                     break
                 if accepted:
@@ -148,6 +153,7 @@ def discover_cavities(library, output, clearance_mm=2, pitch_mm=2, time_limit=12
     result = {"scope":"Voxel-cavity proposals with exact source and assembly checks; not a complete kit",
               "source_library_sha256":sha256(json.dumps(library,sort_keys=True).encode()).hexdigest(),
               "clearance_mm":clearance_mm,"pitch_mm":pitch_mm,"alternatives":alternatives,"attempts":attempts,
+              "per_host_alternative_limit":per_host_limit,
               "elapsed_seconds":perf_counter()-started,"time_budget_seconds":time_limit,
               "deadline_scope":"Soft bound; source preparation and an individual exact check may overrun"}
     (output/"cavities.json").write_text(json.dumps(result))
