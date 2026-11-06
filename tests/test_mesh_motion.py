@@ -108,3 +108,22 @@ def test_continuous_distance_steps_handle_overlapping_aabbs(tmp_path):
     assert result["valid"]
     assert result["distance_queries"] > 0
     assert result["removal_sequence"][0]["unit_ids"] == ["tube#1"]
+
+
+def test_long_parallel_clearance_is_not_truncated_at_500_steps(tmp_path):
+    pytest.importorskip("rtree")
+    shapes = {"rod": trimesh.creation.cylinder(radius=1.8, height=100),
+              "tube": trimesh.creation.annulus(r_min=2, r_max=3, height=100)}
+    items, placements = [], []
+    for name, mesh in shapes.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps({"units": "mm", "vertices_mm": mesh.vertices.tolist(),
+                                    "triangles": mesh.faces.tolist()}))
+        items.append({"id": name, "mesh": {"path": str(path), "sha256": sha256(path.read_bytes()).hexdigest()}})
+        placements.append({"item_id": name, "unit_id": name + "#1",
+                           "transform": [[1,0,0,5],[0,1,0,5],[0,0,1,50],[0,0,0,1]]})
+    result = check_vertical_sequence({"units": "mm", "container": {"inner_mm": [10,10,110]},
+                                      "clearance_mm": .1, "items": items},
+                                     {"units": "mm", "placements": placements}, time_limit=20)
+    assert result["valid"]
+    assert result["distance_queries"] > 500

@@ -95,7 +95,9 @@ def check_vertical_sequence(problem, layout, groups=None, time_limit=30):
             moving_manager = trimesh.collision.CollisionManager()
             moving_manager.add_object('moving', moving)
             moved, passed = 0.0, False
-            for _ in range(500):
+            # Narrow parallel clearances may need thousands of conservative
+            # steps. Bound by elapsed time, not an arbitrary iteration count.
+            while True:
                 if perf_counter() - start >= time_limit:
                     break
                 if moved >= travel:
