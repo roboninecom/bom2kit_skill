@@ -39,6 +39,14 @@ and selected a verified baseline in 4.21 seconds from prepared meshes. Each
 stage includes its own checks; these timings do not yet provide a disjoint
 aggregate preparation/search/validation breakdown or include source import.
 
+Four 102 leave-one-out configurations under `group-neighbors/` generated
+24.285184, 23.323300, 22.401288 and 22.432068 L envelopes with 90-second
+carton budgets. All were correctly rejected as non-improving; they do not carry
+original-pose acceptance certificates. The verified 22.340736 L incumbent is
+unchanged. A matching broader 101 discovery checked 28 proposals in 242.86 s
+and retained 20 assembly-checked pairs (`101/expanded-pair-search/`). Full-kit
+evaluation is separate from those local pair certificates.
+
 ## Current search and review improvements
 
 The shared Codex/Claude skill now launches independent group discovery and
