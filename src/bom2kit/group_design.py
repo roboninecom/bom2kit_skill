@@ -98,6 +98,6 @@ def design_grouped_library(library, portfolio, policy, output, time_limit=5):
               "input": problem, "layout": layout, "validation": validation, "motion": motion,
               "groups": groups, "group_certificates": certificates, "envelope_candidate": candidate,
               "scope": library.get("scope"), "source_library_sha256": library_hash,
-              "limitations": ["Greedy pair selection; complete grouping optimum not proven.", "Packaging materials and source shipping BOM coverage are not certified by this geometry stage."]}
+              "limitations": ["Greedy group selection; complete grouping optimum not proven.", "Packaging materials and source shipping BOM coverage are not certified by this geometry stage."]}
     (output / "result.json").write_text(json.dumps(result, allow_nan=False))
     return result

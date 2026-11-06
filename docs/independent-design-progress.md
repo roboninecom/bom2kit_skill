@@ -112,6 +112,18 @@ cartons and prepared engineer placements are never inputs. Whole-kit selection
 remains bounded and greedy; larger local groups do not guarantee a smaller
 shipping carton.
 
+The first full-library extension experiment completed in 153.15 s and retained
+one four-arm group with an original-envelope ratio of 0.80409. Every original
+part has a fresh assembly certificate; the group is not a copied engineer
+arrangement. Adding it to the independently discovered alternatives reduced
+the complete 102 candidate to **264 x 264 x 338 mm = 23.557248 L**. All 108
+packing units, the declared BOM, original triangle/insertion checks and a fresh
+hierarchical carton check pass. Evidence:
+`packaging-results/independent/102/nested-discovery/groups.json` and
+`packaging-results/independent/102/nested-carton-design/result.json`.
+The full test suite passes 110 tests. This is measured progress, not completion:
+the 102 volume is still above 20.06336 L and the remaining delivery gates stay open.
+
 ### Diverse pairs and adjacent carton stacks
 
 Pair proposal ranking now discounts repeatedly explored part types. A limited
