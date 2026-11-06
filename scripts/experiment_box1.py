@@ -93,26 +93,36 @@ def main():
                       'pair_errors':validation['errors'], 'full_box1_validated':False}))
 
 
-def incremental_search(optimized=False, frame_first=False, resume=False):
+def incremental_search(optimized=False, frame_first=False, resume=False, manual=False, wrist_first=False, left_seed=False, split_seed=False, merged=False):
     """Try bounded greedy orders; revalidate every flattened original placement."""
     from bom2kit.mesh_packing import solve_mesh_pair
     output = Path(__file__).resolve().parents[1] / 'packaging-results/evidence-audit/box1-experiment'
     problem = json.loads((output/'problem-printed-subset.json').read_text())
     initial = json.loads((output/('base-pair-optimized-layout.json' if optimized else 'base-pair-layout.json')).read_text())
-    tag='frame-first' if frame_first else ('optimized' if optimized else 'initial')
+    tag='manual' if manual else ('frame-first' if frame_first else ('optimized' if optimized else 'initial'))
+    if wrist_first:
+        tag+='-wrist-first'
+    if left_seed:
+        tag+='-left'
+    if split_seed:
+        tag+='-split'
     if optimized:
         bom_source=output.parent/'current102-bom.md'
         proxy=trimesh.creation.annulus(r_min=30,r_max=39/np.cos(np.pi/128),height=10,sections=128)
-        proxy_path=output/'bearing6812-conservative-annulus.json'
+        proxy_path=output/'bearing6812-bagged-assumption-annulus.json'
         proxy_path.write_text(json.dumps({'units':'mm','vertices_mm':proxy.vertices.tolist(),
             'triangles':proxy.faces.tolist(),'provenance':{'source':'SO-ARM-102 docs/bom.md',
             'sha256':sha256(bom_source.read_bytes()).hexdigest(),'dimensions_mm':[60,78,10],
-            'model':'Conservative bounding annulus: circumscribed outer polygon, inscribed hole polygon; not actual bearing CAD'}}))
+            'model':'Conservative bounding annulus: circumscribed outer polygon, inscribed hole polygon; not actual bearing CAD',
+            'packing_state':'Bare bearing conservative geometry. User permits flexible bags instead of factory cartons; bag thickness is assumed and not included in mesh certificate.'}}))
         problem['items'].append({'id':'Bearing6812-proxy','quantity':2,'mesh':{'path':str(proxy_path),
                                     'sha256':sha256(proxy_path.read_bytes()).hexdigest()}})
         problem['scope']='16 printed parts and2dimensionedconservativebearingproxies; not completekit'
         problem['container_basis']='User-confirmed external dimensions and1.5mm walls'
         (output/'problem-with-bearing-proxies.json').write_text(json.dumps(problem,indent=2))
+    if merged:
+        problem['container']={**problem['container'],'inner_mm':[243,160,72]}
+        tag+='-merged'
     expected_count=sum(item['quantity']for item in problem['items'])
     by_id = {item['id']:item for item in problem['items']}
     meshes = {}
@@ -124,8 +134,15 @@ def incremental_search(optimized=False, frame_first=False, resume=False):
         frame='RB9.01.062.012 Main frame (D6.1)'
         transform=np.eye(4);transform[:3,3]=-meshes[frame].bounds[0]+0.1
         initial={'placements':[{'item_id':frame,'unit_id':frame+'#1','transform':transform.tolist()}]}
+    if merged:
+        initial=json.loads((output/'best-printed-subset-layout.json').read_text())
     if resume:
         initial=json.loads((output/f'latest-{tag}-order0.json').read_text())
+    elif manual:
+        filename='manual-split-reference-seed.json' if split_seed else ('manual-left-reference-seed.json' if left_seed else 'manual-reference-seed.json')
+        initial=json.loads((output/filename).read_text())
+        if not initial['validation']['valid']:
+            raise ValueError('Manual reference seed failed validation')
     used={}
     for p in initial['placements']:
         used[p['item_id']]=used.get(p['item_id'],0)+1
@@ -136,8 +153,10 @@ def incremental_search(optimized=False, frame_first=False, resume=False):
     if optimized:
         orderings=[orderings[1],sorted(remaining,key=lambda u:(u[0]!='Bearing6812-proxy',-np.prod(meshes[u[0]].extents)))]
     if frame_first:
-        priority=['RB9.01.062.075 Camera holder',base,'SO102.02.050 Bottom ring',
+        priority=['RB9.01.062.012 Main frame (D6.1)','RB9.01.062.075 Camera holder',base,'SO102.02.050 Bottom ring',
                   'Bearing6812-proxy','SO102.02.040 Bottom top plate']
+        if wrist_first:
+            priority=['SO102 Wrist roll']+priority
         orderings=[sorted(remaining,key=lambda u:(priority.index(u[0]) if u[0] in priority else 99,
                                                 -np.prod(meshes[u[0]].extents)))]
     trials=[]
@@ -162,7 +181,7 @@ def incremental_search(optimized=False, frame_first=False, resume=False):
             pair={**problem,'items':[{'id':'validated_group','quantity':1,'mesh':{
                 'path':str(group_path),'sha256':sha256(group_path.read_bytes()).hexdigest()}},
                 {**by_id[iid],'quantity':1}]}
-            found=solve_mesh_pair(pair,time_limit=20,pitch_mm=2,candidates_per_rotation=8)
+            found=solve_mesh_pair(pair,time_limit=90,pitch_mm=2,candidates_per_rotation=16)
             moving_frame=np.eye(4)
             if found['status']!='validated_static_layout':
                 # A second rigid orientation family covers slanted source parts
@@ -177,7 +196,7 @@ def incremental_search(optimized=False, frame_first=False, resume=False):
                     'original_to_obb_transform':moving_frame.tolist()}))
                 pair['items'][1]={**by_id[iid],'quantity':1,'mesh':{'path':str(obb_path),
                                         'sha256':sha256(obb_path.read_bytes()).hexdigest()}}
-                found=solve_mesh_pair(pair,time_limit=25,pitch_mm=1.5,candidates_per_rotation=12)
+                found=solve_mesh_pair(pair,time_limit=150,pitch_mm=1.5,candidates_per_rotation=24)
             record={'next_id':iid,'next_instance':number,'status':found['status'],'search':found['search'],
                     'moving_preorientation':moving_frame.tolist()}
             if found['status']!='validated_static_layout':
@@ -206,17 +225,22 @@ def incremental_search(optimized=False, frame_first=False, resume=False):
     return trials
 
 
-def optimize_base_seed():
+def optimize_base_seed(name='SO102.02.010 Base'):
     from bom2kit.mesh_packing import solve_mesh_pair
     output=Path(__file__).resolve().parents[1]/'packaging-results/evidence-audit/box1-experiment'
-    original=json.loads((output/'base-pair-problem.json').read_text())
-    item=original['items'][0]
+    original=json.loads((output/'problem-printed-subset.json').read_text())
+    item=next(item for item in original['items'] if item['id']==name)
+    original={**original,'items':[item]}
+    prefix='base-pair' if name=='SO102.02.010 Base' else name.replace(' ','_')+'-pair'
+    if name!='SO102.02.010 Base':
+        original['container']={**original['container'],'inner_mm':[95,95,72]}
+        prefix+='-compact'
     data=json.loads(Path(item['mesh']['path']).read_text())
     vertices=np.array(data['vertices_mm'])
     rotation=np.array([[1,0,0],[0,0,1],[0,-1,0]])
     rotated=vertices@rotation.T
     transform=np.eye(4);transform[:3,:3]=rotation;transform[:3,3]=-rotated.min(0)
-    path=output/'base-flat-rigid.json'
+    path=output/(prefix+'-flat-rigid.json')
     path.write_text(json.dumps({'units':'mm','vertices_mm':(rotated-rotated.min(0)).tolist(),
                                'triangles':data['triangles'],'original_mesh':item['mesh'],
                                'original_to_flat_transform':transform.tolist()}))
@@ -228,17 +252,95 @@ def optimize_base_seed():
                               for p in result['placements']]
         result['original_validation']=validate_mesh_layout(original,result)
         if result['original_validation']['valid']:
-            (output/'base-pair-optimized-layout.json').write_text(json.dumps(result,indent=2))
-    (output/'base-pair-optimization.json').write_text(json.dumps(result,indent=2))
-    print(json.dumps({'status':result['status'],'envelope':result.get('envelope_mm'),
-                      'original_validation':result.get('original_validation',{}).get('valid')}))
+            (output/(prefix+'-optimized-layout.json')).write_text(json.dumps(result,indent=2))
+    (output/(prefix+'-optimization.json')).write_text(json.dumps(result,indent=2))
+    print(json.dumps({'part':name,'status':result['status'],'envelope':result.get('envelope_mm'),
+                      'original_validation':result.get('original_validation',{}).get('valid')}),flush=True)
+
+
+def manual_ring_seed(left=False, split=False):
+    output=Path(__file__).resolve().parents[1]/'packaging-results/evidence-audit/box1-experiment'
+    problem=json.loads((output/'problem-with-bearing-proxies.json').read_text())
+    items={item['id']:item for item in problem['items']}
+    initial=json.loads((output/'base-pair-optimized-layout.json').read_text())
+    placements=initial['placements']
+    R=np.array([[1,0,0],[0,0,1],[0,-1,0]])
+    ring_ids=['SO102.02.020 Base ring','SO102.02.050 Bottom ring','SO102.02.040 Bottom top plate']
+    for index in range(2):
+        for iid in ring_ids:
+            mesh=json.loads(Path(items[iid]['mesh']['path']).read_text())
+            points=np.array(mesh['vertices_mm'])@R.T
+            T=np.eye(4);T[:3,:3]=R
+            top_offset=10.2 if iid==ring_ids[2] else 0
+            T[:3,3]=[47 if left else 198,45,31.2+index*19.4+top_offset-points[:,2].min()]
+            if split:
+                T[:3,3]=[47+93*index,45,31.2+top_offset-points[:,2].min()]
+            placements.append({'item_id':iid,'unit_id':f'{iid}#{index+1}','transform':T.tolist()})
+        T=np.eye(4);T[:3,3]=[131.2 if left else 39.02,39.02,36.2+index*10.2]
+        if split:
+            T[:3,3]=[47,45,55.6+index*10.2]
+        placements.append({'item_id':'Bearing6812-proxy','unit_id':f'Bearing6812-proxy#{index+1}',
+                           'transform':T.tolist()})
+    counts={}
+    for p in placements:counts[p['item_id']]=counts.get(p['item_id'],0)+1
+    subset={**problem,'items':[{**items[iid],'quantity':q}for iid,q in counts.items()]}
+    layout={'units':'mm','placements':placements}
+    validation=validate_mesh_layout(subset,layout)
+    prefix='manual-split' if split else ('manual-left' if left else 'manual')
+    (output/(prefix+'-reference-seed.json')).write_text(json.dumps({**layout,'validation':validation},indent=2))
+    (output/(prefix+'-reference-seed-problem.json')).write_text(json.dumps(subset,indent=2))
+    print(json.dumps({'count':len(placements),'valid':validation['valid'],'errors':validation['errors']}),flush=True)
+
+
+def manual_printed_completion():
+    """Complete the known 14-part seed with rigid frame and camera placements."""
+    output=Path(__file__).resolve().parents[1]/'packaging-results/evidence-audit/box1-experiment'
+    problem=json.loads((output/'problem-printed-subset.json').read_text())
+    problem['container']={**problem['container'],'inner_mm':[243,160,72]}
+    layout=json.loads((output/'best-printed-subset-layout.json').read_text())
+    items={item['id']:item for item in problem['items']}
+    for iid,camera,x in [('RB9.01.062.012 Main frame (D6.1)',False,0.1),
+                         ('RB9.01.062.075 Camera holder',True,128.3)]:
+        data=json.loads(Path(items[iid]['mesh']['path']).read_text())
+        mesh=trimesh.Trimesh(data['vertices_mm'],data['triangles'],process=False)
+        if camera:
+            transform=np.linalg.inv(mesh.bounding_box_oriented.primitive.transform)
+            mesh.apply_transform(transform)
+            descending=np.argsort(mesh.extents)[::-1]
+            order=[descending[0],descending[2],descending[1]]
+            rotation=np.eye(3)[order]
+            if np.linalg.det(rotation@transform[:3,:3])<0:
+                rotation[0]*=-1
+            second=np.eye(4);second[:3,:3]=rotation
+            transform=second@transform
+        else:
+            transform=np.eye(4)
+            transform[:3,:3]=[[1,0,0],[0,0,1],[0,-1,0]]
+        vertices=np.array(data['vertices_mm'])@transform[:3,:3].T+transform[:3,3]
+        transform[:3,3]+=np.array([x,113.2,0.1])-vertices.min(0)
+        layout['placements'].append({'item_id':iid,'unit_id':iid+'#1','transform':transform.tolist()})
+    layout['scope']='All16 BOX1 printed parts in expanded compartment; bearings excluded'
+    layout['full_box1_validated']=False
+    validation=validate_mesh_layout(problem,layout)
+    (output/'manual-16-merged-layout.json').write_text(json.dumps({**layout,'validation':validation},indent=2))
+    (output/'manual-16-merged-problem.json').write_text(json.dumps(problem,indent=2))
+    print(json.dumps({'count':len(layout['placements']),'valid':validation['valid'],'errors':validation['errors']}),flush=True)
 
 
 if __name__ == '__main__':
     import sys
     if '--nest' in sys.argv:
-        incremental_search('--optimized' in sys.argv, '--frame-first' in sys.argv, '--resume' in sys.argv)
+        incremental_search('--optimized' in sys.argv, '--frame-first' in sys.argv,
+                           '--resume' in sys.argv,'--manual' in sys.argv,'--wrist-first' in sys.argv,
+                           '--left-seed' in sys.argv,'--split-seed' in sys.argv,'--merged' in sys.argv)
     elif '--seed' in sys.argv:
         optimize_base_seed()
+    elif '--ring-seeds' in sys.argv:
+        for name in ['SO102.02.020 Base ring','SO102.02.040 Bottom top plate','SO102.02.050 Bottom ring']:
+            optimize_base_seed(name)
+    elif '--complete-printed' in sys.argv:
+        manual_printed_completion()
+    elif '--manual-seed' in sys.argv:
+        manual_ring_seed('--left-seed' in sys.argv,'--split-seed' in sys.argv)
     else:
         main()

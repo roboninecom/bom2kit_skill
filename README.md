@@ -142,8 +142,45 @@ python scripts/build_comparison_pdf.py
 Outputs are in `packaging-results/benchmarks/`: two HTML instructions, independently
 checked layouts, source fingerprints and `packing-comparison.pdf`. The nominal
 seven-box arrangement equals Alan's 19.42304 L for 101 and 20.06336 L for 102.
-This is **not yet a validated full-kit result**. The original reported 50 L layout
-is unavailable and is not used as a reproducible before/after baseline.
+Those nominal outputs are **not complete-kit certificates**. The original reported
+50 L layout is unavailable and is not used as a reproducible before/after baseline.
+
+## Complete-kit recipes and comparison
+
+The corrected 101 recipe and its explicit assumptions are documented in
+[the validated 101 layout](docs/101-validated-layout.md). Its 69 logical packing
+units include all 43 printed pieces; one USB packet is represented by two subbags.
+Replay validates the supplied recipe; it is not a new packing search.
+The [102 layout](docs/102-validated-layout.md) contains 93 packing units covering
+335 declared components, including 61 printed pieces. Both static comparisons
+match Alan's external volume. Read the separate motion-readiness certificates
+before treating a pose diagram as a complete assembly sequence.
+
+With private sources and generated subgroup manifests present:
+
+```powershell
+python scripts/repack_101_custom_clamps.py
+python scripts/assemble_101_kit.py
+python scripts/write_102_arm_recipe.py
+python scripts/experiment_102_clamps_servos.py
+python scripts/experiment_box7.py --seconds 120 --aruco-3mf --bag-height 64.1 --output packaging-results/so-arm-102/box7-independent-wrists
+python scripts/assemble_102_complete.py
+python scripts/experiment_102_lower_internal_motion.py
+python scripts/verify_complete_102.py --recheck-motion
+python -m bom2kit assess packaging-results/so-arm-101/complete-kit/bom.json packaging-results/so-arm-101/complete-kit/input.json packaging-results/so-arm-101/complete-kit/layout.json --output packaging-results/so-arm-101/complete-kit/fresh-assessment.json
+python scripts/build_complete_comparison_pdf.py --draft-101
+# Final comparison requires both corrected complete kits to pass fresh assessment:
+python scripts/build_complete_comparison_pdf.py
+```
+
+The final PDF generator rejects missing or invalid kits, stale renderings, and
+the superseded 80 mm clamp model. The user confirmed custom 106 mm clamp frames.
+Keep actual CAD, declared purchased envelopes, checked assembly paths, and physical
+shipping qualification distinct. Standalone 101 group cards are generated with
+`python scripts/write_101_group_recipe.py` followed by
+`python scripts/render_101_group_cards.py`; these explain the nested printed
+groups and BOX7, while the complete-kit report also includes purchased groups.
+Generate the 102 numbered geometry cards with `python scripts/render_102_group_cards.py`.
 
 ## Repository
 

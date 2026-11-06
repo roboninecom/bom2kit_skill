@@ -159,10 +159,14 @@ def pack(units, dimensions, seconds=30):
                   "expected_groups": len(units), "status": "search_exhausted_not_infeasibility_proof"}
 
 
-def run(output, seconds=30, nominal=False, nest_wrists=False, pair_max_length=115, aruco_3mf=False):
+def run(output, seconds=30, nominal=False, nest_wrists=False, pair_max_length=115, aruco_3mf=False, bag_height=None):
     started = time.perf_counter()
     items, envelopes, manifest = prepare(output, aruco_3mf)
     dimensions = [196, 78, 64] if nominal else [193, 75, 61]
+    if bag_height is not None:
+        if nominal or not np.isfinite(bag_height) or bag_height <= 0:
+            raise ValueError("A positive finite bag height requires the conservative footprint")
+        dimensions = [193, 75, bag_height]
     units = [{"item_id": item["id"], "unit_id": f"{item['id']}#{i + 1}", **envelopes[item["id"]]}
              for item in items for i in range(item["quantity"])]
     problem = {"units": "mm", "container": {"inner_mm": dimensions}, "items": items, "clearance_mm": .1,
@@ -172,6 +176,10 @@ def run(output, seconds=30, nominal=False, nest_wrists=False, pair_max_length=11
                "limitations": ["ArUco -2 3MF chosen from the alternatives allowed by SO102_Printing_and_Packing.pdf page 6; packed unassembled" if aruco_3mf else "Source ArUco geometry is in Deprecated; current identity requires confirmation",
                                "STL units are assumed mm from engineering context", "Static mesh fit only; no physical support or insertion qualification"]}
     write(output / "input.json", problem)
+    if bag_height is not None:
+        problem["assumption"] = "Original rigid BOX7 carton replaced by an upper-layer bag; declared cavity height is a design allocation, not the original carton interior."
+        problem["dimension_provenance"] = {"kind": "explicit_bag_allocation", "inner_mm": dimensions, "original_external_mm": [196, 78, 64]}
+        write(output / "input.json", problem)
     write(output / "source-manifest.json", manifest)
     pair = None
     if nest_wrists:
@@ -281,11 +289,12 @@ if __name__ == "__main__":
     parser.add_argument("--pair-max-length", type=float, default=115)
     parser.add_argument("--export-101-from", type=Path)
     parser.add_argument("--aruco-3mf", action="store_true")
+    parser.add_argument("--bag-height", type=float, help="Explicit alternative bag allocation height; retains193x75mm footprint")
     parser.add_argument("--output", type=Path, default=ROOT / "packaging-results/box7-experiment")
     args = parser.parse_args()
     if args.export_101_from:
         result = export_101_subset(args.export_101_from, args.output)
     else:
-        result = run(args.output, args.seconds, args.nominal, args.nest_wrists, args.pair_max_length, args.aruco_3mf)
+        result = run(args.output, args.seconds, args.nominal, args.nest_wrists, args.pair_max_length, args.aruco_3mf, args.bag_height)
     print(json.dumps(result, indent=2))
     raise SystemExit(0 if result.get("valid") else 1)

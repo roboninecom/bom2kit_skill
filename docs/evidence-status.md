@@ -22,19 +22,34 @@ The user selected **Visual Layout R3** for 101: electronics in BOX4, ArUco unass
 - Current CAD/print sources provide robot geometry. Figure geometry is available in the supplied 101 print source set.
 - Packing PDFs illustrate Alan's inner arrangements. Printing-project 3MF transforms describe printer placement, not packing poses.
 
-## Evidence still required for full-kit acceptance
+## Complete-kit results
 
-Part-level progress: BOX7 now has independent static triangle certificates for
-**17/17 pieces in 101** and **31/31 in 102**, inside the confirmed **193 x 75 x 61 mm**
-interior at 0.1 mm pair clearance. The 102 solution nests the two wrist holders;
-101 reuses the same figure placements. Both select the current `-2.3mf` ArUco
-alternative permitted by the packing PDF. This does not establish the remaining
-boxes, protective bags, stability or the complete kit.
+Independent static checks and source-BOM reconciliation pass for both kits:
 
-1. Collision-validated poses and containment for every printed part and purchased packet, with complete quantities and the chosen revision.
-2. Verified packed envelopes for purchased parts, especially the different servo variants and PSUs. The 101 source's 5V4A PSU and current 102 BOM's 5V2A PSU cannot silently share geometry.
-3. Explicit accounting for factory-included cables, horns and screws, plus packing additions such as regional cords and booklet.
-4. Manufacturing tolerance, booklet thickness and protection validation. The nominal two-layer stack is 139 mm inside a 140 mm cavity.
+| Kit | Packing units | Printed pieces | External volume | Change from Alan |
+|---|---:|---:|---:|---:|
+| 101 | 69 logical units | 43 | 19.42304 L | 0% |
+| 102 | 93 logical units / 335 declared components | 61 | 20.06336 L | 0% |
+
+The final manifests live under `packaging-results/so-arm-*/complete-kit/`.
+They retain source hashes, proper rigid poses and explicit purchased-envelope
+assumptions. The authoritative BOM ledgers are independent of the layouts.
+See [101 details](101-validated-layout.md) and [102 details](102-validated-layout.md).
+
+The internal subgroup and outer group assembly checks pass for both kits.
+The final 102 BOX7 recipe places both wrists independently; all 31 pieces have
+checked individual vertical insertion paths. The former statically nested wrist
+pair is superseded and is not used in the delivered instruction. Motion evidence
+is recorded separately from static fit and bound to the final input/layout hashes.
+
+The 102 upper groups use declared thin film instead of the original rigid inner
+cartons. Ten upper servos use estimated 1 mm EPE sleeves; two lower servos retain
+2 mm sleeves. External 15 mm foam remains. These are explicit packing changes,
+not proof of equal transport protection. Purchased dimensions, folded cables,
+booklet thickness, manufacturing tolerance and physical transport performance
+remain qualified as described in [benchmark assumptions](benchmark-assumptions.md).
+
+Experimental 6812 bearing annuli use the current BOM's 60 x 78 x 10 mm dimensions. The user permits bagged bearings and confirms factory cartons are not required. The annulus bounds the bare bearing; a flexible bag is assumed, with thickness and placement still outside the triangle certificate. This is an authorized packing-state assumption, not measured bag geometry.
 
 No recovered original Alan packed-assembly transform file has been established. An earlier local 101 nesting implementation is a separate 19.98 L design with 10 mm foam and assumed purchased envelopes; it is a search aid, not the reference or acceptance evidence.
 
@@ -48,3 +63,7 @@ SHA-256 identifies the exact supplied artifacts; raw files remain ignored.
 | 101 Visual_Layout_R3.pdf | `922bd4ce58a7ca906364e319f5dea29a6796e2f829f1f3595e1e33865f024a5f` |
 | 101 Box_sizes.pdf | `8219ef32e6c5c1c733dad3de22da1039ae38c7c47617f333c19bfb2dc45240a5` |
 | SO102_Printing_and_Packing.pdf | `170af12b417277664281e1f9791c65285bc20d61f139adc8fdd30d40dae3f20c` |
+
+## Custom clamp correction
+
+The user confirms that the actual clamp is custom-made with a **106 mm frame**. The current supplier listing's 80 mm frame is inapplicable. Its geometric certificates remain experimental artifacts and cannot support complete-kit acceptance. The restored historical 106 mm proxy retains the other legacy geometry assumptions without shrinking the knob, pad or shaft to match the unrelated listing. Replacement layouts require independent validation and updated source hashes.

@@ -12,7 +12,7 @@ Use the repository's shared Python engine for coordinates, quantities, validatio
 - Discover the BOM, quantity/revision information, actual packed-state envelopes, protection requirements, and source documents. Keep private inputs under `packaging-inputs/` and generated artifacts under `packaging-results/`.
 - Preserve variant and assembly identity. A CAD solid is not necessarily one BOM item. Prefer measured packed envelopes for cable coils, fastener bags, and sealed factory boxes. When the user permits BOM-based estimates, record their dimensions, source and assumed packing state explicitly and continue.
 - Record missing geometry and contradictory source instructions. Never present estimates as measurements or silently replace deprecated geometry with production evidence. Ask only about uncertainties that materially change the result and cannot be covered by authorized assumptions.
-- Keep usable cavity dimensions separate from external shipping dimensions. Compare complete matching kits with the same protective materials and packed states.
+- Keep usable cavity dimensions separate from external shipping dimensions. Compare complete matching kits under the authorized packing rules. Disclose changed cartons, sleeves, bagging and protective thicknesses; geometric acceptance does not establish equivalent cushioning or shipping performance.
 
 ## Search and validate
 
@@ -30,6 +30,20 @@ the combined contents and outer arrangement; extra space alone is not a fit resu
 ## Compare and deliver
 
 Report external volume, complete-kit coverage, implemented constraint checks, and measured runtime. Label engineer-template replay separately from search from scratch. A solution matching an engineer's outer box is not proof that all its contents fit.
+
+Run `assess BOM.json input.json layout.json --output assessment.json` on the
+complete combined mesh manifest. It freshly verifies source hashes, geometry,
+declared BOM coverage and external volume. Require `computational_acceptance:
+true` before claiming the complete declared kit is no worse. Supply explicit
+`container.wall_mm` and `reference.external_mm`; inner cavities are not shipping
+dimensions. Read the current user corrections before reusing any geometry.
+
+For operating instructions, check paths separately with
+`bom2kit.mesh_motion.check_vertical_sequence`. If parts must enter together,
+verify each small group's internal assembly on a work surface as well as its
+external insertion. Map local directions back into the carton coordinate frame.
+Keep support, handling and physical qualification distinct from collision-free
+paths. Bind diagrams and certificates to the exact input, layout and source hashes.
 
 Distinguish rectangular-envelope validation, actual CAD collision validation, and physical packing/transport trials. Report unresolved evidence as a limitation; never call a preliminary result production-approved. If the requested no-worse result cannot be demonstrated, deliver the working tool and explicit evidence gap without claiming the objective was met.
 
@@ -55,6 +69,14 @@ full-kit acceptance false. With `[report]` installed, run
 `python scripts/build_comparison_pdf.py` to generate the concise visual comparison.
 Do not infer the reported 50 L failure from these inputs: its original layout
 has not been supplied, so it is not a reproducible baseline.
+
+For complete-kit evidence, use each `packaging-results/so-arm-*/complete-kit/`
+directory's `bom.json`, `input.json` and `layout.json`, then rerun `assess`.
+`python scripts/build_complete_comparison_pdf.py` refuses a final comparison
+unless both complete kits freshly pass, including the corrected custom 106 mm
+clamp requirement. `--draft-101` produces an explicitly limited 101-only draft.
+Follow `docs/101-validated-layout.md` for the current 101 recipe; earlier nominal
+or alternate subgroup reports are not the final complete-kit certificate.
 
 For these local cases, follow `docs/benchmark-assumptions.md`: the user permits
 BOM-based assumptions and bagged bearings. Physical qualification remains distinct
