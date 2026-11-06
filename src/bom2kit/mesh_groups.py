@@ -6,6 +6,26 @@ from pathlib import Path
 from time import perf_counter
 
 
+def rank_pair_proposals(proposals, limit):
+    """Balance potential void savings against repeatedly explored part types.
+
+    Each proposal is (negative empty volume, first index, second index).
+    This is a search heuristic, not a geometric savings bound. Repeated types
+    receive diminishing priority so a short budget explores different shapes.
+    """
+    remaining = list(proposals)
+    exposure = {}
+    selected = []
+    while remaining and len(selected) < limit:
+        proposal = min(remaining, key=lambda p: (
+            p[0] / (1 + sum(exposure.get(i, 0) for i in set(p[1:]))), p))
+        remaining.remove(proposal)
+        selected.append(proposal)
+        for index in set(proposal[1:]):
+            exposure[index] = exposure.get(index, 0) + 1
+    return selected
+
+
 def check_workbench_axes(problem, layout):
     """Check straight assembly along six source-frame axes on an open workbench."""
     import numpy as np
@@ -35,7 +55,7 @@ def check_workbench_axes(problem, layout):
 
 
 def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5, max_pairs=8):
-    """Generate a bounded portfolio of pair candidates ranked by empty box volume.
+    """Generate a bounded portfolio balancing empty volume and shape diversity.
 
     Returns alternatives, not an asserted best complete-kit grouping. Original
     quantities are not consumed: the global selector must resolve membership.
@@ -96,7 +116,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
             empty = a["box_volume"] + b["box_volume"] - a["mesh"].volume - b["mesh"].volume
             proposals.append((-float(empty), i, j))
     attempts, alternatives = [], []
-    for _, i, j in sorted(proposals)[:max_pairs]:
+    for _, i, j in rank_pair_proposals(proposals, max_pairs):
         remaining = time_limit - (perf_counter() - started)
         if remaining <= 0:
             break

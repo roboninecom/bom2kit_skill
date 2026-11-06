@@ -76,6 +76,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
     fixed, moving = meshes
     manager = trimesh.collision.CollisionManager()
     manager.add_object("fixed", fixed)
+    search_started = perf_counter()
     checked, rotations_done, best = 0, 0, None
 
     def accept(rotation, shift):
@@ -111,7 +112,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         accept(np.eye(3), shift)
     for perm in permutations(range(3)):
         for signs in product((1, -1), repeat=3):
-            if perf_counter() - start >= time_limit:
+            if perf_counter() - search_started >= time_limit:
                 break
             rotation = np.zeros((3, 3))
             for row, col in enumerate(perm):
@@ -139,17 +140,20 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
             if count:
                 selected = np.argpartition(volumes, count - 1)[:count]
                 for index in selected[np.argsort(volumes[selected])]:
-                    if perf_counter() - start >= time_limit:
+                    if perf_counter() - search_started >= time_limit:
                         break
                     accept(rotation, correction + shifts[index] * pitch_mm)
             rotations_done += 1
-        if perf_counter() - start >= time_limit:
+        if perf_counter() - search_started >= time_limit:
             break
     result = {"units": "mm", "status": "no_verified_candidate", "placements": [],
               "scope": "two_part_static_mesh_nesting",
               "search": {"pitch_mm": pitch_mm, "checked_mesh_candidates": checked,
                          "rotations_checked": rotations_done, "elapsed_seconds": perf_counter() - start,
+                         "preparation_seconds": search_started - start,
+                         "search_seconds": perf_counter() - search_started,
                          "time_limit_seconds": time_limit, "optimality_proven": False}}
+    verification_started = perf_counter()
     if best:
         result["placements"] = [{"item_id": iid, "unit_id": uid, "transform": transform.tolist()}
                                 for (iid, uid), transform in zip(units, best[1])]
@@ -162,5 +166,6 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         else:
             result["status"] = "candidate_failed_independent_validation"
     result["search"]["total_elapsed_seconds_including_validation"] = perf_counter() - start
-    result["search"]["time_budget_scope"] = "soft bound checked between proposals; preprocessing and final validation may exceed it"
+    result["search"]["verification_seconds"] = perf_counter() - verification_started
+    result["search"]["time_budget_scope"] = "Search-only soft bound checked between proposals; preparation and final verification are timed separately"
     return result

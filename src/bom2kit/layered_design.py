@@ -79,11 +79,16 @@ def design_layers(request, units, time_limit=5):
     if len(heights) > 10:
         heights = [heights[round(i*(len(heights)-1)/9)] for i in range(10)]
     best, attempts = None, []
-    configurations = [(w,d,anchor) for anchor in (True,False) for w in footprints for d in footprints]
-    for width, depth, anchor_required in configurations:
+    # Compete full-width trays with narrower independently supported columns.
+    # Column dimensions derive from geometry, never a target reference carton.
+    configurations = [(w,d,anchor,columns) for w in footprints for d in footprints
+                      for columns in (1,2) for anchor in (True,False)]
+    for footprint_width, depth, anchor_required, columns in configurations:
         if perf_counter()-started >= time_limit:
             break
-        remaining, poses, layers, z = list(units), [], [], margin[2]
+        width = math.ceil((footprint_width/columns+2*thickness)/increment)*increment-2*thickness
+        remaining, poses, layers = list(units), [], []
+        column_tops = [margin[2]] * columns
         while remaining and perf_counter()-started < time_limit:
             options = []
             anchor = max(remaining, key=lambda u:math.prod(u["dimensions"]))["unit_id"] if anchor_required else None
@@ -102,18 +107,19 @@ def design_layers(request, units, time_limit=5):
                 break
             _,_,packed = max(options,key=lambda option: option[:2])
             lid = "layer-"+str(len(layers)+1)
+            column = min(range(columns),key=lambda c:column_tops[c])
             layer_height = math.ceil((packed["usable_mm"][2]+2*thickness)/increment)*increment-2*thickness
             layer = {"id": lid, "inner_mm": [width,depth,layer_height], "wall_mm": thickness,
-                     "position_mm": [margin[0],margin[1],z]}
+                     "position_mm": [margin[0]+column*(width+2*thickness),margin[1],column_tops[column]]}
             layers.append(layer)
             for pose in packed["placements"]:
                 poses.append({**pose,"layer_id":lid,"position_mm": [pose["position_mm"][k]+layer["position_mm"][k]+thickness for k in range(3)]})
             placed = {p["unit_id"] for p in packed["placements"]}
             remaining = [u for u in remaining if u["unit_id"] not in placed]
-            z += layer_height+2*thickness
+            column_tops[column] += layer_height+2*thickness
         if remaining:
             continue
-        cavity = [width+2*thickness, depth+2*thickness, z-margin[2]]
+        cavity = [columns*(width+2*thickness), depth+2*thickness, max(column_tops)-margin[2]]
         external = [math.ceil((cavity[k]+2*(wall[k]+margin[k])+(reserve if k==2 else 0))/increment)*increment for k in range(3)]
         if maximum and any(a>b for a,b in zip(external,maximum)):
             continue

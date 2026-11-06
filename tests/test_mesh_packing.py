@@ -26,3 +26,10 @@ def test_pair_search_emits_independent_mesh_certificate(tmp_path):
     assert result["validation"]["valid"]
     assert result["envelope_volume_l"] < result["separate_envelope_volume_l"]
     assert not result["search"]["optimality_proven"]
+    timing = result["search"]
+    assert timing["preparation_seconds"] > 0
+    assert timing["search_seconds"] > 0
+    assert timing["verification_seconds"] > 0
+    assert timing["rotations_checked"] > 0
+    assert sum(timing[k] for k in ("preparation_seconds", "search_seconds", "verification_seconds")) == pytest.approx(
+        timing["total_elapsed_seconds_including_validation"], abs=.01)

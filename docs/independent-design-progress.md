@@ -86,6 +86,43 @@ The time limit currently covers carton search, not the entire command.
 
 ## Next work
 
+### Diverse pairs and adjacent carton stacks
+
+Pair proposal ranking now discounts repeatedly explored part types. A limited
+budget therefore explores different shapes instead of only the three largest
+arm combinations. Ranking remains a heuristic; original-source collision,
+clearance and workbench assembly checks still gate every retained pair.
+
+The full 102 experiment in `diverse-pairs/pairs.json` tested 12 proposals in
+142.66 s and retained seven alternatives, including base/base and arm/clamp.
+Using all alternatives greedily produced **223 x 310 x 390 mm = 26.9607 L**,
+with complete declared BOM and valid original geometry/insertion. This is worse
+than the incumbent and is not adopted. Evidence is under
+`packaging-results/independent/102/diverse-column-design/`.
+
+The carton constructor now also tries two adjacent stacks of closed inner
+cartons, allowing different total stack heights with independent support.
+On the previously discovered mixed-arm grouping, the expanded search retained
+**224 x 268 x 433 mm = 25.993856 L**. The new run includes packaging dimension
+specifications and passes BOM, hierarchy, triangle and insertion checks; it does
+not establish transport qualification or production dielines. Evidence:
+`packaging-results/independent/102/column-design/result.json`.
+
+The pair experiment exposed a timing defect: voxel preparation consumed the
+entire eight-second budget for some parts, so those attempts checked zero
+rotations. Pair search now starts its soft search deadline after preparation and
+records preparation, search and final verification separately. The overall pair
+portfolio deadline remains soft and may overrun during preparation/verification.
+No complete-kit acceptance claim follows from these changes.
+
+With corrected timing, the first five diverse proposals completed in 81.61 s.
+All five produced assembly-checked savings. The 106 mm-frame clamp pair now
+checks all 24 rotations (10.77 s preparation, 1.88 s search, 0.08 s final static
+verification) and has envelope ratio 0.90384 to separate boxes. The formerly
+unsearched `SO102.02.060` pair also becomes feasible with ratio 0.94961.
+Evidence: `packaging-results/independent/102/diverse-pairs-timed/pairs.json`.
+These are pair-level savings, not yet whole-carton improvement.
+
 ### Supported multilayer cartons
 
 Optional `policy.carton.inner_wall_mm` now enables geometry-derived closed inner

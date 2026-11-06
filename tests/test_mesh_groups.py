@@ -8,9 +8,17 @@ trimesh = pytest.importorskip("trimesh")
 pytest.importorskip("fcl")
 pytest.importorskip("scipy")
 pytest.importorskip("rtree")
-from bom2kit.mesh_groups import discover_pairs, check_workbench_axes
+from bom2kit.mesh_groups import discover_pairs, check_workbench_axes, rank_pair_proposals
 from bom2kit.mesh_motion import check_vertical_sequence
 from bom2kit.group_design import design_grouped_library
+
+
+def test_pair_budget_explores_different_shapes_without_losing_top_candidate():
+    proposals = [(-100, 0, 0), (-99, 0, 1), (-98, 1, 1), (-70, 2, 2)]
+    ranked = rank_pair_proposals(proposals, 3)
+    assert ranked == [(-100, 0, 0), (-98, 1, 1), (-70, 2, 2)]
+    assert rank_pair_proposals(list(reversed(proposals)), 3) == ranked
+    assert len(rank_pair_proposals(proposals, 100)) == len(proposals)
 
 
 def sources(tmp_path):

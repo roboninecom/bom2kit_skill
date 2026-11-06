@@ -23,3 +23,20 @@ def test_supported_layers_preserve_counts_walls_and_detect_floating_cartons():
     broken = deepcopy(best["layout"])
     broken["placements"].pop()
     assert not validate_layered(best["input"],broken)["valid"]
+
+
+def test_adjacent_stacks_allow_different_heights_but_reject_unsupported_top():
+    problem = {"units":"mm", "inner_wall_mm":1.5,
+               "container":{"inner_mm":[46,23,66]},
+               "items":[{"id":"part","quantity":3,"dimensions_mm":[20,20,20],"allowed_rotations":"fixed"}]}
+    positions = [[0,0,0],[23,0,0],[0,0,23]]
+    layers = [{"id":str(i),"inner_mm":[20,20,20],"wall_mm":1.5,"position_mm":p}
+              for i,p in enumerate(positions)]
+    poses = [{"item_id":"part","unit_id":f"part#{i+1}","layer_id":str(i),
+              "position_mm":[x+1.5 for x in p],"dimensions_mm":[20,20,20],"rotation":[0,1,2]}
+             for i,p in enumerate(positions)]
+    layout = {"layers":layers,"placements":poses}
+    assert validate_layered(problem,layout)["valid"]
+    layout["layers"][2]["position_mm"][2] += 1
+    layout["placements"][2]["position_mm"][2] += 1
+    assert not validate_layered(problem,layout)["valid"]
