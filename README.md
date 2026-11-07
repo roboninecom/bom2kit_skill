@@ -48,6 +48,10 @@ six-face foam geometry and checked CAD assembly reports. It includes an optional
 PackingSolver proposal adapter; the default engine does not require that binary.
 Physical restraint and transport performance remain unqualified.
 
+The [two-hour measured report](docs/two-hour-transport-report.md) records the
+101/102 results, unchanged-code alternatives and remaining failures against
+Alan's benchmark.
+
 The [transport-packaging audit and redesign](docs/transport-packaging-research.md)
 explains the remaining gaps in foam specification, kitting groups, shared carton
 sizes and physical retention, with a prioritized implementation plan.
