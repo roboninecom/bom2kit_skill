@@ -34,8 +34,8 @@ not downloading or converting source CAD. Time-bounded searches can vary.
 ## What changed
 
 - Compatible-family grouping keeps bare mechanics separate from printed parts.
-  Factory-boxed servos can share protected electronics cartons when the input
-  records their protective packing state.
+  Protected servos can share electronics cartons when the input records their
+  protective packing state (101 factory cartons; 102 declared EPE allowances).
 - CAD nesting proposes compatible pairs and extensions. Original triangles,
   quantities, clearance and assembly are replayed before accepting them.
 - Rectangle, column and supported-envelope heuristics generate inner layouts.
@@ -58,7 +58,7 @@ See [source assumptions](benchmark-assumptions.md).
 
 Run commands and policy preparation are documented in the
 [transport workflow](transport-packaging.md). Shared Codex and Claude skill
-copies are synchronized. The test suite passed **164 tests**. Final report
+copies are synchronized. The test suite passed **168 tests**. Final report
 generation independently rechecks the selected original geometry, BOM,
 assembly, compatible groups, carton block and foam.
 

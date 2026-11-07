@@ -23,7 +23,7 @@ Unknown purchased descriptions fail explicitly. `--combine-printed` allows
 structural printed parts and learning objects in one printed-only family;
 electronics, servos and mechanical parts remain separate. Classification is
 not a material-compatibility test.
-`--combine-protected-electronics` additionally groups factory-boxed servos with
+`--combine-protected-electronics` additionally groups protected servos with
 protected electronics and cables, requiring explicit protective/factory packing
 evidence in the input. Bare mechanical parts remain separate from printed parts.
 

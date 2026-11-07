@@ -20,7 +20,9 @@ def classify(library, printed, combine_printed=False, combine_electronics=False)
             basis="Declared printed source library; source description distinguishes learning objects"
         elif re.search(r"\bSTS?32\d+|servo.*factory box",name,re.I):
             protected=" ".join(str(item.get(k,"")) for k in ("dimension_basis","packing_state"))
-            if combine_electronics and not re.search(r"factory|protect",protected,re.I):
+            positive=re.search(r"\bprotect(?:ed|ive)\b|\b(?:EPE|foam)\b|\bfactory\s+(?:carton|box(?:es)?)\b",protected,re.I)
+            negative=re.search(r"\bunprotected\b|\bbare servo\b|\b(?:no|without|not in a)\s+(?:protective packing|protection|factory box|factory carton)\b",protected,re.I)
+            if combine_electronics and (not positive or negative):
                 raise ValueError(f"Servo protective packing needs evidence before sharing a carton: {iid}")
             family="electronics-cables" if combine_electronics else "servo-drives"
             basis="Servo description; preserve declared factory/protective packing state"
@@ -40,7 +42,7 @@ def main():
     parser.add_argument("--printed-library",type=Path,action="append",required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--combine-printed",action="store_true",help="Allow structural printed parts and learning objects in one printed-only family")
-    parser.add_argument("--combine-protected-electronics",action="store_true",help="Allow factory-boxed servos with protected electronics and cables; keep bare mechanics separate")
+    parser.add_argument("--combine-protected-electronics",action="store_true",help="Allow explicitly protected servos with protected electronics and cables; keep bare mechanics separate")
     args=parser.parse_args()
     library=json.loads(args.library.read_bytes());printed=set()
     for path in args.printed_library:printed.update(i["id"] for i in json.loads(path.read_bytes())["items"])
@@ -54,7 +56,7 @@ def main():
             "carton":{"wall_mm":7,"protection_mm":15,"inner_wall_mm":1.5,"reserved_top_mm":.8,
                       "gap_mm":.2,"dimension_increment_mm":1}}
     if args.combine_protected_electronics:
-        result["family_labels"]["electronics-cables"]="Factory-boxed servos, protected electronics and cables"
+        result["family_labels"]["electronics-cables"]="Protected servos, electronics and cables"
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(result,indent=2),encoding="utf8")
     print(json.dumps({"families":sorted(set(families.values())),"classified_skus":len(families)}))
