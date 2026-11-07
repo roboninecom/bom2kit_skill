@@ -75,6 +75,9 @@ def compose_compatible_units(library, policy, candidates, output, search=(), dis
             raise ValueError("Compound crosses compatible-family boundary")
         needed=Counter(alternative["members"])
         copies=min(remaining[iid]//q for iid,q in needed.items())
+        requested=alternative.get("selected_copies",copies)
+        if type(requested) is not int or requested<0:raise ValueError("Invalid selected group quantity")
+        copies=min(copies,requested)
         if not copies:continue
         group_id=f"nested-{len(certificates)+1}"
         if group_id in sources:raise ValueError("Generated compound identity conflicts with a source")

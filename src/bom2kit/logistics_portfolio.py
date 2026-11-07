@@ -46,7 +46,7 @@ def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=
             candidates.extend(heightfield["alternatives"]);discovery_seconds+=heightfield["seconds"]
             discovery_search.append({"method":"whole_family_heightfield","attempts":heightfield["attempts"],"seconds":heightfield["seconds"]})
         nesting=compose_compatible_units(library,policy,candidates,output/"discovery-combined",discovery_search,discovery_seconds)
-        pools=group_configurations(library,[a for _,a in nesting["alternatives"]],3)
+        pools=group_configurations(library,[a for _,a in nesting["alternatives"]],3,optimize=True)
         for index,pool in enumerate(pools):
             remaining=time_limit-proposal_used
             if remaining<5:break
