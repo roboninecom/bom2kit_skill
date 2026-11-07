@@ -15,6 +15,24 @@ from render_design_review import render
 from render_packing_comparison import template_picture
 
 
+def carton_layers_svg(modules):
+    """Exact horizontal carton sections; labels follow the assembly list."""
+    low=[min(m["position_mm"][k] for m in modules) for k in range(3)]
+    high=[max(m["position_mm"][k]+m["external_mm"][k] for m in modules) for k in range(3)]
+    levels=sorted({m["position_mm"][2] for m in modules}|{m["position_mm"][2]+m["external_mm"][2] for m in modules})
+    width,depth=high[0]-low[0],high[1]-low[1];scale=min(300/width,230/depth)
+    panels=[];colors=["#d8e8f0","#96b7ce","#f5e4b4","#b6cabe","#d6bfd1","#dbc3a4"]
+    for panel,(bottom,top) in enumerate(zip(levels,levels[1:])):
+        ox=panel*360+30;oy=55;pieces=[]
+        for index,m in enumerate(modules,1):
+            if not m["position_mm"][2]<=bottom+1e-7<m["position_mm"][2]+m["external_mm"][2]-1e-7:continue
+            x=ox+(m["position_mm"][0]-low[0])*scale;y=oy+(depth-(m["position_mm"][1]-low[1])-m["external_mm"][1])*scale
+            w,h=m["external_mm"][0]*scale,m["external_mm"][1]*scale
+            pieces.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{colors[(index-1)%len(colors)]}" stroke="#263541"/><text x="{x+w/2}" y="{y+h/2}" text-anchor="middle" dominant-baseline="middle">{index}</text>')
+        panels.append(f'<text x="{ox}" y="25">Height {bottom-low[2]:g}–{top-low[2]:g} mm</text>{"".join(pieces)}<text x="{ox}" y="315">Footprint {width:g} × {depth:g} mm</text>')
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {360*(len(levels)-1)} 340" style="width:100%;height:auto;max-height:420px"><rect width="100%" height="100%" fill="white"/><g font-family="sans-serif" font-size="18" fill="#18202a">{"".join(panels)}</g></svg>'
+
+
 def render_transport(result_path,bom_path,output):
     import numpy as np
     import trimesh
@@ -33,6 +51,7 @@ def render_transport(result_path,bom_path,output):
         mesh.apply_translation(np.asarray(origin)+np.asarray(dimensions)/2)
         return mesh
     ordered_modules=[next(m for m in info["modules"] if m["id"]==c["id"]) for c in plan["cartons_in_outer_insertion_order"]]
+    (output/"outer-layers.svg").write_text(carton_layers_svg(ordered_modules),encoding="utf8")
     for index,module in enumerate(ordered_modules,1):
         parts.append((box(module["position_mm"],module["external_mm"]),index))
     # Camera-facing panels and lid are hidden for visibility only. The six
@@ -63,6 +82,10 @@ def render_transport(result_path,bom_path,output):
     for index,carton in enumerate(plan["cartons_in_outer_insertion_order"],1):
         module=next(m for m in info["modules"] if m["id"]==carton["id"])
         label=policy.get("family_labels",{}).get(module["family"],module["family"])
+        # Older policies used this label even for declared protective sleeves.
+        # Keep the frozen policy intact; do not imply factory cartons in prose.
+        if label=="Factory-boxed servos, protected electronics and cables":
+            label="Protected servos, electronics and cables"
         rows=[];contents=[];unit_slots={}
         slots=[p for p in candidate["layout"]["placements"] if p["layer_id"]==carton["id"]]
         for number,slot in enumerate(slots,1):
@@ -91,6 +114,7 @@ def render_transport(result_path,bom_path,output):
 <p>Complete BOM, original CAD, geometric assembly, compatible families, exact carton block and six-face foam checks pass. No spacers.</p>
 <p><b>Not transport-qualified.</b> Part restraint, hand access, foam grade, carton strength and manufacturing tolerances require prototype checks. Estimated purchased envelopes remain estimates.</p>
 <img src='outer-cutaway.png'><p>Numbers match the carton list below. Stacked cartons share projected positions. Cartons retain their actual checked coordinates; the cutaway hides the lid, two near walls and matching foam panels.</p>
+<h2>Carton layers</h2><img src='outer-layers.svg'><p>Horizontal sections through the exact carton block, bottom to top. Heights are above its base, excluding the surrounding foam and outer walls. Numbers match the carton list.</p>
 <h2>Assembly sequence</h2><ol><li>Prepare labeled parts and packets from the complete BOM.</li><li>Pack each carton in the order shown below. Assemble nested groups on the workbench using the generated assembly plan.</li><li>Close each carton. Fit the bottom and side foam panels; insert cartons in the numbered order.</li><li>Fit the top foam and close the outer carton. Confirm restraint and closure on a physical prototype before shipping.</li></ol>
 {''.join(sections)}<h2>Nested-group workbench assembly</h2>{''.join(templates) or '<p>No nested groups.</p>'}<h2>Protection panels</h2><img src='foam-exploded.png'><table><tr><th>Panel</th><th>Dimensions, mm</th></tr>{materials}</table>
 <p>Outer corrugated wall: {wall:g} mm. Foam thickness: {policy['carton']['protection_mm']:g} mm. Material grade and compression are not qualified.</p>

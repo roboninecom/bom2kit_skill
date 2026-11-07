@@ -34,3 +34,15 @@ def test_comparison_allows_regrouping_but_not_changed_quantity():
     module.check_comparable(before,after)
     after["input"]["items"][0]["quantity"]=1
     with pytest.raises(ValueError,match="quantities"):module.check_comparable(before,after)
+
+
+def test_carton_sections_reveal_boxes_hidden_under_top_carton():
+    import xml.etree.ElementTree as ET
+    from render_transport_review import carton_layers_svg
+    boxes=[{"position_mm":[15,15,15],"external_mm":[100,60,40]},
+           {"position_mm":[15,75,15],"external_mm":[100,40,40]},
+           {"position_mm":[15,15,55],"external_mm":[100,100,30]}]
+    root=ET.fromstring(carton_layers_svg(boxes))
+    labels=[e.text for e in root.iter('{http://www.w3.org/2000/svg}text')]
+    assert labels==['Height 0–40 mm','1','2','Footprint 100 × 100 mm',
+                    'Height 40–70 mm','3','Footprint 100 × 100 mm']

@@ -99,6 +99,8 @@ def compare(config_path,output):
                         f"<p>After vs Alan: {delta:+.1f}%. Search and verification: {record['after_seconds']:.1f} s. "
                         f"Complete matching source BOM and unchanged protection; compatibility and no-spacer block checks pass.</p><p>{provenance_note}</p>"
                         f"<div class='pair'>{before_image}<figure><img src='{picture(directory/'outer-cutaway.png')}'><figcaption>After: exact generated carton/foam geometry</figcaption></figure>{reference_image}</div>"
+                        f"<h3>After: carton layers, bottom to top</h3>{(directory/'outer-layers.svg').read_text(encoding='utf8')}"
+                        f"<p>Horizontal sections of the inner carton block; surrounding foam excluded. Numbers match the packing instructions.</p>"
                         f"<p><a href='{name}/transport-review.html'>Contents, original CAD views, assembly order and foam panels</a></p></section>")
         carton_images="".join(f"<figure><img src='{picture(directory/f'carton-{i}-solid.png')}'><figcaption>Carton {i}: original CAD / declared purchased envelopes</figcaption></figure>" for i in range(1,new["cartons"]+1))
         sections.append(f"<details><summary>All {new['cartons']} internal carton CAD views</summary>{carton_images}</details>")
