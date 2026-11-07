@@ -1,4 +1,46 @@
-# BOM to Kit
+# BOM to Kit — Packaging Skill for Codex and Claude Code
+
+**An agent skill for turning a bill of materials (BOM) and individual CAD models
+into grouped packaging plans, checked layouts and illustrated packing instructions.**
+The same workflow supports Codex and Claude Code through repository-local skill
+files, backed by a shared Python engine.
+
+## What this repository provides
+
+- **Agent skill:** guides input preparation, independent packaging design,
+  validation and comparison with an engineer reference.
+- **Python engine:** searches part groups and inner/outer cartons, checks original
+  geometry and quantities, and records assumptions and evidence.
+- **Visual reports:** show shaded CAD cutaways, numbered contents and geometric
+  assembly steps from the checked coordinates.
+
+The skill orchestrates the tools; the Python engine performs the geometry work.
+The engine can also run directly from the command line.
+
+## Use the skill
+
+Open this repository in Codex or Claude Code. The skill files are included in
+the corresponding project discovery directories:
+
+| Agent / source | Skill file |
+| --- | --- |
+| Codex | [`.agents/skills/bom-to-kit/SKILL.md`](.agents/skills/bom-to-kit/SKILL.md) |
+| Claude Code | [`.claude/skills/bom-to-kit/SKILL.md`](.claude/skills/bom-to-kit/SKILL.md) |
+| Shared source | [`skills/bom-to-kit/SKILL.md`](skills/bom-to-kit/SKILL.md) |
+
+Install the Python dependencies below, then ask the agent, for example:
+
+> Use the bom-to-kit skill to design grouped packaging from the BOM and individual
+> CAD files in packaging-inputs/my-kit. Record protection assumptions, verify all
+> quantities and geometry, and save illustrated instructions in
+> packaging-results/my-kit. Design independently before comparing with a reference.
+
+These are repository-local skills, not a global installation. Run the tools from
+this repository root. To update the shared instructions, edit
+`skills/bom-to-kit/SKILL.md` and run `python skills/bom-to-kit/scripts/sync_skill.py`
+to synchronize both agent copies.
+
+## Current capabilities and limits
 
 **Status:** reference-free group and carton search and checked visual reports work,
 but the complete no-worse 101/102 benchmark remains unfinished.
@@ -10,8 +52,6 @@ documents the new reference-free carton stage and remaining work.
 See the [one-hour progress report](docs/one-hour-progress-report.md) for measured
 improvements, fresh-run timings and the remaining gap to the engineer reference.
 
-A local Python engine and shared Codex / Claude Code skill for reproducible packing plans. The engine searches rigid rectangular packing envelopes, independently checks layouts, and renders instructions from their coordinates. Optional STEP inspection supplies geometry evidence.
-
 This is a bounded packing tool, not a general concave CAD nesting optimizer. Envelope validation does not establish the contents of a grouped box, foam performance, or transport qualification. Keep these evidence levels explicit when comparing with an engineer.
 
 ## Install
@@ -19,12 +59,18 @@ This is a bounded packing tool, not a general concave CAD nesting optimizer. Env
 Python 3.11 or later:
 
 ```powershell
+git clone https://github.com/roboninecom/bom2kit_skill.git
+cd bom2kit_skill
+# CAD mesh packing and illustrated reports:
+python -m pip install -e ".[mesh,report]"
+# Development tests:
 python -m pip install -e ".[test]"
 # Optional STEP import:
 python -m pip install -e ".[cad]"
 ```
 
-Box packing and HTML reports use the standard library; CAD is loaded only when requested.
+Basic rectangular packing and its HTML reports use the standard library. Mesh
+validation, shaded CAD reports and STEP import require their respective extras.
 
 ## Independent design
 
