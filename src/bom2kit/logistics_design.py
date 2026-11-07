@@ -189,10 +189,35 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
     return {"patterns":selected,"backend_checks":backend_checks,"elapsed_seconds":perf_counter()-started}
 
 
+def improve_module_patterns(units,patterns,wall,increment,gap,time_limit):
+    """Spend a separate polishing budget on generated module footprints."""
+    from .supported_packing import optimize_supported
+    start=perf_counter();volume=sum(math.prod(u["dimensions"]) for u in units);scale=volume**(1/3)
+    targets=set()
+    seeds=sorted(patterns,key=lambda p:math.prod(p["external_mm"]))[:12]
+    for p in seeds:
+        for fx,fy in ((1,1),(.95,1),(1,.95),(1.05,1),(1,1.05),(.9,1.1),(1.1,.9)):
+            targets.add((math.ceil(p["external_mm"][0]*fx/increment)*increment,math.ceil(p["external_mm"][1]*fy/increment)*increment))
+    def priority(target):
+        w,d=target;return (w+scale*.2)*(d+scale*.2)*(volume/max(1,(w-2*wall)*(d-2*wall))+scale*.2)
+    found=[];attempts=0
+    for w,d in sorted(targets,key=priority):
+        left=time_limit-(perf_counter()-start)
+        if left<.05:break
+        result=optimize_supported(units,w-2*wall,d-2*wall,scale*4,gap,time_limit=min(2,left),max_iterations=256)
+        attempts+=result["attempts"];p=result["packing"]
+        if not p:continue
+        external=[math.ceil((v+2*wall)/increment-1e-9)*increment for v in p["usable_mm"]]
+        found.append({"external_mm":external,"placements":p["placements"],"method":"polished_supported_order"})
+    unique={}
+    for p in sorted([*patterns,*found],key=lambda p:math.prod(p["external_mm"])):unique.setdefault(tuple(p["external_mm"]),p)
+    return list(unique.values()),{"seconds":perf_counter()-start,"attempts":attempts,"new_patterns":len(found)}
+
+
 def design_logistics(library, policy, expected_bom, *, time_limit=120, executable=None,
                      nesting_seconds=0, work_directory=None, split_largest_family=False, largest_family_cartons=1,
                      partition_strategy="volume", balanced_cartons=0, nesting_workers=1, rectangle_executable=None, _prepared_nesting=None, _pattern_cache=None,
-                     _incumbent_volume=None, shared_footprint_seconds=0, nesting_pitch_mm=4, nesting_objective="volume"):
+                     _incumbent_volume=None, shared_footprint_seconds=0, nesting_pitch_mm=4, nesting_objective="volume", module_improvement_seconds=0):
     import numpy as np
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -203,6 +228,7 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
     if not math.isfinite(time_limit) or time_limit<=0 or not math.isfinite(nesting_seconds) or nesting_seconds<0:
         raise ValueError("Positive finite search budget and nonnegative nesting budget required")
     if not math.isfinite(shared_footprint_seconds) or shared_footprint_seconds<0:raise ValueError("Nonnegative finite shared-footprint budget required")
+    if not math.isfinite(module_improvement_seconds) or module_improvement_seconds<0:raise ValueError("Nonnegative finite polishing budget required")
     allowed={"schema_version","families","family_labels","classification_evidence","item_padding_mm",
              "clearance_mm","allow_all_rotations","carton","max_inner_cartons","max_carton_types"}
     if set(policy)-allowed or policy.get("schema_version")!=1:
@@ -284,6 +310,9 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
             proposal=module_patterns(units,t,time_limit=max(1,min(18,remaining/(len(module_sets)-len(modules)+1))),
                                      increment=carton["dimension_increment_mm"],gap=carton["gap_mm"],executable=executable,rectangle_executable=rectangle_executable)
             if _pattern_cache is not None:_pattern_cache[key]=deepcopy(proposal)
+        if module_improvement_seconds:
+            proposal["patterns"],proposal["improvement"]=improve_module_patterns(
+                units,proposal["patterns"],t,carton["dimension_increment_mm"],carton["gap_mm"],module_improvement_seconds/len(module_sets))
         modules.append({"family":family,"unit_ids":[u["unit_id"] for u in units],"_cache_key":key,**proposal})
     shared_diagnostics=None
     if shared_footprint_seconds:

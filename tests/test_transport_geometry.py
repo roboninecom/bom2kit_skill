@@ -90,6 +90,10 @@ def test_design_replays_original_geometry_bom_and_fingerprint(tmp_path):
     assert sorted(len(m["unit_ids"]) for m in result["logistics"]["modules"])==[1,2]
     assert not result["logistics"]["retention_verified"]
     assert result["search"]["shared_footprints"]["attempts"]>0
+    from bom2kit.logistics_portfolio import design_portfolio
+    polished,polished_plan=design_portfolio(library,policy,bom,tmp_path/"portfolio",time_limit=3,nesting_seconds=0,polish_seconds=.3)
+    assert polished["search"]["portfolio"]["trials"][-1]["name"]=="polish"
+    assert polished["validation"]["valid"] and polished_plan["result_fingerprint"]==fingerprint(polished)
     from bom2kit.logistics_design import NonImprovingProposal
     with pytest.raises(NonImprovingProposal):
         design_logistics(library,policy,bom,time_limit=2,_incumbent_volume=1)

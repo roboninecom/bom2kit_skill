@@ -94,7 +94,9 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
             for p in sorted(pool,key=lambda p:math.prod(v+2*(wall+foam) for v in p["size"])):unique.setdefault(tuple(p["size"]),p)
             beam=list(unique.values())[:32]
         complete.extend(beam)
+    timed_out=False
     for size in range(2, count+1):
+        if perf_counter()-started>time_limit:break
         for mask in range(1, 1 << count):
             if mask.bit_count() != size:
                 continue
@@ -105,18 +107,21 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
                 other = mask ^ sub
                 if sub & first and other and sub in states and other in states:
                     for left, right in product(states[sub], states[other]):
+                        if len(proposals)%1024==0 and perf_counter()-started>time_limit:
+                            timed_out=True;break
                         for axis in range(3):
                             dims = [max(a,b) for a,b in zip(left["size"],right["size"])]
                             dims[axis] = left["size"][axis]+right["size"][axis]
                             proposals.append({"size": dims, "axis": axis, "children": [left,right]})
+                    if timed_out:break
                 sub = (sub-1) & mask
             if proposals:
                 states[mask] = reduce(proposals)
-            if perf_counter()-started > time_limit:
+            if timed_out or perf_counter()-started > time_limit:
                 # Still construct one complete fallback from the leaves; a time
                 # limit cannot turn a partial partition into an accepted plan.
                 break
-        if perf_counter()-started > time_limit:
+        if timed_out or perf_counter()-started > time_limit:
             break
 
     def expand(node, origin, dimensions, leaves):
