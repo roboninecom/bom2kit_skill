@@ -78,7 +78,7 @@ def pack_heightfield(items, shapes, width, depth, *, pitch=4, clearance=2, order
             if heights is None:continue
             sx,sy,sz=choice["size"];xs,ys=np.indices(heights.shape)
             ex=np.maximum(extent[0],xs+sx);ey=np.maximum(extent[1],ys+sy);ez=np.maximum(extent[2],heights+sz)
-            scores=(ex+4)*(ey+4)*(ez+4)
+            scores=(ex+4)*(ey+4)*(ez+4)+(ys*width+xs)*1e-6
             # Several candidates permit exact clearance corrections without
             # assuming the raster's best point must be geometrically feasible.
             indices=np.argpartition(scores.ravel(),min(2,scores.size-1))[:3]
@@ -128,11 +128,19 @@ def discover_heightfield_groups(library, policy, output, time_limit=180, pitch=4
         material=sum(shapes[i["id"]]["material_volume"]*i["quantity"] for i in items)
         if count<3 or material/volume>.85:continue
         scale=(volume**(1/3))/pitch
-        for factor,aspect,order in ((.9,1,"volume"),(.8,1.4,"volume"),(1.1,.8,"void"),
-                                    (.75,1,"area"),(1.1,1.4,"volume"),(.9,.65,"void")):
+        minimum=max(min(c["size"][2] for c in shapes[i["id"]]["choices"]) for i in items)
+        footprints=[]
+        # Thin or long source parts need broad shallow footprints; volume's
+        # cube root alone can exclude all useful orientations of such parts.
+        for h in sorted({minimum,max(minimum,scale*.65),max(minimum,scale),max(minimum,scale*1.5)}):
+            area=sum(min(c["size"][0]*c["size"][1] for c in shapes[i["id"]]["choices"] if c["size"][2]<=h+1e-8)*i["quantity"] for i in items)
+            for density,aspect,order in ((.85,1,"volume"),(.75,1.4,"void"),(.95,.75,"volume")):
+                footprints.append((math.ceil(math.sqrt(area)*density*aspect),math.ceil(math.sqrt(area)*density/aspect),order))
+        footprints.extend((math.ceil(scale*f*a),math.ceil(scale*f/a),order) for f,a,order in
+                          ((.9,1,"volume"),(.8,1.4,"volume"),(1.1,.8,"void"),(.75,1,"area"),(1.1,1.4,"volume"),(.9,.65,"void")))
+        for width,depth,order in dict.fromkeys(footprints):
             left=time_limit-(perf_counter()-started)
             if left<5:break
-            width=max(1,math.ceil(scale*factor*aspect));depth=max(1,math.ceil(scale*factor/aspect))
             proposal=pack_heightfield(items,shapes,width,depth,pitch=pitch,
                                      clearance=max(policy["clearance_mm"],2*policy["item_padding_mm"]),
                                      order=order,time_limit=min(40,left))
@@ -155,6 +163,7 @@ def discover_heightfield_groups(library, policy, output, time_limit=180, pitch=4
                          "envelope_mm":proposal["bounds_mm"],"separate_box_volume_mm3":volume,
                          "group_box_volume_mm3":attempt["volume_mm3"]}
             alternatives.append((family,alternative));attempt["status"]="validated_family_compound"
+            (output/"progress.json").write_text(json.dumps({"attempts":attempts,"seconds":perf_counter()-started},indent=2),encoding="utf8")
     result={"alternatives":alternatives,"attempts":attempts,"seconds":perf_counter()-started,
             "source_fingerprint":fingerprint(library),"policy_fingerprint":fingerprint(policy),
             "pitch_mm":pitch,"reference_used":False,"physical_retention_verified":False}
