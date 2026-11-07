@@ -14,7 +14,7 @@ inputs and generated artifacts in the ignored directories.
 
 ```powershell
 python scripts/prepare_transport_policy.py LIBRARY.json --printed-library PRINTED.json --output POLICY.json
-python scripts/design_transport_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/transport --time-limit 110 --nesting-budget 140
+python scripts/design_transport_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/transport --portfolio --time-limit 240 --nesting-budget 140
 python scripts/render_transport_review.py packaging-results/transport/result.json EXPECTED.json --output packaging-results/transport/review
 ```
 
@@ -23,6 +23,9 @@ Unknown purchased descriptions fail explicitly. `--combine-printed` allows
 structural printed parts and learning objects in one printed-only family;
 electronics, servos and mechanical parts remain separate. Classification is
 not a material-compatibility test.
+`--combine-protected-electronics` additionally groups factory-boxed servos with
+protected electronics and cables, requiring explicit protective/factory packing
+evidence in the input. Bare mechanical parts remain separate from printed parts.
 
 The policy specifies wall and foam thickness, part padding, permitted rotations,
 clearance, dimension increment and carton/type caps. Its family map must cover
@@ -53,7 +56,7 @@ geometry and cumulative volume, within policy caps. It is a candidate strategy,
 not an automatic improvement. Keep the smaller fully checked result when
 comparing runs. Neither this heuristic nor the slicing search proves optimality.
 
-For automatic selection, add `--portfolio --time-limit 180 --nesting-budget 140`.
+For automatic selection, use `--portfolio --time-limit 240 --nesting-budget 140`.
 The runner compares a fresh baseline, several compatible nesting configurations
 and a subdivision trial, retaining the smallest fully verified result. It reuses
 only alternatives discovered within that invocation, bound to source and policy

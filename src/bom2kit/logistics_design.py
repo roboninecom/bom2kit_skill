@@ -256,7 +256,11 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
             heights=sorted({s[2] for u in units for _,s in u["orientations"]})
             known={tuple(p["external_mm"]) for p in module["patterns"]}
             own=next(leaf["external_mm"][:2] for leaf in incumbent["leaves"] if leaf["module"]==module_index)
-            module_targets=[own,incumbent["block_mm"][:2],*targets]
+            increment=carton["dimension_increment_mm"]
+            neighbours=[]
+            for fx,fy in ((1.05,1),(1,1.05),(1.1,1),(1,1.1),(.95,1),(1,.95),(1.2,1),(1,1.2),(1.05,1.05)):
+                neighbours.append([math.ceil(own[0]*fx/increment)*increment,math.ceil(own[1]*fy/increment)*increment])
+            module_targets=[own,*neighbours,incumbent["block_mm"][:2],*targets]
             for w,d in module_targets:
                 from .supported_packing import pack_supported
                 from .validation import validate

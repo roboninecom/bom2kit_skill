@@ -54,6 +54,10 @@ def compare(config_path,output):
                 "delta_vs_reference_percent":delta,"same_sources_and_protection":True,
                 "after_seconds":after["search"]["total_seconds"],"after_result_sha256":sha256(after_raw).hexdigest(),
                 "physical_qualification":False,"reference_original_geometry_replayed":False}
+        record["engine_files_unchanged_during_run"]=after.get("run_provenance",{}).get("engine_files_unchanged_during_run")
+        provenance_note=("Engine files remained unchanged during this run."
+                         if record["engine_files_unchanged_during_run"] is True else
+                         "Exploratory result: engine files changed during the run. The frozen layout is rechecked here, but this is not a frozen-code reproduction.")
         if before.get("revision_replay"):
             record["before_revision_replay"]=before["revision_replay"]
         records.append(record)
@@ -70,7 +74,7 @@ def compare(config_path,output):
         sections.append(f"<section><h2>SO-ARM{name}: {'volume target met' if passed else 'volume target NOT met'}</h2>"
                         f"<table><tr><th>Design</th><th>Exterior, mm</th><th>Litres</th><th>Cartons</th><th>Sizes</th></tr>{''.join(rows)}</table>"
                         f"<p>After vs Alan: {delta:+.1f}%. Search and verification: {record['after_seconds']:.1f} s. "
-                        f"Complete matching source BOM and unchanged protection; compatibility and no-spacer block checks pass.</p>"
+                        f"Complete matching source BOM and unchanged protection; compatibility and no-spacer block checks pass.</p><p>{provenance_note}</p>"
                         f"<div class='pair'><figure><img src='{picture(directory/'outer-cutaway.png')}'><figcaption>After: exact generated carton/foam geometry</figcaption></figure>{reference_image}</div>"
                         f"<p><a href='{name}/transport-review.html'>Contents, original CAD views, assembly order and foam panels</a></p></section>")
         if before.get("revision_replay"):

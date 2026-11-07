@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 
 
-def classify(library, printed, combine_printed=False):
+def classify(library, printed, combine_printed=False, combine_electronics=False):
     families={};evidence={}
     for item in library["items"]:
         iid=item["id"]
@@ -19,7 +19,11 @@ def classify(library, printed, combine_printed=False):
             family="printed-parts" if combine_printed else "printed-learning" if re.search(r"aruco|cube_cylinder|cone",name,re.I) else "printed-structure"
             basis="Declared printed source library; source description distinguishes learning objects"
         elif re.search(r"\bSTS?32\d+|servo.*factory box",name,re.I):
-            family="servo-drives";basis="Servo description; preserve declared factory/protective packing state"
+            protected=" ".join(str(item.get(k,"")) for k in ("dimension_basis","packing_state"))
+            if combine_electronics and not re.search(r"factory|protect",protected,re.I):
+                raise ValueError(f"Servo protective packing needs evidence before sharing a carton: {iid}")
+            family="electronics-cables" if combine_electronics else "servo-drives"
+            basis="Servo description; preserve declared factory/protective packing state"
         elif re.search(r"clamp|bearing|steel.*rod|screw|nut|o-ring|hex-key|driver|servo-extras|socket head|countersunk|set screw",name,re.I):
             family="mechanics-fasteners";basis="Mechanical component/monotype fastener packet description"
         elif re.search(r"power|cable|adapter|waveshare|camera|usb|cord",name,re.I):
@@ -36,10 +40,11 @@ def main():
     parser.add_argument("--printed-library",type=Path,action="append",required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--combine-printed",action="store_true",help="Allow structural printed parts and learning objects in one printed-only family")
+    parser.add_argument("--combine-protected-electronics",action="store_true",help="Allow factory-boxed servos with protected electronics and cables; keep bare mechanics separate")
     args=parser.parse_args()
     library=json.loads(args.library.read_bytes());printed=set()
     for path in args.printed_library:printed.update(i["id"] for i in json.loads(path.read_bytes())["items"])
-    families,evidence=classify(library,printed,args.combine_printed)
+    families,evidence=classify(library,printed,args.combine_printed,args.combine_protected_electronics)
     result={"schema_version":1,"families":families,"classification_evidence":evidence,
             "family_labels":{"printed-structure":"Printed structure and gripper parts","printed-learning":"Learning objects and disassembled ArUco",
                              "printed-parts":"Printed parts and learning objects",
@@ -48,6 +53,8 @@ def main():
             "item_padding_mm":1,"clearance_mm":.2,"allow_all_rotations":True,"max_inner_cartons":6,"max_carton_types":5,
             "carton":{"wall_mm":7,"protection_mm":15,"inner_wall_mm":1.5,"reserved_top_mm":.8,
                       "gap_mm":.2,"dimension_increment_mm":1}}
+    if args.combine_protected_electronics:
+        result["family_labels"]["electronics-cables"]="Factory-boxed servos, protected electronics and cables"
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(result,indent=2),encoding="utf8")
     print(json.dumps({"families":sorted(set(families.values())),"classified_skus":len(families)}))

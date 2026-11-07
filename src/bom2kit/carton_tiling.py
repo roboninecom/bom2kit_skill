@@ -32,6 +32,24 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
         for candidate in pool:
             dims = tuple(candidate["size"])
             unique.setdefault(dims, candidate)
+        if max_types>=count:
+            # Componentwise smaller subtrees can replace larger ones in every
+            # future slicing join. This dominance rule is safe when the type
+            # cap cannot constrain the number of leaves. A prefix-min tree
+            # finds the 3D skyline without a quadratic comparison loop.
+            coordinates=sorted({c["size"][1] for c in unique.values()})
+            indices={v:i+1 for i,v in enumerate(coordinates)}
+            prefix=[math.inf]*(len(coordinates)+1);skyline=[]
+            for candidate in sorted(unique.values(),key=lambda c:tuple(c["size"])):
+                _,y,z=candidate["size"];i=indices[y];best=math.inf
+                while i:
+                    best=min(best,prefix[i]);i-=i&-i
+                if best<=z:continue
+                skyline.append(candidate);i=indices[y]
+                while i<len(prefix):
+                    prefix[i]=min(prefix[i],z);i+=i&-i
+            unique={tuple(c["size"]):c for c in skyline}
+            if count<=3:return skyline
         ordered = sorted(unique.values(), key=lambda c: (math.prod(c["size"]), max(c["size"])))
         # A very flat minimum-volume block can lose once six-face foam is
         # included. Preserve both interior volume and shipping-volume choices.

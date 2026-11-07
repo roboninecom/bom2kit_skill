@@ -99,10 +99,11 @@ Voxel emptiness alone never certifies a fit. This differs from the older
 
 ### Transport-compatible carton search
 
-`scripts/design_transport_packaging.py` is an additional experimental pipeline:
+For requests requiring compatible groups, a no-spacer carton block and explicit
+foam, use the experimental `scripts/design_transport_packaging.py` pipeline:
 
 ```powershell
-python scripts/design_transport_packaging.py LIBRARY.json TRANSPORT_POLICY.json EXPECTED.json --output packaging-results/transport --time-limit 110 --nesting-budget 90
+python scripts/design_transport_packaging.py LIBRARY.json TRANSPORT_POLICY.json EXPECTED.json --output packaging-results/transport --portfolio --time-limit 240 --nesting-budget 140
 ```
 
 Prepare the explicit SKU-to-family policy with
@@ -118,11 +119,13 @@ found in the current run. `--split-largest-family` tests two cartons for the
 largest family, within the declared carton and type caps; compare separately
 with the unsplit run and keep the smaller fully verified result.
 
-Alternatively, `--portfolio --time-limit 180 --nesting-budget 140` automatically
-compares a fresh baseline, several in-run grouping portfolios and subdivision,
+The portfolio automatically compares a fresh baseline, several in-run grouping portfolios and subdivision,
 retaining the smallest fully checked result. It never imports old packing poses.
 The reported duration includes all trials, including rejected ones. This is
 still a bounded heuristic; use the separate evaluator for the no-worse target.
+Omit `--portfolio` to evaluate a single strategy. The policy generator can
+combine printed families and protected electronics explicitly; bare mechanics
+must remain separate from unprotected printed parts. Record those assumptions.
 
 `--packing-solver PATH` optionally requests proposals from an explicitly supplied
 PackingSolver box executable. Its output must pass independent coverage,

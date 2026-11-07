@@ -52,21 +52,31 @@ def render_transport(result_path,bom_path,output):
                        caption="Display offsets only; actual assembly uses butt joints")
     items={i["id"]:i for i in result["input"]["items"]}
     poses={p["unit_id"]:p["item_id"] for p in result["layout"]["placements"]}
+    def unit_label(uid):
+        item=items[poses[uid]]
+        name=item.get("name") or item.get("source_name") or item.get("source_evidence",{}).get("source_item") or item["id"]
+        count=sum(item.get("contents",{}).values())
+        packet=f"; {count} pieces in packet" if count>1 else ""
+        return f"{name} ({uid}{packet})"
     sections=[]
     for index,carton in enumerate(plan["cartons_in_outer_insertion_order"],1):
         module=next(m for m in info["modules"] if m["id"]==carton["id"])
         label=policy.get("family_labels",{}).get(module["family"],module["family"])
-        rows=[]
+        rows=[];contents=[];unit_slots={}
+        slots=[p for p in candidate["layout"]["placements"] if p["layer_id"]==carton["id"]]
+        for number,slot in enumerate(slots,1):
+            members=result.get("groups",{}).get("assembly-"+slot["unit_id"],[slot["unit_id"]])
+            unit_slots.update({uid:number for uid in members})
+            contents.append(f"<tr><td>{number}</td><td>{escape('; '.join(unit_label(uid) for uid in members))}</td></tr>")
         for step,entry in enumerate(carton["packing_sequence"],1):
-            labels=[]
-            for uid in entry["unit_ids"]:
-                item=items[poses[uid]];name=item.get("name") or item.get("source_name") or item["id"]
-                labels.append(f"{name} ({uid})")
-            rows.append(f"<li>{escape('; '.join(labels))}</li>")
+            numbers=", ".join(str(n) for n in sorted({unit_slots[uid] for uid in entry["unit_ids"]}))
+            labels=[unit_label(uid) for uid in entry["unit_ids"]]
+            rows.append(f"<li>Slot {numbers}: {escape('; '.join(labels))}</li>")
         sections.append(f"<section><h2>{index}. {escape(label)}</h2><p>{escape(str(module['external_mm']))} mm outside; "
                         f"{len(module['unit_ids'])} source packing units.</p><img src='carton-{index}-solid.png'>"
-                        f"<details><summary>Geometric insertion order</summary><ol>{''.join(rows)}</ol></details></section>")
-    materials="".join(f"<tr><td>{escape(p['id'])}</td><td>{escape(str(p['dimensions_mm']))}</td></tr>" for p in info["foam_panels"])
+                        f"<details><summary>Numbered contents and insertion order</summary><table><tr><th>Picture slot</th><th>Contents</th></tr>{''.join(contents)}</table>"
+                        f"<h3>Insertion steps</h3><ol>{''.join(rows)}</ol></details></section>")
+    materials="".join(f"<tr><td>{index}. {escape(p['id'])}</td><td>{escape(str(p['dimensions_mm']))}</td></tr>" for index,p in enumerate(info["foam_panels"],1))
     templates=[]
     for template in plan["templates"]:
         filename=template["id"]+"-assembly.png"
