@@ -3,7 +3,7 @@ import math
 from .strip_packing import subtract_rectangle
 
 
-def pack_supported(units,width,depth,height,gap=.2,score="height"):
+def pack_supported(units,width,depth,height,gap=.2,score="height",item_order="volume"):
     """Place several small units on a larger unit without imaginary shelves.
 
     Supports are envelope faces only; irregular CAD contact and material load
@@ -11,7 +11,16 @@ def pack_supported(units,width,depth,height,gap=.2,score="height"):
     """
     surfaces=[(0.,[(0.,0.,width,depth)])]
     placements=[];used=[0.,0.,0.]
-    pending=sorted(units,key=lambda u:(-math.prod(u["dimensions"]),u["unit_id"]))
+    if score not in ("height","volume","fit"):raise ValueError("Unknown support score")
+    if item_order=="area":
+        pending=sorted(units,key=lambda u:(-math.prod(sorted(u["dimensions"])[-2:]),-math.prod(u["dimensions"]),u["unit_id"]))
+    elif item_order.startswith("perturb-"):
+        import random
+        rng=random.Random(int(item_order.removeprefix("perturb-")))
+        priorities={u["unit_id"]:math.prod(u["dimensions"])*math.exp(rng.uniform(-.6,.6)) for u in sorted(units,key=lambda u:u["unit_id"])}
+        pending=sorted(units,key=lambda u:(-priorities[u["unit_id"]],u["unit_id"]))
+    elif item_order=="volume":pending=sorted(units,key=lambda u:(-math.prod(u["dimensions"]),u["unit_id"]))
+    else:raise ValueError("Unknown supported packing order")
     for unit in pending:
         options=[]
         for surface_index,(z,rectangles) in enumerate(surfaces):
@@ -29,6 +38,7 @@ def pack_supported(units,width,depth,height,gap=.2,score="height"):
                     extent=[max(used[k],position[k]+size[k]) for k in range(3)]
                     key=(extent[2],extent[0]*extent[1],w*d-size[0]*size[1]) if score=="height" else (
                         math.prod(v+min(width,depth)*.15 for v in extent),max(extent),extent[2])
+                    if score=="fit":key=(extent[2],w*d-size[0]*size[1],min(w-size[0],d-size[1]))
                     options.append(((*key,z,y,x,tuple(size)),surface_index,rotation,size,position))
         if not options:return None
         _,index,rotation,size,position=min(options)

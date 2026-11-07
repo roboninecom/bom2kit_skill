@@ -1,4 +1,8 @@
 """Choose geometry-derived envelope frames without worsening the existing axes."""
+from collections import OrderedDict
+from hashlib import sha256
+
+_BOUND_CACHE = OrderedDict()
 
 
 def packing_bounds(mesh):
@@ -11,9 +15,19 @@ def packing_bounds(mesh):
     import numpy as np
     import trimesh
 
-    frame, _ = trimesh.bounds.oriented_bounds(mesh)
-    extents = np.ptp(trimesh.transform_points(mesh.vertices,frame),axis=0)
+    key=sha256(mesh.vertices.tobytes()+mesh.faces.tobytes()).digest()
+    if key in _BOUND_CACHE:
+        frame,extents=_BOUND_CACHE[key];_BOUND_CACHE.move_to_end(key)
+        return frame.copy(),extents.copy()
     existing = mesh.extents
-    if float(np.prod(existing)) <= float(np.prod(extents))*(1+1e-10):
-        return np.eye(4), existing.copy()
-    return frame, extents
+    # A solid axis-aligned box already reaches the material-volume lower bound.
+    if np.isclose(float(np.prod(existing)),mesh.volume,rtol=1e-10,atol=1e-8):
+        frame,extents=np.eye(4),existing.copy()
+    else:
+        frame, _ = trimesh.bounds.oriented_bounds(mesh)
+        extents = np.ptp(trimesh.transform_points(mesh.vertices,frame),axis=0)
+        if float(np.prod(existing)) <= float(np.prod(extents))*(1+1e-10):
+            frame,extents=np.eye(4),existing.copy()
+    _BOUND_CACHE[key]=(frame.copy(),extents.copy())
+    if len(_BOUND_CACHE)>256:_BOUND_CACHE.popitem(last=False)
+    return frame,extents

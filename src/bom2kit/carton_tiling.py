@@ -20,7 +20,7 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
     """
     started = perf_counter()
     count = len(modules)
-    if not 1 <= count <= 8 or frontier < 1 or increment <= 0:
+    if not 1 <= count <= 8 or frontier < 1 or increment <= 0 or max_types<1:
         raise ValueError("One to eight modules, positive frontier and increment required")
     states = {}
     for index, module in enumerate(modules):
@@ -123,6 +123,35 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
                   for k,v in enumerate(dims)]
         candidates.append({"leaves":leaves,"block_mm":dims,"external_mm":external,
                            "volume_mm3":math.prod(external),"distinct_carton_sizes":distinct})
+    # A procurement-friendly fallback and competing construction: all cartons
+    # use one common size and form an exact integer grid. Select each module's
+    # best fitting pattern independently for a candidate cell footprint.
+    widths=sorted({p["external_mm"][0] for m in modules for p in m["patterns"]})
+    depths=sorted({p["external_mm"][1] for m in modules for p in m["patterns"]})
+    def sampled(values):
+        return values if len(values)<=28 else [values[round(i*(len(values)-1)/27)] for i in range(28)]
+    for width,depth in product(sampled(widths),sampled(depths)):
+        selected=[]
+        for module in modules:
+            fits=[(p["external_mm"][2],index) for index,p in enumerate(module["patterns"])
+                  if p["external_mm"][0]<=width and p["external_mm"][1]<=depth]
+            if not fits:break
+            selected.append(min(fits))
+        if len(selected)!=count:continue
+        height=max(h for h,_ in selected)
+        cell=[math.ceil(v/increment-1e-9)*increment for v in (width,depth,height)]
+        for nx in range(1,count+1):
+            if count%nx:continue
+            for ny in range(1,count//nx+1):
+                if count%(nx*ny):continue
+                nz=count//(nx*ny);dims=[cell[0]*nx,cell[1]*ny,cell[2]*nz]
+                external=[math.ceil((v+2*(wall+foam)+(reserve if k==2 else 0))/increment-1e-9)*increment for k,v in enumerate(dims)]
+                leaves=[]
+                for index,(_,pattern) in enumerate(selected):
+                    position=[index%nx*cell[0]+foam,(index//nx)%ny*cell[1]+foam,index//(nx*ny)*cell[2]+foam]
+                    leaves.append({"module":index,"pattern":pattern,"position_mm":position,"external_mm":cell.copy()})
+                candidates.append({"leaves":leaves,"block_mm":dims,"external_mm":external,
+                                   "volume_mm3":math.prod(external),"distinct_carton_sizes":1,"construction":"uniform_carton_grid"})
     candidates.sort(key=lambda c:(c["volume_mm3"],c["distinct_carton_sizes"]))
     return {"candidate":candidates[0] if candidates else None,"alternatives":candidates[:12],
             "elapsed_seconds":perf_counter()-started,"reference_used":False,"spacers":0}

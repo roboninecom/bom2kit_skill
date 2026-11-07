@@ -95,6 +95,9 @@ def test_design_replays_original_geometry_bom_and_fingerprint(tmp_path):
     assert split["logistics"]["validation"]["valid"]
     assert split_plan["result_fingerprint"]==fingerprint(split)
     assert split["search"]["family_partition"]["attempts"]>0
+    balanced,_=design_logistics(library,split_policy,bom,time_limit=2,balanced_cartons=3,partition_strategy="packing")
+    assert balanced["logistics"]["validation"]["valid"]
+    assert balanced["search"]["family_partition"]["allocation"]=={"printed":2,"mechanics":1}
     wrong=deepcopy(bom);wrong["components"][0]["quantity"]+=1
     with pytest.raises(ValueError,match="BOM"):
         design_logistics(library,policy,wrong,time_limit=3)
@@ -153,3 +156,15 @@ def test_supported_surface_places_two_units_on_one_base():
         {"id":"base","quantity":1,"dimensions_mm":[40,20,10],"allowed_rotations":"fixed"},
         {"id":"small","quantity":2,"dimensions_mm":[19.8,20,10],"allowed_rotations":"fixed"}]}
     assert validate(problem,packed)["valid"]
+
+
+def test_single_size_carton_grid_preserves_all_module_membership():
+    from bom2kit.carton_tiling import tile_modules,carton_size_key
+    modules=[{"patterns":[{"external_mm":size,"placements":[]}]} for size in
+             ([10,20,30],[11,19,29],[9,21,28],[12,18,27],[8,22,26],[13,17,25])]
+    result=tile_modules(modules,time_limit=.01,max_types=1)
+    candidate=result["candidate"]
+    assert candidate and candidate["distinct_carton_sizes"]==1
+    assert sorted(leaf["module"] for leaf in candidate["leaves"])==list(range(6))
+    assert len({carton_size_key(l["external_mm"]) for l in candidate["leaves"]})==1
+    assert sum(math.prod(l["external_mm"]) for l in candidate["leaves"])==math.prod(candidate["block_mm"])

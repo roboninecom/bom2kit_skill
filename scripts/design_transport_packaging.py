@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--split-largest-family",action="store_true",help="Try two cartons for the largest compatible family within policy caps")
     parser.add_argument("--largest-family-cartons",type=int,default=1,help="Geometry-based subdivision of the largest family, within policy caps")
     parser.add_argument("--partition-strategy",choices=("volume","packing"),default="volume",help="Select compatible carton membership using volume order or actual partial packings")
+    parser.add_argument("--balanced-cartons",type=int,default=0,help="Allocate a total carton budget across compatible families by geometric volume")
     parser.add_argument("--portfolio",action="store_true",help="Automatically keep the best checked fresh baseline, grouping and subdivision trial")
     args=parser.parse_args()
     values={};hashes={}
@@ -34,7 +35,7 @@ def main():
         return {str(path.relative_to(root)):sha256(path.read_bytes()).hexdigest() for path in sorted(files)}
     initial_code=code_hashes()
     if args.portfolio:
-        if args.split_largest_family or args.largest_family_cartons!=1 or args.partition_strategy!="volume":
+        if args.split_largest_family or args.largest_family_cartons!=1 or args.partition_strategy!="volume" or args.balanced_cartons:
             parser.error("Portfolio selects its own subdivision trials; omit explicit split options")
         from bom2kit.logistics_portfolio import design_portfolio
         result,plan=design_portfolio(values["library"],values["policy"],values["bom"],args.output,
@@ -45,7 +46,7 @@ def main():
         result,plan=design_logistics(values["library"],values["policy"],values["bom"],time_limit=args.time_limit,
                                    executable=args.packing_solver,nesting_seconds=args.nesting_budget,work_directory=args.output,
                                    split_largest_family=args.split_largest_family,largest_family_cartons=args.largest_family_cartons,
-                                   partition_strategy=args.partition_strategy)
+                                   partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons)
     result["input_files_sha256"]=hashes
     final_code=code_hashes()
     result["run_provenance"]={"python":sys.version,"engine_files_sha256":initial_code,
@@ -55,6 +56,7 @@ def main():
                                             "split_largest_family":args.split_largest_family,
                                             "largest_family_cartons":args.largest_family_cartons,
                                             "partition_strategy":args.partition_strategy,
+                                            "balanced_cartons":args.balanced_cartons,
                                             "portfolio":args.portfolio,
                                             "packing_solver":str(args.packing_solver) if args.packing_solver else None}}
     # Assembly plan is bound to the complete final result including input hashes.

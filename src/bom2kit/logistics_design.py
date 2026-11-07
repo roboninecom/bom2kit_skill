@@ -103,8 +103,9 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
         for aspect in (1,.75,1.35):
             if perf_counter()-started>time_limit*.73:break
             width=scale*factor*aspect;depth=scale*factor/aspect
-            for mode in ("height","volume"):
-                p=pack_supported(units,width,depth,scale*3,gap,mode)
+            for mode,order in (("height","volume"),("height","area"),("volume","volume"),("fit","area"),
+                               ("height","perturb-0"),("height","perturb-1")):
+                p=pack_supported(units,width,depth,scale*3,gap,mode,item_order=order)
                 if not p:continue
                 problem={"container":{"inner_mm":p["usable_mm"]},"gap_mm":gap,
                          "items":[{"id":u["unit_id"],"dimensions_mm":u["dimensions"],
@@ -171,7 +172,7 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
 
 def design_logistics(library, policy, expected_bom, *, time_limit=120, executable=None,
                      nesting_seconds=0, work_directory=None, split_largest_family=False, largest_family_cartons=1,
-                     partition_strategy="volume", _prepared_nesting=None, _pattern_cache=None):
+                     partition_strategy="volume", balanced_cartons=0, _prepared_nesting=None, _pattern_cache=None):
     import numpy as np
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -209,13 +210,26 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
     if type(requested) is not int or requested<1:raise ValueError("Positive integer family carton count required")
     if partition_strategy not in ("volume","packing"):raise ValueError("Unknown family partition strategy")
     partition_diagnostics=None
-    if requested>1 and len(groups)<policy["max_inner_cartons"]:
-        largest=max(range(len(module_sets)),key=lambda i:sum(math.prod(u["dimensions"]) for u in module_sets[i][1]))
-        family,units=module_sets.pop(largest)
+    if type(balanced_cartons) is not int or balanced_cartons<0 or balanced_cartons>policy["max_inner_cartons"]:
+        raise ValueError("Balanced carton count must respect the policy cap")
+    counts={family:1 for family,_ in module_sets}
+    if balanced_cartons:
+        if balanced_cartons<len(groups):raise ValueError("Balanced carton count cannot omit compatible families")
+        volumes={family:sum(math.prod(u["dimensions"]) for u in units) for family,units in module_sets}
+        for _ in range(balanced_cartons-len(groups)):
+            eligible=[family for family,units in module_sets if counts[family]<len(units)]
+            if not eligible:break
+            family=max(eligible,key=lambda family:volumes[family]/counts[family]);counts[family]+=1
+    elif requested>1 and len(groups)<policy["max_inner_cartons"]:
+        family,units=max(module_sets,key=lambda pair:sum(math.prod(u["dimensions"]) for u in pair[1]))
+        counts[family]=min(requested,len(units),policy["max_inner_cartons"]-len(groups)+1)
+    divided=[];partition_records=[]
+    for family,units in module_sets:
+        count=counts[family]
+        if count==1:divided.append((family,units));continue
         # Separate tall and short units rather than forcing all floor-packed
         # contents to pay for the tallest part. This uses geometry, not SKU IDs.
         ordered=sorted(units,key=lambda u:(min(u["dimensions"]),math.prod(u["dimensions"])))
-        count=min(requested,len(ordered),policy["max_inner_cartons"]-len(module_sets))
         prefix=[0]
         for u in ordered:prefix.append(prefix[-1]+math.prod(u["dimensions"]))
         cuts=[0]
@@ -231,7 +245,10 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
             if proposal["groups"]:subdivisions=proposal["groups"]
             partition_diagnostics={k:v for k,v in proposal.items() if k!="groups"}
             partition_diagnostics["selected_strategy"]="packing" if proposal["groups"] else "volume_fallback"
-        module_sets.extend((family,group) for group in subdivisions)
+            partition_records.append({"family":family,**partition_diagnostics})
+        divided.extend((family,group) for group in subdivisions)
+    module_sets=divided
+    if balanced_cartons:partition_diagnostics={"allocation":counts,"partitions":partition_records}
     all_units={u["unit_id"]:u for units in groups.values() for u in units}
     packing_hashes={i["id"]:i["mesh"]["sha256"] for i in packing_library["items"]}
     for family,units in module_sets:
@@ -274,8 +291,9 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
             for w,d in module_targets:
                 from .supported_packing import pack_supported
                 from .validation import validate
-                for mode in ("height","volume"):
-                    p=pack_supported(units,w-2*t,d-2*t,max(incumbent["block_mm"]),carton["gap_mm"],mode)
+                for mode,order in (("height","volume"),("height","area"),("volume","volume"),("fit","area"),
+                                   ("height","perturb-0"),("height","perturb-1")):
+                    p=pack_supported(units,w-2*t,d-2*t,max(incumbent["block_mm"]),carton["gap_mm"],mode,item_order=order)
                     if not p:continue
                     problem={"container":{"inner_mm":p["usable_mm"]},"gap_mm":carton["gap_mm"],
                              "items":[{"id":u["unit_id"],"dimensions_mm":u["dimensions"],
