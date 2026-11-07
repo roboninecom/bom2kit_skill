@@ -87,6 +87,8 @@ Report the measured end-to-end duration, not just the requested search budget.
 frozen designs. Each case supplies `name`, `result`, `before_result`, `bom` and
 `reference_external_mm`; optional `reference_image`, `reference_cartons` and
 `reference_types` provide independently documented reference evidence.
+Use `reference_caption` to distinguish an inner-carton illustration from a
+complete outer layout when only partial reference illustrations are available.
 Before/after source quantities, mesh hashes and protection must agree.
 Reference data never enters the design command.
 

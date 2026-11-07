@@ -104,4 +104,5 @@ foam grade/compression, carton strength, handling clearance and manufacturing
 tolerances still need specified materials and prototype checks. Purchased
 envelopes include declared estimates. Full original placement geometry for
 Alan was not replayed; his supplied illustrations and dimensions are reference
-evidence only. No shipping-test or supplier-cost equivalence is claimed.
+evidence only. The 102 reference image depicts an inner carton, not a verified
+complete outer layout. No shipping-test or supplier-cost equivalence is claimed.

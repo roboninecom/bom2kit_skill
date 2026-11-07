@@ -69,7 +69,9 @@ def compare(config_path,output):
                         f"<td>{value['types'] if value['types'] is not None else 'Not verified'}</td></tr>")
         reference_image=""
         if case.get("reference_image"):
-            reference_image=f"<figure><img src='{picture(case['reference_image'])}'><figcaption>Alan: supplied reference illustration</figcaption></figure>"
+            caption=case.get("reference_caption","Alan: supplied reference illustration")
+            reference_image=f"<figure><img src='{picture(case['reference_image'])}'><figcaption>{escape(caption)}</figcaption></figure>"
+            record["reference_caption"]=caption
             record["reference_image_sha256"]=sha256(Path(case["reference_image"]).read_bytes()).hexdigest()
         sections.append(f"<section><h2>SO-ARM{name}: {'volume target met' if passed else 'volume target NOT met'}</h2>"
                         f"<table><tr><th>Design</th><th>Exterior, mm</th><th>Litres</th><th>Cartons</th><th>Sizes</th></tr>{''.join(rows)}</table>"
