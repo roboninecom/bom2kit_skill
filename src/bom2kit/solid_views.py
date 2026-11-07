@@ -163,6 +163,7 @@ def _draw_labels(picture, labels):
     font = ImageFont.truetype(font_manager.findfont("DejaVu Sans"), 22)
     draw = ImageDraw.Draw(picture)
     placed = []
+    entries = []
     for text, x, vtk_y in sorted(labels, key=lambda row: (-row[2], row[1])):
         y = picture.height-vtk_y
         width = draw.textbbox((0, 0), text, font=font)[2]+10
@@ -176,8 +177,13 @@ def _draw_labels(picture, labels):
             if cy > 870:
                 cy = max(140, y-35*(attempt+1))
         placed.append(bounds)
+        entries.append((text, x, y, cx, cy, bounds))
+    # Draw every leader before any text box. Later leaders must not cross
+    # earlier numbers when vertically stacked slots share the same anchor.
+    for text, x, y, cx, cy, bounds in entries:
         if abs(cx-x)+abs(cy-y) > 5:
             draw.line((x, y, cx, cy), fill=(45, 55, 65), width=2)
             draw.ellipse((x-3, y-3, x+3, y+3), fill=(45, 55, 65))
+    for text, x, y, cx, cy, bounds in entries:
         draw.rounded_rectangle(bounds, radius=3, fill="white", outline=(155, 165, 175))
         draw.text((cx, cy), text, font=font, fill=(25, 35, 45), anchor="mm")
