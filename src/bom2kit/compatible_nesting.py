@@ -34,14 +34,15 @@ def discover_compatible_units(library, policy, output, time_limit=60):
         subset={**library,"items":[i for i in library["items"] if policy["families"][i["id"]]==family]}
         family_start=perf_counter()
         portfolio=discover_pairs(subset,output/family,clearance_mm=max(policy["clearance_mm"],2*policy["item_padding_mm"]),
-                                 time_limit=budget*.65,pair_seconds=min(5,budget),max_pairs=12,pitch_mm=4,proposal_rank="overlap_bound")
+                                 time_limit=budget*.65,pair_seconds=min(5,budget),max_pairs=min(48,max(12,int(budget/6))),pitch_mm=4,proposal_rank="overlap_bound")
         extension_attempts=[]
         for round_index in range(2):
             left=budget-(perf_counter()-family_start)
             if not portfolio["alternatives"] or left<=3:break
             from .nested_groups import extend_groups
             extensions=extend_groups(subset,portfolio,output/(family+f"-extensions-{round_index+1}"),
-                                     time_limit=left/(2-round_index),pair_seconds=5,max_pairs=8,pitch_mm=4)
+                                     time_limit=left/(2-round_index),pair_seconds=5,max_pairs=min(24,max(8,int(left/6))),pitch_mm=4,
+                                     proposal_rank="overlap_bound")
             extension_attempts.extend(extensions["attempts"])
             if not extensions["alternatives"]:break
             portfolio["alternatives"].extend(extensions["alternatives"])
