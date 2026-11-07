@@ -37,14 +37,19 @@ not parameters copied from Alan's solution.
 1. Verify source hashes and positive watertight geometry; calculate intrinsic
    envelopes without using printer-plate or reference packing positions.
 2. Optionally discover nested pairs and extensions within compatible families.
-   Coarse 4 mm voxels generate proposals only. Original triangles, clearance and
-   internal assembly must pass before a proposal becomes a compound unit.
+   Voxels (4 mm by default) and translation refinement generate proposals only.
+   Disjoint ranked streams can run in parallel. Original triangles, clearance
+   and internal assembly must pass before a proposal becomes a compound unit.
+   Integer set packing resolves competing group quantities; greedy and nearby
+   groupings remain competitors because envelope savings are not shipping volume.
 3. Generate module patterns using maximal free rectangles, several part-order
-   heuristics and fully supported envelope columns of repeated units. Preserve
-   different height bands for the outer search.
+   heuristics, supported surfaces and columns. Bounded order/orientation evolution
+   improves supported placements. Preserve height bands for the outer search.
 4. Use subset dynamic programming over slicing trees. Join along X, Y or Z and
    enlarge carton cross-sections until the leaves partition the complete block.
-   Count a horizontal quarter-turn as the same carton size. No spacers are made.
+   Count a horizontal quarter-turn as the same carton size. A complete beam-search
+   incumbent survives subset-search timeouts. A uniform carton grid also competes;
+   fewer sizes do not guarantee lower volume. No spacers are made.
 5. Repack modules against footprints found in the current run, then repeat the
    carton search. Apply the outer wall, four side panels, bottom, lid and top
    reserve exactly once.
@@ -56,20 +61,50 @@ geometry and cumulative volume, within policy caps. It is a candidate strategy,
 not an automatic improvement. Keep the smaller fully checked result when
 comparing runs. Neither this heuristic nor the slicing search proves optimality.
 
+For a single-strategy run, `--partition-strategy packing` instead proposes
+membership using actual partial floor layouts. `--balanced-cartons N` allocates
+the carton budget across families by envelope volume. These options do not
+accept predefined SKU groupings or reference cartons. Compare them against the
+unsplit result: premature partitioning can make the complete block much larger.
+
 For automatic selection, use `--portfolio --time-limit 240 --nesting-budget 140`.
 The runner compares a fresh baseline, several compatible nesting configurations
 and a subdivision trial, retaining the smallest fully verified result. It reuses
 only alternatives discovered within that invocation, bound to source and policy
 fingerprints. Rejected trials do not replace the incumbent. The total reported
-runtime includes every trial, not just the selected one.
+runtime includes every trial, not just the selected one. A `not_improved` trial
+cannot beat the current invocation's checked incumbent and skips expensive
+original-mesh replay; it is not a certified alternative.
+
+Optional search controls:
+
+| Option | Effect |
+| --- | --- |
+| `--nesting-workers 4` | Separate processes explore disjoint pair proposals; 1-8 workers. |
+| `--nesting-pitch 2` | Finer proposal grid; higher preparation/search cost, unchanged exact clearance. |
+| `--shared-footprint-budget 40` | Co-design family carton footprints and heights; portfolio limits this to half each trial's budget. |
+| `--heightfield-budget 180` | Experimental whole-family CAD insertion using heightfields and inaccessible-space scoring. Requires the portfolio. |
+
+Heightfield proposals still require original geometry and assembly checks. This
+strategy has not improved the measured complete 101/102 results; it is not a
+recommended substitute for the checked incumbent.
 
 The optional `--packing-solver PATH` uses the
 [PackingSolver box CLI](https://fontanf.github.io/packingsolver/box.html).
 Integer dimensions are conservatively rounded; exact source dimensions are
 restored and independently validated. Missing units, invalid orientations,
-unsupported envelopes and malformed certificates are rejected. The executable
+unsupported envelopes and malformed certificates are rejected. Validly decoded
+box proposals may also seed a fresh support-constrained reconstruction, which
+must independently pass all envelope checks. The executable
 is supplied explicitly; the engine never downloads one. PackingSolver's open-height
 proposals are not a substitute for the no-spacer carton partition.
+
+`--rectangle-solver PATH` separately uses the
+[PackingSolver rectangle CLI](https://fontanf.github.io/packingsolver/rectangle.html)
+to improve generated floor layouts. Each seed fixes a vertical axis and permits
+only authorized horizontal turns. All parts remain on the carton floor. The
+adapter verifies quantities, exact dimensions, orientations, clearance and support;
+it never treats the external solver's success as a certificate.
 
 ## Outputs, timing and comparison
 

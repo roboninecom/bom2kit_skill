@@ -127,11 +127,27 @@ Omit `--portfolio` to evaluate a single strategy. The policy generator can
 combine printed families and protected electronics explicitly; bare mechanics
 must remain separate from unprotected printed parts. Record those assumptions.
 
+The transport portfolio also compares integer-selected group quantities with
+greedy alternatives. It skips original-mesh replay for `not_improved` proposals;
+those are not certified layouts. `--nesting-workers 4` explores disjoint CAD
+pair proposals in separate processes; `--nesting-pitch 2` trades finer proposals
+for more work. Exact source clearance never changes with voxel resolution.
+`--shared-footprint-budget 40` searches common carton footprints and heights.
+For explicit non-portfolio trials, `--balanced-cartons N` and
+`--partition-strategy packing` alter family subdivisions. Compare complete
+results: identical small boxes or more partitions can substantially increase
+shipping volume. See `docs/transport-packaging.md` for the experimental controls.
+
 `--packing-solver PATH` optionally requests proposals from an explicitly supplied
 PackingSolver box executable. Its output must pass independent coverage,
 orientation, collision and envelope-support checks. Backend success alone is
 not acceptance. No binary is automatically downloaded. The default path does
 not depend on that executable.
+
+`--rectangle-solver PATH` optionally improves floor-only layouts with the
+PackingSolver rectangle executable. Box proposals can seed a new supported
+reconstruction; both adapters require independent envelope validation. Neither
+backend permits an unsupported part or an imaginary shelf in an accepted result.
 
 The result records six nonoverlapping foam panels, an outer carton specification,
 inner cartons, compatibility checks and a geometric assembly plan. Nesting and

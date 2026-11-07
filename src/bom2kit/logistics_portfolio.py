@@ -54,11 +54,12 @@ def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=
         pools=group_configurations(library,[a for _,a in nesting["alternatives"]],6,optimize=True)
         for index,pool in enumerate(pools):
             remaining=time_limit-proposal_used
-            if remaining<5:break
+            reserve=time_limit*.3 if len(set(policy["families"].values()))<policy["max_inner_cartons"] else 0
+            if remaining<max(5,reserve):break
             candidates=[(policy["families"][a["members"][0]],a) for a in pool]
             prepared=compose_compatible_units(library,policy,candidates,output/f"grouping-{index}",
                                               nesting["search"],nesting["elapsed_seconds"])
-            attempt(f"nested-{index}",max(5,remaining/(len(pools)-index+3)),prepared)
+            attempt(f"nested-{index}",max(5,(remaining-reserve)/(len(pools)-index)),prepared)
     if time_limit-proposal_used>=5 and len(set(policy["families"].values()))<policy["max_inner_cartons"]:
         splits=[("split-family",2,"volume"),("packing-split-2",2,"packing")]
         if len(set(policy["families"].values()))+2<=policy["max_inner_cartons"]:
