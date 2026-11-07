@@ -12,7 +12,8 @@ def pack_supported(units,width,depth,height,gap=.2,score="height",item_order="vo
     surfaces=[(0.,[(0.,0.,width,depth)])]
     placements=[];used=[0.,0.,0.]
     if score not in ("height","volume","fit"):raise ValueError("Unknown support score")
-    if item_order=="area":
+    if item_order=="input":pending=list(units)
+    elif item_order=="area":
         pending=sorted(units,key=lambda u:(-math.prod(sorted(u["dimensions"])[-2:]),-math.prod(u["dimensions"]),u["unit_id"]))
     elif item_order.startswith("perturb-"):
         import random

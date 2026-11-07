@@ -146,7 +146,7 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
             remaining=time_limit-(perf_counter()-started)
             if remaining<.2:break
             w,d,_=base["external_mm"]
-            packed=pack_boxes(units,w-2*wall,d-2*wall,executable=executable,time_limit=min(2,remaining),gap=gap)
+            packed=pack_boxes(units,w-2*wall,d-2*wall,executable=executable,time_limit=min(2,remaining),gap=gap,repair_support=True)
             backend_checks.append({k:v for k,v in packed.items() if k not in ("placements","validation")})
             if packed["status"]=="validated_envelopes":retain(packed,"packingsolver_box")
     if rectangle_executable:

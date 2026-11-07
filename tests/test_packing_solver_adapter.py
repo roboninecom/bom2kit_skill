@@ -6,7 +6,7 @@ import pytest
 from bom2kit.packing_solver_adapter import pack_boxes
 
 
-def run_certificate(tmp_path,monkeypatch,rows):
+def run_certificate(tmp_path,monkeypatch,rows,**options):
     executable=tmp_path/"test-backend.exe";executable.write_bytes(b"mock backend")
     def execute(command,**kwargs):
         path=Path(command[command.index("--certificate")+1])
@@ -17,7 +17,7 @@ def run_certificate(tmp_path,monkeypatch,rows):
     monkeypatch.setattr("bom2kit.packing_solver_adapter.subprocess.run",execute)
     units=[{"item_id":"part","unit_id":f"part#{i}","dimensions":[10,10,10],
             "orientations":[((0,1,2),(10,10,10))]} for i in (1,2)]
-    return pack_boxes(units,20.2,10,executable=executable,time_limit=.1,gap=.2)
+    return pack_boxes(units,20.2,10,executable=executable,time_limit=.1,gap=.2,**options)
 
 
 def certificate(second_x=102,second_z=0):
@@ -30,6 +30,13 @@ def test_backend_success_requires_independent_geometry(tmp_path,monkeypatch):
     unsupported=run_certificate(tmp_path,monkeypatch,certificate(50,120))
     assert unsupported["status"]=="rejected"
     assert any("support" in error for error in unsupported["validation"]["errors"])
+
+
+def test_backend_support_repair_reconstructs_and_revalidates_all_units(tmp_path,monkeypatch):
+    result=run_certificate(tmp_path,monkeypatch,certificate(50,120),repair_support=True)
+    assert result["status"]=="validated_envelopes" and result["support_repaired"]
+    assert result["validation"]["valid"]
+    assert {p["unit_id"] for p in result["placements"]}=={"part#1","part#2"}
 
 
 @pytest.mark.parametrize("field,value",[("ROTATION","XXY"),("X","nan"),("BIN",2),("COPIES",2),("ID",99)])

@@ -34,7 +34,7 @@ def _decode_rows(rows, units, grid_mm):
     return placements
 
 
-def pack_boxes(units, width, depth, *, executable, time_limit=2, grid_mm=.1, gap=0):
+def pack_boxes(units, width, depth, *, executable, time_limit=2, grid_mm=.1, gap=0, repair_support=False):
     """Minimize height for complete rectangular units; enforce support afterwards."""
     started = perf_counter()
     executable = Path(executable).resolve()
@@ -85,10 +85,31 @@ def pack_boxes(units, width, depth, *, executable, time_limit=2, grid_mm=.1, gap
                           "allowed_rotations": [list(r) for r, _ in u["orientations"]]} for u in units]}
     check_poses = [{**p, "item_id": p["unit_id"], "unit_id": p["unit_id"]+"#1"} for p in placed]
     certificate = validate(problem, {"placements": check_poses})
+    repaired=False
+    if not certificate["valid"] and repair_support:
+        from .supported_packing import pack_supported
+        original={u["unit_id"]:u for u in units};proposals=[]
+        ordered=sorted(placed,key=lambda p:(p["position_mm"][2],p["position_mm"][1],p["position_mm"][0]))
+        for fixed_orientation in (True,False):
+            seeded=[]
+            for pose in ordered:
+                unit=original[pose["unit_id"]]
+                choices=[(r,s) for r,s in unit["orientations"] if not fixed_orientation or tuple(r)==tuple(pose["rotation"])]
+                seeded.append({**unit,"orientations":choices})
+            for score in ("height","fit"):
+                candidate=pack_supported(seeded,width,depth,sum(max(u["dimensions"]) for u in units),gap,score,item_order="input")
+                if not candidate:continue
+                candidate_problem={**problem,"container":{"inner_mm":[width,depth,candidate["usable_mm"][2]]}}
+                candidate_poses=[{**p,"item_id":p["unit_id"],"unit_id":p["unit_id"]+"#1"} for p in candidate["placements"]]
+                check=validate(candidate_problem,{"placements":candidate_poses})
+                if check["valid"]:proposals.append((candidate["usable_mm"][2],candidate,check))
+        if proposals:
+            actual_height,candidate,certificate=min(proposals,key=lambda p:p[0])
+            placed=candidate["placements"];repaired=True
     return {"status": "validated_envelopes" if certificate["valid"] else "rejected",
             "placements": placed, "usable_mm": [width, depth, actual_height], "validation": certificate,
             "elapsed_seconds": perf_counter()-started,
-            "backend_sha256": sha256(executable.read_bytes()).hexdigest()}
+            "backend_sha256": sha256(executable.read_bytes()).hexdigest(),"support_repaired":repaired}
 
 
 def pack_floor(units, seed, width, *, executable, time_limit=1, grid_mm=.1, gap=0):
