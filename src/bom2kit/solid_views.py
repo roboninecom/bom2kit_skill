@@ -7,7 +7,7 @@ PALETTE = ((.78, .82, .86), (.45, .57, .66), (.85, .80, .68),
 
 
 def render_solid_views(parts, output, *, title, cavity=None, wall=1.5,
-                       caption="Original CAD triangles / simplified supplied envelopes", label_slots=True):
+                       caption="Original CAD triangles / simplified supplied envelopes", label_slots=True,label_numbers=None):
     """Render (mesh, slot number) pairs in their existing local coordinates.
 
     Left: open carton cutaway (two camera-facing walls omitted for visibility).
@@ -127,6 +127,7 @@ def render_solid_views(parts, output, *, title, cavity=None, wall=1.5,
             labels = []
             if view == 1 and label_slots:
                 for number in sorted({n for _, n in parts}):
+                    if label_numbers is not None and number not in label_numbers:continue
                     bounds = np.asarray([m.bounds for m, n in parts if n == number])
                     p = (bounds[:, 0].min(axis=0)+bounds[:, 1].max(axis=0))/2
                     p[2] = high[2]+span*.01

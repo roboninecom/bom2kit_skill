@@ -133,6 +133,10 @@ those are not certified layouts. `--nesting-workers 4` explores disjoint CAD
 pair proposals in separate processes; `--nesting-pitch 2` trades finer proposals
 for more work. Exact source clearance never changes with voxel resolution.
 `--shared-footprint-budget 40` searches common carton footprints and heights.
+`--polish-budget 180` adds supported order/orientation search on the best
+grouping generated in this invocation. It cannot replace the checked incumbent
+with a worse proposal. `--nesting-objective balanced` is an experimental pair
+ranking alternative, not a reduction in protection or a proven improvement.
 For explicit non-portfolio trials, `--balanced-cartons N` and
 `--partition-strategy packing` alter family subdivisions. Compare complete
 results: identical small boxes or more partitions can substantially increase
@@ -148,6 +152,12 @@ not depend on that executable.
 PackingSolver rectangle executable. Box proposals can seed a new supported
 reconstruction; both adapters require independent envelope validation. Neither
 backend permits an unsupported part or an imaginary shelf in an accepted result.
+
+`--cp-sat-python PATH` optionally uses an isolated Python interpreter with
+OR-Tools for floor orientation and supported-column selection. See the transport
+workflow for installation. Its rounded model and bounded column candidates
+only generate proposals; exact envelopes and original CAD still require replay.
+Do not interpret solver optimality as global packing optimality.
 
 The result records six nonoverlapping foam panels, an outer carton specification,
 inner cartons, compatibility checks and a geometric assembly plan. Nesting and

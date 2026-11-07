@@ -83,6 +83,8 @@ Optional search controls:
 | `--nesting-workers 4` | Separate processes explore disjoint pair proposals; 1-8 workers. |
 | `--nesting-pitch 2` | Finer proposal grid; higher preparation/search cost, unchanged exact clearance. |
 | `--shared-footprint-budget 40` | Co-design family carton footprints and heights; portfolio limits this to half each trial's budget. |
+| `--polish-budget 180` | Additional supported order/orientation search on the winning grouping from this invocation; retains the checked incumbent. |
+| `--nesting-objective balanced` | Experimental aspect-sensitive CAD pair ranking; shipping volume still determines the winner. |
 | `--heightfield-budget 180` | Experimental whole-family CAD insertion using heightfields and inaccessible-space scoring. Requires the portfolio. |
 
 Heightfield proposals still require original geometry and assembly checks. This
@@ -106,6 +108,27 @@ only authorized horizontal turns. All parts remain on the carton floor. The
 adapter verifies quantities, exact dimensions, orientations, clearance and support;
 it never treats the external solver's success as a certificate.
 
+### Optional CP-SAT proposals
+
+`--cp-sat-python PATH` runs OR-Tools in a separate interpreter. Install it explicitly,
+without replacing the engine's geometry dependencies:
+
+```powershell
+python -m venv packaging-results/tools/cpsat
+packaging-results/tools/cpsat/Scripts/python.exe -m pip install ortools==9.15.6755
+```
+
+Pass that interpreter to the transport CLI. The adapter searches vertical axes
+and floor positions using optional rectangles and `NoOverlap2D`. A second model
+jointly selects bounded supported columns (up to four envelopes per column) and
+their positions, with exactly one occurrence of every source unit. Both use
+conservatively rounded dimensions and independently replay exact envelopes;
+the enclosing pipeline still checks original CAD, quantities and assembly.
+The backend can time out or return no useful improvement. An optimal status
+only concerns its restricted envelope model, not the complete CAD problem.
+No solver is downloaded automatically. Source-derived candidates and existing
+in-run layouts provide hints; engineer layouts are never supplied.
+
 ## Outputs, timing and comparison
 
 `result.json` records original poses, closed-carton geometry, packaging materials,
@@ -122,6 +145,9 @@ Report the measured end-to-end duration, not just the requested search budget.
 frozen designs. Each case supplies `name`, `result`, `before_result`, `bom` and
 `reference_external_mm`; optional `reference_image`, `reference_cartons` and
 `reference_types` provide independently documented reference evidence.
+Optional `before_review` points to a previous transport review whose result hash
+must match `before_result`. The comparison embeds its outer view and all current
+inner-carton CAD views. Images use separate display scales; compare dimensions.
 Use `reference_caption` to distinguish an inner-carton illustration from a
 complete outer layout when only partial reference illustrations are available.
 Before/after source quantities, mesh hashes and protection must agree.

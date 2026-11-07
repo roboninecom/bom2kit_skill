@@ -32,7 +32,8 @@ def render_transport(result_path,bom_path,output):
         mesh=trimesh.creation.box(dimensions)
         mesh.apply_translation(np.asarray(origin)+np.asarray(dimensions)/2)
         return mesh
-    for index,module in enumerate(info["modules"],1):
+    ordered_modules=[next(m for m in info["modules"] if m["id"]==c["id"]) for c in plan["cartons_in_outer_insertion_order"]]
+    for index,module in enumerate(ordered_modules,1):
         parts.append((box(module["position_mm"],module["external_mm"]),index))
     # Camera-facing panels and lid are hidden for visibility only. The six
     # complete panels are retained in the manifest and shown in an exploded view.
@@ -42,7 +43,7 @@ def render_transport(result_path,bom_path,output):
     wall=policy["carton"]["wall_mm"]
     render_solid_views(parts,output/"outer-cutaway.png",title="Closed cartons inside protective foam",
                        cavity=container["inner_mm"],wall=wall,
-                       caption="Nominal packaging geometry; front/right foam and lid hidden",label_slots=False)
+                       caption="Nominal packaging geometry; front/right foam and lid hidden",label_numbers=set(range(1,len(ordered_modules)+1)))
     exploded=[];directions={"bottom":[0,0,-1],"top":[0,0,1],"left":[-1,0,0],"right":[1,0,0],"front":[0,-1,0],"back":[0,1,0]}
     distance=max(container["inner_mm"])*.18
     for index,panel in enumerate(info["foam_panels"],1):
@@ -89,7 +90,7 @@ def render_transport(result_path,bom_path,output):
 <h1>Transport packaging review</h1><p><b>{dimensions} mm · {candidate['volume_mm3']/1e6:.3f} L · {info['carton_count']} cartons · {info['carton_types']} sizes</b></p>
 <p>Complete BOM, original CAD, geometric assembly, compatible families, exact carton block and six-face foam checks pass. No spacers.</p>
 <p><b>Not transport-qualified.</b> Part restraint, hand access, foam grade, carton strength and manufacturing tolerances require prototype checks. Estimated purchased envelopes remain estimates.</p>
-<img src='outer-cutaway.png'><p>Cartons retain their actual checked coordinates. The cutaway hides the outer lid and two near walls, and matching foam panels.</p>
+<img src='outer-cutaway.png'><p>Numbers match the carton list below. Stacked cartons share projected positions. Cartons retain their actual checked coordinates; the cutaway hides the lid, two near walls and matching foam panels.</p>
 <h2>Assembly sequence</h2><ol><li>Prepare labeled parts and packets from the complete BOM.</li><li>Pack each carton in the order shown below. Assemble nested groups on the workbench using the generated assembly plan.</li><li>Close each carton. Fit the bottom and side foam panels; insert cartons in the numbered order.</li><li>Fit the top foam and close the outer carton. Confirm restraint and closure on a physical prototype before shipping.</li></ol>
 {''.join(sections)}<h2>Nested-group workbench assembly</h2>{''.join(templates) or '<p>No nested groups.</p>'}<h2>Protection panels</h2><img src='foam-exploded.png'><table><tr><th>Panel</th><th>Dimensions, mm</th></tr>{materials}</table>
 <p>Outer corrugated wall: {wall:g} mm. Foam thickness: {policy['carton']['protection_mm']:g} mm. Material grade and compression are not qualified.</p>
