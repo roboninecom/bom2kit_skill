@@ -24,7 +24,8 @@ def metrics(result):
     layers=candidate["layout"]["layers"]
     sizes=[tuple(v+2*layer["wall_mm"] for v in layer["inner_mm"]) for layer in layers]
     return {"external_mm":candidate["external_mm"],"volume_l":math.prod(candidate["external_mm"])/1e6,
-            "cartons":len(layers),"types":len({carton_size_key(size) for size in sizes})}
+            "cartons":len(layers),"types":len({carton_size_key(size) for size in sizes}),
+            "recorded_seconds":result.get("search",{}).get("total_seconds")}
 
 
 def check_comparable(before,after):
@@ -77,9 +78,10 @@ def compare(config_path,output):
         rows=[]
         for label,value in (("Before",old),("After",new),("Alan reference",reference)):
             dimensions=" x ".join(f"{d:g}" for d in value["external_mm"])
+            seconds=f"{value['recorded_seconds']:.1f}" if value.get("recorded_seconds") is not None else "Not measured"
             rows.append(f"<tr><td>{label}</td><td>{dimensions}</td><td>{value['volume_l']:.3f}</td>"
                         f"<td>{value['cartons'] if value['cartons'] is not None else 'Not verified'}</td>"
-                        f"<td>{value['types'] if value['types'] is not None else 'Not verified'}</td></tr>")
+                        f"<td>{value['types'] if value['types'] is not None else 'Not verified'}</td><td>{seconds}</td></tr>")
         reference_image=""
         before_image=""
         if case.get("before_review"):
@@ -95,7 +97,7 @@ def compare(config_path,output):
             record["reference_caption"]=caption
             record["reference_image_sha256"]=sha256(Path(case["reference_image"]).read_bytes()).hexdigest()
         sections.append(f"<section><h2>SO-ARM{name}: {'volume target met' if passed else 'volume target NOT met'}</h2>"
-                        f"<table><tr><th>Design</th><th>Exterior, mm</th><th>Litres</th><th>Cartons</th><th>Sizes</th></tr>{''.join(rows)}</table>"
+                        f"<table><tr><th>Design</th><th>Exterior, mm</th><th>Litres</th><th>Cartons</th><th>Sizes</th><th>Recorded run, s</th></tr>{''.join(rows)}</table>"
                         f"<p>After vs Alan: {delta:+.1f}%. Search and verification: {record['after_seconds']:.1f} s. "
                         f"Complete matching source BOM and unchanged protection; compatibility and no-spacer block checks pass.</p><p>{provenance_note}</p>"
                         f"<div class='pair'>{before_image}<figure><img src='{picture(directory/'outer-cutaway.png')}'><figcaption>After: exact generated carton/foam geometry</figcaption></figure>{reference_image}</div>"
@@ -114,7 +116,7 @@ def compare(config_path,output):
 <p>After: compatible groups, bounded carton count and sizes, six-face protective foam and a nominally complete inner-carton block without spacers. Full source quantities and original CAD are checked.</p>
 <p>Illustrations use separate display scales; compare the stated exterior dimensions and volumes.</p>
 <p>Physical restraint, cushioning, material strength and manufacturing tolerances remain unqualified. The Alan volume is a supplied independent benchmark; its complete original placement geometry was not replayed here. No reference dimensions or placements enter the search.</p>
-{''.join(sections)}<h2>Comparison limits</h2><p>Before is the previously frozen computational layout, not a transport-qualified design. Alan's engineering time and the frozen before-layout search time are not measured here. No supplier costs or physical test results are invented. Purchased-envelope estimates remain in force.</p>"""
+{''.join(sections)}<h2>Comparison limits</h2><p>Before is the previously frozen computational layout, not a transport-qualified design. Recorded runtimes come from the respective runs, not from this report replay; they exclude source preparation and may reflect different concurrent workloads and search budgets. Alan's engineering time is not measured. No supplier costs or physical test results are invented. Purchased-envelope estimates remain in force.</p>"""
     (output/"report.html").write_text(html,encoding="utf8")
     return {"report":str(output/"report.html"),"both_volume_targets_met":all(r["volume_pass"] for r in records)}
 
