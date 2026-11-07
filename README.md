@@ -67,6 +67,16 @@ and zero-based `reference_pages`. Never pass that config to the design engine.
 Before/after source manifests and protection must match. Geometric instructions
 do not establish physical shipping qualification.
 
+Carton and assembly illustrations include shaded 3D CAD views and numbered top
+views. VTK renders the original triangles with surface lighting, contact shading
+and feature edges, without changing or simplifying the checked geometry. The
+carton cutaway hides two camera-facing walls; it does not imply an open-sided
+manufactured box. Supplied simplified purchased-part envelopes stay simplified,
+and display colors do not certify real materials. Original flat views remain in
+`carton-N.png`; the illustrated report uses `carton-N-solid.png`.
+Install `.[mesh,report]` for these renderers. Rendering uses an offscreen OpenGL
+context and requires a working graphics driver; it does not call a cloud service.
+
 ## Fixed-container utilities
 
 ```powershell

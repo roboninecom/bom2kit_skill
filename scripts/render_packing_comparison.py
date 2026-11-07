@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
 from bom2kit.assembly_plan import build_assembly_plan
 from bom2kit.report import fingerprint
+from bom2kit.solid_views import render_solid_views
 from render_design_review import render
 
 
@@ -19,11 +20,6 @@ def picture(path, label):
 
 
 def template_picture(template, output):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.collections import PolyCollection
-    import numpy as np
     import trimesh
 
     items = {i["id"]:i for i in template["workbench_input"]["items"]}
@@ -34,27 +30,9 @@ def template_picture(template, output):
         mesh = trimesh.Trimesh(data["vertices_mm"],data["triangles"],process=False)
         mesh.apply_transform(pose["transform"])
         meshes.append((pose["unit_id"],mesh))
-    fig,axes = plt.subplots(1,2,figsize=(11,4.3))
-    for ax,projection,depth,title in zip(axes,((0,1),(0,2)),(2,1),("Top: X/Y","Side: X/Z; insertion downward")):
-        faces,colors,depths = [],[],[]
-        for uid,mesh in meshes:
-            faces.extend(mesh.triangles[:,:,projection])
-            depths.extend(mesh.triangles[:,:,depth].mean(axis=1))
-            colors.extend([plt.get_cmap("tab10")((order[uid]-1)%10)]*len(mesh.faces))
-            centre = mesh.bounds.mean(axis=0)
-            ax.text(centre[projection[0]],centre[projection[1]],str(order[uid]),ha="center",va="center",
-                    bbox={"facecolor":"white","alpha":.9,"edgecolor":"#888","pad":2},zorder=3)
-        indices = np.argsort(depths,kind="stable")
-        ax.add_collection(PolyCollection(np.asarray(faces)[indices],facecolors=np.asarray(colors)[indices],edgecolors="none"))
-        ax.autoscale_view()
-        ax.set_aspect("equal")
-        ax.set_title(title)
-        ax.set_xlabel("X (mm)")
-        ax.set_ylabel("Y (mm)" if projection[1]==1 else "Z (mm)")
-    fig.suptitle(template["id"]+": numbered assembly order")
-    fig.tight_layout()
-    fig.savefig(output,dpi=130)
-    plt.close(fig)
+    render_solid_views([(mesh, order[uid]) for uid, mesh in meshes], output,
+                       title=template["id"]+": numbered assembly order")
+
 
 
 def stack_picture(plan, output):
@@ -147,7 +125,7 @@ def render_comparison(config_path, output):
                 members = result.get("groups",{}).get("assembly-"+slot["unit_id"],[slot["unit_id"]])
                 slot_numbers.update({uid:number for uid in members})
                 content_rows.append(f"<tr><td>{number}</td><td>{escape(', '.join(members))}</td></tr>")
-            views.append(picture(directory/f"carton-{index+1}.png",f"Generated carton {index+1}")+
+            views.append(picture(directory/f"carton-{index+1}-solid.png",f"Generated carton {index+1}")+
                          f"<details><summary>{escape(layer['id'])}: numbered contents</summary><table>{''.join(content_rows)}</table></details>")
         details = []
         for template in plan["templates"]:
@@ -161,8 +139,8 @@ def render_comparison(config_path, output):
             outer = " x ".join(f"{d+2*layer['wall_mm']:g}" for d in layer["inner_mm"])
             carton_steps.append(f"<h4>{escape(layer['id'])}: closed size {outer} mm</h4><ol>{steps}</ol>")
         cards.append(f"<section><h2>{escape(name)}</h2><p><b>Generated:</b> {dims} mm, {review['cartons']} closed inner cartons; {review['units']} packing units. <b>Alan:</b> {refdims} mm.</p>{clean_note}"
-                     f"<div class='comparison'><div><h3>Alan: supplied PDF</h3>{''.join(pages)}</div><div><h3>Generated: actual CAD top views</h3>{''.join(views)}</div></div>"
-                     f"<details><summary>Geometric packing steps and group assembly</summary><p>Prepare the listed groups on an open workbench in numbered order. Orient each finished group as shown in its carton top view. Lower units into the open inner carton in the listed order, then close it. Put closed cartons into the outer box in the order below, preserving the configured protection and booklet space. Source IDs refer to the BOM; estimated purchased envelopes remain estimates.</p>"
+                     f"<div class='comparison'><div><h3>Alan: supplied PDF</h3>{''.join(pages)}</div><div><h3>Generated: shaded original CAD</h3><p>Left: 3D cutaway with front/right walls hidden. Right: numbered top view. Parts stay at their checked coordinates. Purchased parts without detailed CAD retain their supplied simplified envelopes; colors distinguish slots, not real materials.</p>{''.join(views)}</div></div>"
+                     f"<details><summary>Geometric packing steps and group assembly</summary><p>Prepare the listed groups on an open workbench in numbered order. Orient each finished group as shown in its carton 3D and top views. Lower units into the open inner carton in the listed order, then close it. Put closed cartons into the outer box in the order below, preserving the configured protection and booklet space. Source IDs refer to the BOM; estimated purchased envelopes remain estimates.</p>"
                      f"{''.join(details)}<h3>Carton filling and outer insertion order</h3>{''.join(carton_steps)}</details>"
                      f"<small>Frozen result SHA-256: {sha256(raw).hexdigest()}</small></section>")
         audits.append({"name":name,"result_sha256":sha256(raw).hexdigest(),"result_fingerprint":fingerprint(result),
@@ -172,12 +150,14 @@ def render_comparison(config_path, output):
                        "assembly_plan_status":plan["status"],"result_path":str(Path(case["result"]).resolve())})
         print(json.dumps({"case":name,"litres":actual,"status":status}),flush=True)
     html = """<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Packing: one-hour progress report</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;color:#1e293b;max-width:1180px;margin:32px auto;padding:0 20px}h1,h2,h3{line-height:1.2}table{border-collapse:collapse;width:100%}th,td{padding:9px;text-align:left;border-bottom:1px solid #cbd5e1}section{border-top:2px solid #334155;margin-top:32px;padding-top:10px}.comparison{display:grid;grid-template-columns:1fr 1fr;gap:20px}img{max-width:100%;height:auto}details{background:#f1f5f9;padding:16px;margin:20px 0}summary{cursor:pointer;font-weight:700}small{overflow-wrap:anywhere}li{overflow-wrap:anywhere}@media(max-width:700px){.comparison{display:block}table{font-size:12px}}@media print{details{display:block}.comparison{grid-template-columns:1fr 1fr}section{break-before:page}}</style>
+<style>body{font:16px/1.5 system-ui,sans-serif;color:#1e293b;max-width:1180px;margin:32px auto;padding:0 20px}h1,h2,h3{line-height:1.2}table{border-collapse:collapse;width:100%}th,td{padding:9px;text-align:left;border-bottom:1px solid #cbd5e1}section{border-top:2px solid #334155;margin-top:32px;padding-top:10px}.comparison{display:grid;grid-template-columns:1fr 2fr;gap:20px}img{max-width:100%;height:auto}details{background:#f1f5f9;padding:16px;margin:20px 0}summary{cursor:pointer;font-weight:700}small{overflow-wrap:anywhere}li{overflow-wrap:anywhere}@media(max-width:700px){.comparison{display:block}table{font-size:12px}}@media print{details{display:block}.comparison{grid-template-columns:1fr 1fr}section{break-before:page}}</style>
 <h1>Packing: one-hour progress report</h1>
 <p>Complete declared kits, unchanged protection and source geometry. Both results pass BOM, original CAD, carton-wall, internal assembly and external insertion checks. The overall no-worse objective is still open.</p>
 <table><tr><th>Kit</th><th>Alan, L</th><th>Before, L</th><th>After, L</th><th>vs Alan</th><th>Target</th></tr>"""+"".join(rows)+"</table>"
     html += "<p>These selected improvements start from independently generated cached results. Separate clean runs are reported in the repository progress note; do not treat replay time as cold-design time. Alan's dimensions are nominal source values. The diagrams are geometric instructions under documented purchased-part assumptions, not physical shipping qualification.</p>"
-    html += "".join(cards)+"</html>"
+    html += "".join(cards)+"""<dialog id="zoom"><button onclick="this.parentElement.close()">Close</button><img alt="Enlarged packing illustration"></dialog>
+<style>img{cursor:zoom-in}dialog{max-width:96vw;width:1700px;padding:12px;border:1px solid #94a3b8}dialog img{width:100%;cursor:default}dialog::backdrop{background:#000b}dialog button{display:block;margin:0 0 8px auto;padding:8px 20px}</style>
+<script>const zoom=document.getElementById('zoom');document.querySelectorAll('section img').forEach(img=>img.addEventListener('click',()=>{zoom.querySelector('img').src=img.src;zoom.showModal()}));zoom.addEventListener('click',e=>{if(e.target===zoom)zoom.close()});</script></html>"""
     (output/"report.html").write_text(html,encoding="utf8")
     (output/"comparison-checks.json").write_text(json.dumps(audits,indent=2),encoding="utf8")
     return output/"report.html"
