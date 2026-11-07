@@ -31,7 +31,9 @@ def main():
     parser.add_argument("--partition-strategy",choices=("volume","packing"),default="volume",help="Select compatible carton membership using volume order or actual partial packings")
     parser.add_argument("--balanced-cartons",type=int,default=0,help="Allocate a total carton budget across compatible families by geometric volume")
     parser.add_argument("--portfolio",action="store_true",help="Automatically keep the best checked fresh baseline, grouping and subdivision trial")
+    parser.add_argument("--cp-sat-columns",action="store_true",help="Experimental column proposals in addition to the default CP-SAT floor search")
     args=parser.parse_args()
+    if args.cp_sat_columns and not args.cp_sat_python:parser.error("--cp-sat-columns requires --cp-sat-python")
     values={};hashes={}
     for name in ("library","policy","bom"):
         raw=getattr(args,name).read_bytes();values[name]=json.loads(raw);hashes[name]=sha256(raw).hexdigest()
@@ -49,7 +51,7 @@ def main():
                                     time_limit=args.time_limit,nesting_seconds=args.nesting_budget,heightfield_seconds=args.heightfield_budget,
                                     executable=args.packing_solver,nesting_workers=args.nesting_workers,rectangle_executable=args.rectangle_solver,
                                     shared_footprint_seconds=args.shared_footprint_budget,nesting_pitch_mm=args.nesting_pitch,nesting_objective=args.nesting_objective,
-                                    polish_seconds=args.polish_budget,cp_sat_python=args.cp_sat_python)
+                                    polish_seconds=args.polish_budget,cp_sat_python=args.cp_sat_python,cp_sat_columns=args.cp_sat_columns)
     else:
         if args.heightfield_budget:parser.error("Whole-family heightfield discovery requires --portfolio")
         result,plan=design_logistics(values["library"],values["policy"],values["bom"],time_limit=args.time_limit,
@@ -57,7 +59,7 @@ def main():
                                    split_largest_family=args.split_largest_family,largest_family_cartons=args.largest_family_cartons,
                                    partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons,nesting_workers=args.nesting_workers,
                                    rectangle_executable=args.rectangle_solver,shared_footprint_seconds=args.shared_footprint_budget,nesting_pitch_mm=args.nesting_pitch,nesting_objective=args.nesting_objective,
-                                   module_improvement_seconds=args.polish_budget,cp_sat_python=args.cp_sat_python)
+                                   module_improvement_seconds=args.polish_budget,cp_sat_python=args.cp_sat_python,cp_sat_columns=args.cp_sat_columns)
     result["input_files_sha256"]=hashes
     final_code=code_hashes()
     result["run_provenance"]={"python":sys.version,"engine_files_sha256":initial_code,
@@ -76,6 +78,7 @@ def main():
                                             "portfolio":args.portfolio,
                                             "rectangle_solver":str(args.rectangle_solver) if args.rectangle_solver else None,
                                             "cp_sat_python":str(args.cp_sat_python) if args.cp_sat_python else None,
+                                            "cp_sat_columns":args.cp_sat_columns,
                                             "packing_solver":str(args.packing_solver) if args.packing_solver else None}}
     # Assembly plan is bound to the complete final result including input hashes.
     from bom2kit.report import fingerprint

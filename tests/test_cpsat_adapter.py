@@ -55,3 +55,20 @@ def test_optional_real_cpsat_columns():
     assert result["status"]=="validated_envelopes",result
     assert result["usable_mm"][1]==pytest.approx(10)
     assert result["usable_mm"][2]==pytest.approx(12)
+
+
+def test_experimental_columns_do_not_replace_floor_proposals(monkeypatch):
+    from bom2kit.logistics_design import module_patterns
+    calls=[]
+    def propose(*args,**kwargs):
+        calls.append(kwargs['allow_columns'])
+        return {'status':'UNKNOWN'}
+    monkeypatch.setattr('bom2kit.cpsat_floor_adapter.pack_floor',propose)
+    units=[{'item_id':'a','unit_id':f'a#{i}','dimensions':[10,10,6],
+            'orientations':[((0,1,2),(10,10,6))]} for i in range(4)]
+    module_patterns(units,1.5,time_limit=.1,cp_sat_python='mock')
+    floors=calls.copy()
+    assert floors and not any(floors)
+    calls.clear()
+    module_patterns(units,1.5,time_limit=.1,cp_sat_python='mock',cp_sat_columns=True)
+    assert calls==floors+[True]

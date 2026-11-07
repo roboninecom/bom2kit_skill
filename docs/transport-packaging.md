@@ -119,13 +119,16 @@ packaging-results/tools/cpsat/Scripts/python.exe -m pip install ortools==9.15.67
 ```
 
 Pass that interpreter to the transport CLI. The adapter searches vertical axes
-and floor positions using optional rectangles and `NoOverlap2D`. A second model
-jointly selects bounded supported columns (up to four envelopes per column) and
+and floor positions using optional rectangles and `NoOverlap2D`. The experimental
+`--cp-sat-columns` flag adds a second model that jointly selects bounded supported
+columns (up to four envelopes per column) and
 their positions, with exactly one occurrence of every source unit. Both use
 conservatively rounded dimensions and independently replay exact envelopes;
 the enclosing pipeline still checks original CAD, quantities and assembly.
 The backend can time out or return no useful improvement. An optimal status
 only concerns its restricted envelope model, not the complete CAD problem.
+Column search did not improve the selected 101/102 results and is opt-in; it
+does not displace either default floor proposal.
 No solver is downloaded automatically. Source-derived candidates and existing
 in-run layouts provide hints; engineer layouts are never supplied.
 

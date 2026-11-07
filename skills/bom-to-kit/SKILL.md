@@ -154,7 +154,8 @@ reconstruction; both adapters require independent envelope validation. Neither
 backend permits an unsupported part or an imaginary shelf in an accepted result.
 
 `--cp-sat-python PATH` optionally uses an isolated Python interpreter with
-OR-Tools for floor orientation and supported-column selection. See the transport
+OR-Tools for floor orientation. `--cp-sat-columns` adds experimental supported-column
+selection without displacing the floor proposals. See the transport
 workflow for installation. Its rounded model and bounded column candidates
 only generate proposals; exact envelopes and original CAD still require replay.
 Do not interpret solver optimality as global packing optimality.
