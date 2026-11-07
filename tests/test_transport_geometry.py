@@ -172,3 +172,18 @@ def test_single_size_carton_grid_preserves_all_module_membership():
     assert sorted(leaf["module"] for leaf in candidate["leaves"])==list(range(6))
     assert len({carton_size_key(l["external_mm"]) for l in candidate["leaves"]})==1
     assert sum(math.prod(l["external_mm"]) for l in candidate["leaves"])==math.prod(candidate["block_mm"])
+
+
+def test_supported_order_search_improves_height_without_relaxing_support():
+    from itertools import permutations
+    from bom2kit.supported_packing import pack_supported,optimize_supported
+    from bom2kit.validation import validate
+    sizes=[[11,12,9],[11,11,7],[13,7,4],[12,11,8],[13,6,3],[11,8,4],[5,12,9]]
+    units=[{"item_id":str(i),"unit_id":f"{i}#1","dimensions":s,
+            "orientations":[(r,tuple(s[k] for k in r)) for r in permutations(range(3))]} for i,s in enumerate(sizes)]
+    baseline=pack_supported(units,25,25,50,.2)
+    result=optimize_supported(units,25,25,50,.2,time_limit=10,max_iterations=64)
+    assert result["packing"]["usable_mm"][2]<baseline["usable_mm"][2]
+    problem={"container":{"inner_mm":[25,25,50]},"gap_mm":.2,"items":[
+        {"id":str(i),"quantity":1,"dimensions_mm":s,"allowed_rotations":[list(r) for r in permutations(range(3))]} for i,s in enumerate(sizes)]}
+    assert validate(problem,result["packing"])["valid"]

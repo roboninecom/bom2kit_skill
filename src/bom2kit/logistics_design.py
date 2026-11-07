@@ -319,8 +319,15 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
                 neighbours.append([math.ceil(own[0]*fx/increment)*increment,math.ceil(own[1]*fy/increment)*increment])
             module_targets=[own,*neighbours,incumbent["block_mm"][:2],*targets]
             for w,d in module_targets:
-                from .supported_packing import pack_supported
+                from .supported_packing import pack_supported,optimize_supported
                 from .validation import validate
+                if [w,d]==own:
+                    evolved=optimize_supported(units,w-2*t,d-2*t,max(incumbent["block_mm"]),carton["gap_mm"],time_limit=min(1,per_module*.4))
+                    p=evolved["packing"]
+                    if p:
+                        h=math.ceil((p["usable_mm"][2]+2*t)/increment)*increment;size=(w,d,h)
+                        if size not in known:
+                            module["patterns"].append({"external_mm":list(size),"placements":p["placements"],"method":"supported_order_evolution"});known.add(size)
                 for mode,order in (("height","volume"),("height","area"),("volume","volume"),("fit","area"),
                                    ("height","perturb-0"),("height","perturb-1")):
                     p=pack_supported(units,w-2*t,d-2*t,max(incumbent["block_mm"]),carton["gap_mm"],mode,item_order=order)

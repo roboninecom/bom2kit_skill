@@ -53,3 +53,43 @@ def pack_supported(units,width,depth,height,gap=.2,score="height",item_order="vo
         used=[max(used[k],position[k]+size[k]) for k in range(3)]
     placements.sort(key=lambda p:(p["position_mm"][2],p["unit_id"]))
     return {"placements":placements,"usable_mm":used}
+
+
+def optimize_supported(units,width,depth,height,gap=.2,*,time_limit=1,max_iterations=96):
+    """Bounded order/orientation evolution on real supporting envelope faces."""
+    import random
+    from time import perf_counter
+    from .validation import validate
+    start=perf_counter();rng=random.Random(0);best=None;elites=[];seen=set();attempts=0
+    by_id={u["unit_id"]:u for u in units}
+    if not units or len(by_id)!=len(units) or not math.isfinite(time_limit) or time_limit<=0 or type(max_iterations) is not int or max_iterations<1:
+        raise ValueError("Unique supported units and positive search limits required")
+    initial=[sorted(by_id,key=lambda uid:-math.prod(by_id[uid]["dimensions"])),
+             sorted(by_id,key=lambda uid:-math.prod(sorted(by_id[uid]["dimensions"])[-2:]))]
+    while attempts<max_iterations and perf_counter()-start<time_limit:
+        if attempts<len(initial):order=initial[attempts].copy();vertical={}
+        elif elites and rng.random()<.8:
+            _,parent,parent_vertical=elites[rng.randrange(len(elites))]
+            order=parent.copy();vertical=parent_vertical.copy()
+            for _ in range(rng.randint(1,3)):
+                a,b=rng.randrange(len(order)),rng.randrange(len(order));order[a],order[b]=order[b],order[a]
+            if rng.random()<.6:
+                uid=rng.choice(order)
+                vertical[uid]=rng.choice([r[2] for r,_ in by_id[uid]["orientations"]])
+        else:
+            order=sorted(by_id,key=lambda uid:-math.prod(by_id[uid]["dimensions"])*math.exp(rng.uniform(-1.5,1.5)));vertical={}
+        key=(tuple(order),tuple(sorted(vertical.items())))
+        attempts+=1
+        if key in seen:continue
+        seen.add(key)
+        pending=[{**by_id[uid],"orientations":[(r,s) for r,s in by_id[uid]["orientations"] if uid not in vertical or r[2]==vertical[uid]]} for uid in order]
+        p=pack_supported(pending,width,depth,height,gap,"fit" if attempts%4==0 else "height",item_order="input")
+        if not p:continue
+        score=(p["usable_mm"][2],math.prod(p["usable_mm"]))
+        elites.append((score,order,vertical));elites.sort(key=lambda e:e[0]);elites=elites[:8]
+        if best is not None and score>=best[0]:continue
+        problem={"container":{"inner_mm":[width,depth,p["usable_mm"][2]]},"gap_mm":gap,
+                 "items":[{"id":u["unit_id"],"dimensions_mm":u["dimensions"],"allowed_rotations":[list(r) for r,_ in u["orientations"]]} for u in units]}
+        poses=[{**q,"item_id":q["unit_id"],"unit_id":q["unit_id"]+"#1"} for q in p["placements"]]
+        if validate(problem,{"placements":poses})["valid"]:best=(score,p)
+    return {"packing":best[1] if best else None,"attempts":attempts,"seconds":perf_counter()-start}

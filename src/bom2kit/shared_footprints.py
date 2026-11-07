@@ -4,7 +4,7 @@ import math
 from time import perf_counter
 
 from .strip_packing import pack_strip
-from .supported_packing import pack_supported
+from .supported_packing import pack_supported,optimize_supported
 from .column_packing import make_mixed_columns,expand_columns
 from .validation import validate
 
@@ -46,6 +46,10 @@ def search_shared_footprints(module_sets, carton, *, time_limit=60, keep=6):
             for mode,order in (("height","volume"),("height","area"),("fit","area"),("height","perturb-2")):
                 if perf_counter()-start>=time_limit:break
                 consider(pack_supported(units,w,d,maximum,gap,mode,order),"shared_footprint_supported")
+            left=time_limit-(perf_counter()-start)
+            if left>.2:
+                proposal=optimize_supported(units,w,d,maximum,gap,time_limit=min(.8,left))
+                consider(proposal["packing"],"shared_footprint_evolution")
             heights=sorted({s[2] for u in units for _,s in u["orientations"]})
             if len(heights)>16:heights=[heights[round(i*(len(heights)-1)/15)] for i in range(16)]
             for height in heights:
