@@ -10,7 +10,7 @@ from .logistics_design import design_logistics
 from .report import fingerprint
 
 
-def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=140,heightfield_seconds=0,executable=None):
+def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=140,heightfield_seconds=0,nesting_workers=1,executable=None):
     if not math.isfinite(time_limit) or time_limit<=0 or not math.isfinite(nesting_seconds) or nesting_seconds<0 or not math.isfinite(heightfield_seconds) or heightfield_seconds<0:
         raise ValueError("Finite positive proposal budget and nonnegative nesting budget required")
     from .bom import reconcile_bom
@@ -37,7 +37,7 @@ def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=
     if nesting_seconds>0 or heightfield_seconds>0:
         candidates=[];discovery_search=[];discovery_seconds=0
         if nesting_seconds>0:
-            nesting=discover_compatible_units(library,policy,output/"discovery",nesting_seconds)
+            nesting=discover_compatible_units(library,policy,output/"discovery",nesting_seconds,workers=nesting_workers)
             candidates.extend(nesting["alternatives"]);discovery_search.extend(nesting["search"])
             discovery_seconds+=nesting["elapsed_seconds"]
         if heightfield_seconds>0:

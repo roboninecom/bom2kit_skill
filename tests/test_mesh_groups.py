@@ -84,6 +84,23 @@ def test_open_workbench_frame_is_explicit(tmp_path):
     assert np.linalg.det(np.array(result["source_to_workbench"])[:3, :3]) == pytest.approx(1)
 
 
+def test_parallel_pair_streams_are_disjoint_and_preserve_certificates(tmp_path):
+    from bom2kit.parallel_nesting import discover_pair_shards
+    items=sources(tmp_path)
+    items[1]["quantity"]=2
+    library={"units":"mm","all_meshes_valid_volumes":True,"items":items}
+    result=discover_pair_shards(library,tmp_path/"parallel",workers=2,clearance_mm=.2,
+                                time_limit=15,pair_seconds=5,max_pairs=2)
+    members=[tuple(a["members"]) for a in result["attempts"]]
+    assert len(members)==2 and len(set(members))==2
+    assert result["alternatives"] and result["workers"]==2
+    for alternative in result["alternatives"]:
+        assembly=alternative["assembly"]
+        assert check_vertical_sequence(assembly["input"],assembly["layout"])["valid"]
+    with pytest.raises(ValueError,match="workers"):
+        discover_pair_shards(library,tmp_path/"invalid",workers=0,clearance_mm=.2)
+
+
 @pytest.mark.parametrize("radius",[2,4])
 def test_nested_groups_expand_original_units_without_reusing_unavailable_parts(tmp_path,radius):
     items = sources(tmp_path)

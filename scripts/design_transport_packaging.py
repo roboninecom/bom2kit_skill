@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--time-limit",type=float,default=120,help="Proposal budget; final verification is additional")
     parser.add_argument("--packing-solver",type=Path)
     parser.add_argument("--nesting-budget",type=float,default=0,help="Additional compatible CAD nesting search budget")
+    parser.add_argument("--nesting-workers",type=int,choices=range(1,9),default=1,help="Parallel disjoint CAD pair proposal streams")
     parser.add_argument("--heightfield-budget",type=float,default=0,help="Additional whole-family CAD insertion search budget; requires --portfolio")
     parser.add_argument("--split-largest-family",action="store_true",help="Try two cartons for the largest compatible family within policy caps")
     parser.add_argument("--largest-family-cartons",type=int,default=1,help="Geometry-based subdivision of the largest family, within policy caps")
@@ -40,18 +41,19 @@ def main():
         from bom2kit.logistics_portfolio import design_portfolio
         result,plan=design_portfolio(values["library"],values["policy"],values["bom"],args.output,
                                     time_limit=args.time_limit,nesting_seconds=args.nesting_budget,heightfield_seconds=args.heightfield_budget,
-                                    executable=args.packing_solver)
+                                    executable=args.packing_solver,nesting_workers=args.nesting_workers)
     else:
         if args.heightfield_budget:parser.error("Whole-family heightfield discovery requires --portfolio")
         result,plan=design_logistics(values["library"],values["policy"],values["bom"],time_limit=args.time_limit,
                                    executable=args.packing_solver,nesting_seconds=args.nesting_budget,work_directory=args.output,
                                    split_largest_family=args.split_largest_family,largest_family_cartons=args.largest_family_cartons,
-                                   partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons)
+                                   partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons,nesting_workers=args.nesting_workers)
     result["input_files_sha256"]=hashes
     final_code=code_hashes()
     result["run_provenance"]={"python":sys.version,"engine_files_sha256":initial_code,
                               "engine_files_unchanged_during_run":initial_code==final_code,
                               "parameters":{"time_limit":args.time_limit,"nesting_budget":args.nesting_budget,
+                                            "nesting_workers":args.nesting_workers,
                                             "heightfield_budget":args.heightfield_budget,
                                             "split_largest_family":args.split_largest_family,
                                             "largest_family_cartons":args.largest_family_cartons,

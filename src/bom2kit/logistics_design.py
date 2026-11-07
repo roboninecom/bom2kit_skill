@@ -172,7 +172,7 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
 
 def design_logistics(library, policy, expected_bom, *, time_limit=120, executable=None,
                      nesting_seconds=0, work_directory=None, split_largest_family=False, largest_family_cartons=1,
-                     partition_strategy="volume", balanced_cartons=0, _prepared_nesting=None, _pattern_cache=None):
+                     partition_strategy="volume", balanced_cartons=0, nesting_workers=1, _prepared_nesting=None, _pattern_cache=None):
     import numpy as np
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -198,7 +198,7 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
     elif nesting_seconds:
         if work_directory is None:raise ValueError("Nesting requires an output directory")
         from .compatible_nesting import discover_compatible_units
-        nesting=discover_compatible_units(library,policy,Path(work_directory)/"nesting",nesting_seconds)
+        nesting=discover_compatible_units(library,policy,Path(work_directory)/"nesting",nesting_seconds,workers=nesting_workers)
         packing_library=nesting["library"];packing_policy={**policy,"families":nesting["families"]}
     proposal_started=perf_counter()
     groups,frames=prepare_units(packing_library,packing_policy)

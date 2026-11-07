@@ -102,7 +102,7 @@ def check_workbench_axes(problem, layout):
 
 def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5, max_pairs=8,
                    required_item_ids=None, source_quantities=None, cavity_proposals=False, pitch_mm=2,
-                   proposal_rank="void"):
+                   proposal_rank="void", proposal_stride=1, proposal_offset=0):
     """Generate a bounded portfolio balancing empty volume and shape diversity.
 
     Returns alternatives, not an asserted best complete-kit grouping. Original
@@ -122,6 +122,8 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
         raise ValueError("max_pairs must be positive")
     if proposal_rank not in ("void","overlap_bound"):
         raise ValueError("Unknown pair proposal ranking")
+    if type(proposal_stride) is not int or proposal_stride < 1 or type(proposal_offset) is not int or not 0 <= proposal_offset < proposal_stride:
+        raise ValueError("Invalid proposal shard")
     if library.get("units") != "mm" or not library.get("all_meshes_valid_volumes"):
         raise ValueError("Verified mm source library required")
     identities = [item.get("id") for item in library.get("items", [])]
@@ -185,11 +187,12 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
     voxel_cache = {}
     source_members = {index:set(entry["item"].get("source_members",[entry["item"]["id"]]))
                       for index,entry in enumerate(prepared)}
-    ranked = rank_pair_proposals(proposals, max_pairs, source_members)
+    ranked = rank_pair_proposals(proposals, max_pairs * proposal_stride, source_members)
     shapes = [{"box_volume": e["box_volume"], "volume": float(e["mesh"].volume),
                "extents": e["mesh"].extents.tolist()} for e in prepared]
     if cavity_proposals:
-        ranked = diversify_cavity_proposals(ranked, proposals, shapes, max_pairs, clearance_mm)
+        ranked = diversify_cavity_proposals(ranked, proposals, shapes, max_pairs * proposal_stride, clearance_mm)
+    ranked = ranked[proposal_offset::proposal_stride]
     for _, i, j in ranked:
         remaining = time_limit - (perf_counter() - started)
         if remaining <= 0:
@@ -241,6 +244,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
               "cavity_proposals": cavity_proposals,
               "proposal_pitch_mm":pitch_mm,
               "proposal_rank":proposal_rank,
+              "proposal_shard":{"stride":proposal_stride,"offset":proposal_offset},
               "elapsed_seconds": perf_counter() - started, "time_budget_seconds": time_limit,
               "deadline_scope": "Soft search deadline; geometry and motion verification may overrun"}
     write(output / "pairs.json", result)
