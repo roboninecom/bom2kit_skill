@@ -10,7 +10,7 @@ from .logistics_design import design_logistics
 from .report import fingerprint
 
 
-def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=140,heightfield_seconds=0,nesting_workers=1,executable=None):
+def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=140,heightfield_seconds=0,nesting_workers=1,executable=None,rectangle_executable=None):
     if not math.isfinite(time_limit) or time_limit<=0 or not math.isfinite(nesting_seconds) or nesting_seconds<0 or not math.isfinite(heightfield_seconds) or heightfield_seconds<0:
         raise ValueError("Finite positive proposal budget and nonnegative nesting budget required")
     from .bom import reconcile_bom
@@ -23,7 +23,7 @@ def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=
         try:
             result,plan=design_logistics(library,policy,bom,time_limit=budget,executable=executable,
                                          work_directory=directory,_prepared_nesting=prepared,largest_family_cartons=split,
-                                         _pattern_cache=pattern_cache,partition_strategy=partition)
+                                         _pattern_cache=pattern_cache,partition_strategy=partition,rectangle_executable=rectangle_executable)
             volume=result["envelope_design"]["candidate"]["volume_mm3"]
             (directory/"result.json").write_text(json.dumps(result,indent=2),encoding="utf8")
             (directory/"assembly-plan.json").write_text(json.dumps(plan,indent=2),encoding="utf8")

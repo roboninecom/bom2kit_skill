@@ -58,7 +58,7 @@ def prepare_units(library, policy):
     return dict(groups),frames
 
 
-def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executable=None):
+def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executable=None, rectangle_executable=None):
     started=perf_counter();volume=sum(math.prod(u["dimensions"]) for u in units)
     scale=volume**(1/3)
     widths=sorted({math.ceil(v/increment)*increment for v in
@@ -142,6 +142,18 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
             packed=pack_boxes(units,w-2*wall,d-2*wall,executable=executable,time_limit=min(2,remaining),gap=gap)
             backend_checks.append({k:v for k,v in packed.items() if k not in ("placements","validation")})
             if packed["status"]=="validated_envelopes":retain(packed,"packingsolver_box")
+    if rectangle_executable:
+        from .packing_solver_adapter import pack_floor
+        floor_patterns=[p for p in patterns if all(abs(q["position_mm"][2])<1e-8 for q in p["placements"])]
+        seen=set();seeds=[]
+        for p in sorted(floor_patterns,key=lambda p:math.prod(p["external_mm"])):
+            key=(p["external_mm"][0],tuple(sorted((q["unit_id"],q["rotation"][2]) for q in p["placements"])))
+            if key not in seen:seen.add(key);seeds.append(p)
+        for seed in seeds[:8]:
+            packed=pack_floor(units,seed["placements"],seed["external_mm"][0]-2*wall,
+                              executable=rectangle_executable,time_limit=1,gap=gap)
+            backend_checks.append({"solver":"rectangle",**{k:v for k,v in packed.items() if k not in ("placements","validation")}})
+            if packed["status"]=="validated_envelopes":retain(packed,"packingsolver_rectangle_floor")
     # A horizontal quarter turn preserves floor support and gives the carton
     # tiler both aspect ratios without consuming another packing search.
     for p in list(patterns):
@@ -172,7 +184,7 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
 
 def design_logistics(library, policy, expected_bom, *, time_limit=120, executable=None,
                      nesting_seconds=0, work_directory=None, split_largest_family=False, largest_family_cartons=1,
-                     partition_strategy="volume", balanced_cartons=0, nesting_workers=1, _prepared_nesting=None, _pattern_cache=None):
+                     partition_strategy="volume", balanced_cartons=0, nesting_workers=1, rectangle_executable=None, _prepared_nesting=None, _pattern_cache=None):
     import numpy as np
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -254,13 +266,14 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
     for family,units in module_sets:
         remaining=time_limit-(perf_counter()-proposal_started)
         key=fingerprint({"family":family,"units":units,"source_hashes":{u["item_id"]:packing_hashes[u["item_id"]] for u in units},
-                         "wall":t,"increment":carton["dimension_increment_mm"],"gap":carton["gap_mm"]})
+                         "wall":t,"increment":carton["dimension_increment_mm"],"gap":carton["gap_mm"],
+                         "rectangle_solver":str(rectangle_executable),"box_solver":str(executable)})
         if _pattern_cache is not None and key in _pattern_cache:
             proposal=deepcopy(_pattern_cache[key]);proposal["reused_in_run"]=True
             proposal["original_pattern_search_seconds"]=proposal["elapsed_seconds"];proposal["elapsed_seconds"]=0
         else:
             proposal=module_patterns(units,t,time_limit=max(1,min(18,remaining/(len(module_sets)-len(modules)+1))),
-                                     increment=carton["dimension_increment_mm"],gap=carton["gap_mm"],executable=executable)
+                                     increment=carton["dimension_increment_mm"],gap=carton["gap_mm"],executable=executable,rectangle_executable=rectangle_executable)
             if _pattern_cache is not None:_pattern_cache[key]=deepcopy(proposal)
         modules.append({"family":family,"unit_ids":[u["unit_id"] for u in units],"_cache_key":key,**proposal})
     tiling=tile_modules(modules,time_limit=max(1,min(25,time_limit-(perf_counter()-proposal_started))),wall=carton["wall_mm"],

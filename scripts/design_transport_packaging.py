@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--time-limit",type=float,default=120,help="Proposal budget; final verification is additional")
     parser.add_argument("--packing-solver",type=Path)
+    parser.add_argument("--rectangle-solver",type=Path,help="Optional PackingSolver rectangle executable for floor-supported proposals")
     parser.add_argument("--nesting-budget",type=float,default=0,help="Additional compatible CAD nesting search budget")
     parser.add_argument("--nesting-workers",type=int,choices=range(1,9),default=1,help="Parallel disjoint CAD pair proposal streams")
     parser.add_argument("--heightfield-budget",type=float,default=0,help="Additional whole-family CAD insertion search budget; requires --portfolio")
@@ -41,13 +42,14 @@ def main():
         from bom2kit.logistics_portfolio import design_portfolio
         result,plan=design_portfolio(values["library"],values["policy"],values["bom"],args.output,
                                     time_limit=args.time_limit,nesting_seconds=args.nesting_budget,heightfield_seconds=args.heightfield_budget,
-                                    executable=args.packing_solver,nesting_workers=args.nesting_workers)
+                                    executable=args.packing_solver,nesting_workers=args.nesting_workers,rectangle_executable=args.rectangle_solver)
     else:
         if args.heightfield_budget:parser.error("Whole-family heightfield discovery requires --portfolio")
         result,plan=design_logistics(values["library"],values["policy"],values["bom"],time_limit=args.time_limit,
                                    executable=args.packing_solver,nesting_seconds=args.nesting_budget,work_directory=args.output,
                                    split_largest_family=args.split_largest_family,largest_family_cartons=args.largest_family_cartons,
-                                   partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons,nesting_workers=args.nesting_workers)
+                                   partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons,nesting_workers=args.nesting_workers,
+                                   rectangle_executable=args.rectangle_solver)
     result["input_files_sha256"]=hashes
     final_code=code_hashes()
     result["run_provenance"]={"python":sys.version,"engine_files_sha256":initial_code,
@@ -60,6 +62,7 @@ def main():
                                             "partition_strategy":args.partition_strategy,
                                             "balanced_cartons":args.balanced_cartons,
                                             "portfolio":args.portfolio,
+                                            "rectangle_solver":str(args.rectangle_solver) if args.rectangle_solver else None,
                                             "packing_solver":str(args.packing_solver) if args.packing_solver else None}}
     # Assembly plan is bound to the complete final result including input hashes.
     from bom2kit.report import fingerprint
