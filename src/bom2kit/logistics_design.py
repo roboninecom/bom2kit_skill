@@ -65,7 +65,7 @@ def prepare_units(library, policy):
     return dict(groups),frames
 
 
-def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executable=None, rectangle_executable=None):
+def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executable=None, rectangle_executable=None, cp_sat_python=None):
     started=perf_counter();volume=sum(math.prod(u["dimensions"]) for u in units)
     scale=volume**(1/3)
     widths=sorted({math.ceil(v/increment)*increment for v in
@@ -161,6 +161,18 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
                               executable=rectangle_executable,time_limit=1,gap=gap)
             backend_checks.append({"solver":"rectangle",**{k:v for k,v in packed.items() if k not in ("placements","validation")}})
             if packed["status"]=="validated_envelopes":retain(packed,"packingsolver_rectangle_floor")
+    if cp_sat_python:
+        from .cpsat_floor_adapter import pack_floor
+        floor_patterns=[p for p in patterns if all(abs(q["position_mm"][2])<1e-8 for q in p["placements"])]
+        seen=set();seeds=[]
+        for p in sorted(floor_patterns,key=lambda p:math.prod(p["external_mm"])):
+            key=(p["external_mm"][0],p["external_mm"][2])
+            if key not in seen:seen.add(key);seeds.append(p)
+        for seed in seeds[:2]:
+            packed=pack_floor(units,seed["placements"],seed["external_mm"][0]-2*wall,seed["external_mm"][2]-2*wall,
+                              python=cp_sat_python,time_limit=2,gap=gap)
+            backend_checks.append({"solver":"cp_sat_floor",**{k:v for k,v in packed.items() if k not in ("placements","validation")}})
+            if packed["status"]=="validated_envelopes":retain(packed,"cp_sat_floor")
     # A horizontal quarter turn preserves floor support and gives the carton
     # tiler both aspect ratios without consuming another packing search.
     for p in list(patterns):
@@ -217,7 +229,7 @@ def improve_module_patterns(units,patterns,wall,increment,gap,time_limit):
 def design_logistics(library, policy, expected_bom, *, time_limit=120, executable=None,
                      nesting_seconds=0, work_directory=None, split_largest_family=False, largest_family_cartons=1,
                      partition_strategy="volume", balanced_cartons=0, nesting_workers=1, rectangle_executable=None, _prepared_nesting=None, _pattern_cache=None,
-                     _incumbent_volume=None, shared_footprint_seconds=0, nesting_pitch_mm=4, nesting_objective="volume", module_improvement_seconds=0):
+                     _incumbent_volume=None, shared_footprint_seconds=0, nesting_pitch_mm=4, nesting_objective="volume", module_improvement_seconds=0, cp_sat_python=None):
     import numpy as np
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -302,13 +314,13 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
         remaining=time_limit-(perf_counter()-proposal_started)
         key=fingerprint({"family":family,"units":units,"source_hashes":{u["item_id"]:packing_hashes[u["item_id"]] for u in units},
                          "wall":t,"increment":carton["dimension_increment_mm"],"gap":carton["gap_mm"],
-                         "rectangle_solver":str(rectangle_executable),"box_solver":str(executable)})
+                         "rectangle_solver":str(rectangle_executable),"box_solver":str(executable),"cp_sat_python":str(cp_sat_python)})
         if _pattern_cache is not None and key in _pattern_cache:
             proposal=deepcopy(_pattern_cache[key]);proposal["reused_in_run"]=True
             proposal["original_pattern_search_seconds"]=proposal["elapsed_seconds"];proposal["elapsed_seconds"]=0
         else:
             proposal=module_patterns(units,t,time_limit=max(1,min(18,remaining/(len(module_sets)-len(modules)+1))),
-                                     increment=carton["dimension_increment_mm"],gap=carton["gap_mm"],executable=executable,rectangle_executable=rectangle_executable)
+                                     increment=carton["dimension_increment_mm"],gap=carton["gap_mm"],executable=executable,rectangle_executable=rectangle_executable,cp_sat_python=cp_sat_python)
             if _pattern_cache is not None:_pattern_cache[key]=deepcopy(proposal)
         if module_improvement_seconds:
             proposal["patterns"],proposal["improvement"]=improve_module_patterns(

@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--time-limit",type=float,default=120,help="Proposal budget; final verification is additional")
     parser.add_argument("--packing-solver",type=Path)
     parser.add_argument("--rectangle-solver",type=Path,help="Optional PackingSolver rectangle executable for floor-supported proposals")
+    parser.add_argument("--cp-sat-python",type=Path,help="Optional separate Python interpreter with OR-Tools installed")
     parser.add_argument("--nesting-budget",type=float,default=0,help="Additional compatible CAD nesting search budget")
     parser.add_argument("--nesting-workers",type=int,choices=range(1,9),default=1,help="Parallel disjoint CAD pair proposal streams")
     parser.add_argument("--nesting-pitch",type=float,default=4,help="Voxel proposal pitch in mm; original triangle clearance is always rechecked")
@@ -48,7 +49,7 @@ def main():
                                     time_limit=args.time_limit,nesting_seconds=args.nesting_budget,heightfield_seconds=args.heightfield_budget,
                                     executable=args.packing_solver,nesting_workers=args.nesting_workers,rectangle_executable=args.rectangle_solver,
                                     shared_footprint_seconds=args.shared_footprint_budget,nesting_pitch_mm=args.nesting_pitch,nesting_objective=args.nesting_objective,
-                                    polish_seconds=args.polish_budget)
+                                    polish_seconds=args.polish_budget,cp_sat_python=args.cp_sat_python)
     else:
         if args.heightfield_budget:parser.error("Whole-family heightfield discovery requires --portfolio")
         result,plan=design_logistics(values["library"],values["policy"],values["bom"],time_limit=args.time_limit,
@@ -56,7 +57,7 @@ def main():
                                    split_largest_family=args.split_largest_family,largest_family_cartons=args.largest_family_cartons,
                                    partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons,nesting_workers=args.nesting_workers,
                                    rectangle_executable=args.rectangle_solver,shared_footprint_seconds=args.shared_footprint_budget,nesting_pitch_mm=args.nesting_pitch,nesting_objective=args.nesting_objective,
-                                   module_improvement_seconds=args.polish_budget)
+                                   module_improvement_seconds=args.polish_budget,cp_sat_python=args.cp_sat_python)
     result["input_files_sha256"]=hashes
     final_code=code_hashes()
     result["run_provenance"]={"python":sys.version,"engine_files_sha256":initial_code,
@@ -74,6 +75,7 @@ def main():
                                             "balanced_cartons":args.balanced_cartons,
                                             "portfolio":args.portfolio,
                                             "rectangle_solver":str(args.rectangle_solver) if args.rectangle_solver else None,
+                                            "cp_sat_python":str(args.cp_sat_python) if args.cp_sat_python else None,
                                             "packing_solver":str(args.packing_solver) if args.packing_solver else None}}
     # Assembly plan is bound to the complete final result including input hashes.
     from bom2kit.report import fingerprint
