@@ -168,9 +168,9 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
         for p in sorted(floor_patterns,key=lambda p:math.prod(p["external_mm"])):
             key=(p["external_mm"][0],p["external_mm"][2])
             if key not in seen:seen.add(key);seeds.append(p)
-        for seed in seeds[:2]:
+        for index,seed in enumerate(seeds[:2]):
             packed=pack_floor(units,seed["placements"],seed["external_mm"][0]-2*wall,seed["external_mm"][2]-2*wall,
-                              python=cp_sat_python,time_limit=2,gap=gap)
+                              python=cp_sat_python,time_limit=3,gap=gap,allow_columns=index==1)
             backend_checks.append({"solver":"cp_sat_floor",**{k:v for k,v in packed.items() if k not in ("placements","validation")}})
             if packed["status"]=="validated_envelopes":retain(packed,"cp_sat_floor")
     # A horizontal quarter turn preserves floor support and gives the carton
