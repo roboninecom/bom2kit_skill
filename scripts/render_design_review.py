@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"src"))
+from bom2kit.solid_views import render_solid_views
 from bom2kit.bom import reconcile_bom
 from bom2kit.layered_design import validate_layered
 from bom2kit.mesh_validation import validate_mesh_layout
@@ -57,6 +58,7 @@ def render(result_path,bom_path,output):
         fig,ax = plt.subplots(figsize=(8,6))
         triangles,depths,colors = [],[],[]
         rows = []
+        solid_parts = []
         for number,slot in enumerate(slots,1):
             members = groups.get("assembly-"+slot["unit_id"],[slot["unit_id"]])
             seen.extend(members)
@@ -65,6 +67,9 @@ def render(result_path,bom_path,output):
                 mesh = meshes[uid]
                 if np.any(mesh.bounds[0]<origin-1e-6) or np.any(mesh.bounds[1]>upper+1e-6):
                     raise ValueError("Original source part lies outside its assigned inner carton")
+                local_mesh = mesh.copy()
+                local_mesh.apply_translation(-origin)
+                solid_parts.append((local_mesh, number))
                 faces = mesh.triangles-origin
                 triangles.append(faces[:,:,[0,1]])
                 depths.append(faces[:,:,2].mean(axis=1))
@@ -84,9 +89,12 @@ def render(result_path,bom_path,output):
         filename=f"carton-{index+1}.png"
         fig.savefig(output/filename,dpi=150)
         plt.close(fig)
+        render_solid_views(solid_parts, output/f"carton-{index+1}-solid.png",
+                           title=f"{layer['id']}: {width:g} x {depth:g} x {height:g} mm cavity",
+                           cavity=layer["inner_mm"], wall=layer["wall_mm"])
         outside = " x ".join(f"{d+2*layer['wall_mm']:g}" for d in layer["inner_mm"])
         sections.append(f"<section><h2>{escape(layer['id'])}</h2><p>External: {outside} mm. Wall: {layer['wall_mm']:g} mm.</p>"
-                        f"<img src='{filename}' alt='Top view of original source geometry'><details><summary>Contents by numbered slot</summary>"
+                        f"<img src='carton-{index+1}-solid.png' alt='Shaded original CAD cutaway and numbered top view'><details><summary>Contents by numbered slot</summary>"
                         f"<table><tr><th>Slot</th><th>Original units</th></tr>{''.join(rows)}</table></details></section>")
     if Counter(seen) != Counter(meshes.keys()):
         raise ValueError("Diagram membership does not cover each original unit exactly once")
@@ -99,7 +107,7 @@ def render(result_path,bom_path,output):
 <style>body{{font:16px system-ui;max-width:1000px;margin:32px auto;color:#18202a}}section{{break-inside:avoid;border-top:1px solid #ccc;margin-top:24px}}img{{max-width:100%;width:800px}}table{{border-collapse:collapse;width:100%}}td,th{{border-bottom:1px solid #ddd;padding:6px;text-align:left}}small{{overflow-wrap:anywhere}}</style>
 <h1>Independent packing review</h1><p><b>{dimensions} mm · {carton['volume_mm3']/1e6:.6f} L</b></p>
 <p>{len(meshes)} packing units. Fresh BOM, source geometry, carton hierarchy and diagram membership checks pass.</p>
-<p>Top views show original triangles; dashed rectangles show protective envelopes. Purchased envelopes may be estimates.
+<p>Shaded views show original triangles in their validated poses. Two camera-facing walls are omitted in the cutaway. Slot numbers match the contents list. Purchased envelopes may be estimates.
 This is a geometric review, not a production packing instruction or a transport test.</p>
 <small>Frozen result SHA256: {audit['result_sha256']}</small>{''.join(sections)}"""
     (output/"review.html").write_text(html,encoding="utf8")
