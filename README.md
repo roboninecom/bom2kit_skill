@@ -13,6 +13,9 @@ files, backed by a shared Python engine.
   geometry and quantities, and records assumptions and evidence.
 - **Visual reports:** show shaded CAD cutaways, numbered contents and geometric
   assembly steps from the checked coordinates.
+- **Packing guide PDF:** an [R3-style operator document](docs/visual-packing-guide.md)
+  with an exploded foam/carton view, visible CAD contents, part thumbnails,
+  quantities and a closing checklist.
 
 The skill orchestrates the tools; the Python engine performs the geometry work.
 The engine can also run directly from the command line.

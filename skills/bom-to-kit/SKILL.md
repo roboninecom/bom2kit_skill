@@ -194,6 +194,27 @@ geometric plan, including workbench poses and carton insertion order. Use this
 as the source for illustrated steps; the JSON alone is not the finished operator
 instruction. Its fingerprints bind parsed result/BOM objects, not raw file bytes.
 
+### Deliver a visual packing guide
+
+For transport results, make the primary deliverable an English A4 PDF in the
+Visual Layout R3 style: exploded outer carton with foam and visible CAD contents,
+numbered inner boxes, isometric/top/side views, part thumbnails and quantities,
+nested-group assembly cards, and a closing checklist. Keep the technical
+comparison HTML as supporting evidence rather than the operator-facing report.
+
+```powershell
+python scripts/build_visual_packing_guide.py RESULT.json EXPECTED.json --kit MY-KIT --output packaging-results/my-kit/visual-guide
+```
+
+The renderer replays the source/BOM/assembly checks and outputs `packing-guide.pdf`,
+`assembly-plan.json` and `guide-manifest.json`. Use the calculated carton count
+and placement, not Alan's geometry or page count. Exploded gaps and cutaway walls
+are display conventions only; the source poses stay unchanged. Show declared
+envelopes honestly when purchased-part CAD is unavailable. Do not synthesize
+replacement geometry with image generation. Render and inspect the resulting
+PDF pages before delivery. Keep geometric draft/prototype status visible until
+the separate shipping qualifications are supported. See `docs/visual-packing-guide.md`.
+
 For local 101/102 cases, read `docs/benchmark-assumptions.md`: preserve accepted
 content revisions and the user-confirmed 106 mm custom clamp frame. Old
 `assemble_*` scripts and complete-kit comparison recipes do not establish
