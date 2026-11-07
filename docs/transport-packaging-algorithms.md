@@ -1,5 +1,12 @@
 # Transport packaging: algorithm and implementation design
 
+**Superseded constraint:** the user subsequently prohibited spacers between
+inner cartons. References to residual spacers below are historical proposals,
+not current requirements. The transport implementation instead enlarges inner
+cartons to tile a complete block and jointly adjusts its dimensions. Six-face
+outer protective foam remains required. See `logistics_design.py` and
+`carton_tiling.py`; their geometric checks do not certify transit performance.
+
 7 November 2026. Baseline: `c4114f0`. This is a concrete design for the next
 implementation, supported by source inspection and two executable research
 probes. It is not a claim that the proposed pipeline already packs 101/102.

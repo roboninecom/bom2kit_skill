@@ -97,6 +97,47 @@ Voxel emptiness alone never certifies a fit. This differs from the older
 
 ## Validate, illustrate and compare
 
+### Transport-compatible carton search
+
+`scripts/design_transport_packaging.py` is an additional experimental pipeline:
+
+```powershell
+python scripts/design_transport_packaging.py LIBRARY.json TRANSPORT_POLICY.json EXPECTED.json --output packaging-results/transport --time-limit 110 --nesting-budget 90
+```
+
+Prepare the explicit SKU-to-family policy with
+`scripts/prepare_transport_policy.py --help`; review its description-based
+classifications. The transport policy is separate from the older layered policy.
+Its carton and protection dimensions are requirements, never reference targets.
+Each closed carton contains one compatible family. The search chooses floor
+packings and supported envelope columns, optionally discovers CAD pairs and
+extensions within families, and joins adjustable
+cartons into an exact slicing partition. It enlarges carton dimensions rather
+than generating spacers. Joint refinement repacks contents against dimensions
+found in the current run. `--split-largest-family` tests two cartons for the
+largest family, within the declared carton and type caps; compare separately
+with the unsplit run and keep the smaller fully verified result.
+
+Alternatively, `--portfolio --time-limit 180 --nesting-budget 140` automatically
+compares a fresh baseline, several in-run grouping portfolios and subdivision,
+retaining the smallest fully checked result. It never imports old packing poses.
+The reported duration includes all trials, including rejected ones. This is
+still a bounded heuristic; use the separate evaluator for the no-worse target.
+
+`--packing-solver PATH` optionally requests proposals from an explicitly supplied
+PackingSolver box executable. Its output must pass independent coverage,
+orientation, collision and envelope-support checks. Backend success alone is
+not acceptance. No binary is automatically downloaded. The default path does
+not depend on that executable.
+
+The result records six nonoverlapping foam panels, an outer carton specification,
+inner cartons, compatibility checks and a geometric assembly plan. Nesting and
+proposal budgets are separate, soft limits; final validation is additional.
+Report total runtime and preserve all source hashes. Carton dimensions are not
+supplier-approved dielines. Envelope support, an exact carton block and clear
+CAD insertion paths do not establish part restraint, cushion performance or
+transport qualification. Those remain explicitly unverified.
+
 Require expected-BOM reconciliation, original triangle validation, internal
 group assembly and external insertion checks. For layered envelopes, also run
 `bom2kit.layered_design.validate_layered` on the nested envelope candidate's

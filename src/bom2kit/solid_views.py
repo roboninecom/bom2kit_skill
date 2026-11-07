@@ -6,7 +6,8 @@ PALETTE = ((.78, .82, .86), (.45, .57, .66), (.85, .80, .68),
            (.61, .70, .68), (.70, .67, .76), (.80, .69, .59))
 
 
-def render_solid_views(parts, output, *, title, cavity=None, wall=1.5):
+def render_solid_views(parts, output, *, title, cavity=None, wall=1.5,
+                       caption="Original CAD triangles / simplified supplied envelopes", label_slots=True):
     """Render (mesh, slot number) pairs in their existing local coordinates.
 
     Left: open carton cutaway (two camera-facing walls omitted for visibility).
@@ -120,11 +121,11 @@ def render_solid_views(parts, output, *, title, cavity=None, wall=1.5):
             renderer.ResetCameraClippingRange()
             text(renderer, title, 28, 948, 25)
             text(renderer, "3D cutaway - front/right walls hidden" if cavity is not None and view == 0
-                 else "3D assembly" if view == 0 else "Top view - numbered slots", 28, 910, 20)
-            text(renderer, "Original CAD triangles / simplified supplied envelopes", 28, 28, 18)
+                 else "3D assembly" if view == 0 else "Top view - numbered slots" if label_slots else "Top view", 28, 910, 20)
+            text(renderer, caption, 28, 28, 18)
             window.Render()
             labels = []
-            if view == 1:
+            if view == 1 and label_slots:
                 for number in sorted({n for _, n in parts}):
                     bounds = np.asarray([m.bounds for m, n in parts if n == number])
                     p = (bounds[:, 0].min(axis=0)+bounds[:, 1].max(axis=0))/2

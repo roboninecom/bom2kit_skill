@@ -42,6 +42,12 @@ to synchronize both agent copies.
 
 ## Current capabilities and limits
 
+The [transport packaging workflow](docs/transport-packaging.md) implements
+compatible-family cartons, a complete adjustable carton block without spacers,
+six-face foam geometry and checked CAD assembly reports. It includes an optional
+PackingSolver proposal adapter; the default engine does not require that binary.
+Physical restraint and transport performance remain unqualified.
+
 The [transport-packaging audit and redesign](docs/transport-packaging-research.md)
 explains the remaining gaps in foam specification, kitting groups, shared carton
 sizes and physical retention, with a prioritized implementation plan.
