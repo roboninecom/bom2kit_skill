@@ -84,11 +84,15 @@ def test_design_replays_original_geometry_bom_and_fingerprint(tmp_path):
             "carton":{"wall_mm":7,"protection_mm":15,"inner_wall_mm":1.5,"reserved_top_mm":.8,
                       "gap_mm":.2,"dimension_increment_mm":1}}
     bom={"components":[{"id":i["id"],"quantity":i["quantity"]} for i in library["items"]]}
-    result,plan=design_logistics(library,policy,bom,time_limit=3)
+    result,plan=design_logistics(library,policy,bom,time_limit=3,shared_footprint_seconds=.5)
     assert result["validation"]["valid"] and result["logistics"]["validation"]["valid"]
     assert plan["result_fingerprint"]==fingerprint(result)
     assert sorted(len(m["unit_ids"]) for m in result["logistics"]["modules"])==[1,2]
     assert not result["logistics"]["retention_verified"]
+    assert result["search"]["shared_footprints"]["attempts"]>0
+    from bom2kit.logistics_design import NonImprovingProposal
+    with pytest.raises(NonImprovingProposal):
+        design_logistics(library,policy,bom,time_limit=2,_incumbent_volume=1)
     split_policy={**policy,"max_inner_cartons":3,"max_carton_types":3}
     split,split_plan=design_logistics(library,split_policy,bom,time_limit=3,largest_family_cartons=3,partition_strategy="packing")
     assert split["logistics"]["carton_count"]==3

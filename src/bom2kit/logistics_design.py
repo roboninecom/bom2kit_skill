@@ -13,6 +13,13 @@ from .strip_packing import pack_strip
 from .report import fingerprint
 
 
+class NonImprovingProposal(ValueError):
+    """An in-run envelope cannot improve the already certified incumbent."""
+    def __init__(self,volume):
+        self.volume=volume
+        super().__init__("Envelope does not improve the current-run certified incumbent")
+
+
 def prepare_units(library, policy):
     import numpy as np
     import trimesh
@@ -184,7 +191,8 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
 
 def design_logistics(library, policy, expected_bom, *, time_limit=120, executable=None,
                      nesting_seconds=0, work_directory=None, split_largest_family=False, largest_family_cartons=1,
-                     partition_strategy="volume", balanced_cartons=0, nesting_workers=1, rectangle_executable=None, _prepared_nesting=None, _pattern_cache=None):
+                     partition_strategy="volume", balanced_cartons=0, nesting_workers=1, rectangle_executable=None, _prepared_nesting=None, _pattern_cache=None,
+                     _incumbent_volume=None, shared_footprint_seconds=0):
     import numpy as np
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -194,6 +202,7 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
     started=perf_counter()
     if not math.isfinite(time_limit) or time_limit<=0 or not math.isfinite(nesting_seconds) or nesting_seconds<0:
         raise ValueError("Positive finite search budget and nonnegative nesting budget required")
+    if not math.isfinite(shared_footprint_seconds) or shared_footprint_seconds<0:raise ValueError("Nonnegative finite shared-footprint budget required")
     allowed={"schema_version","families","family_labels","classification_evidence","item_padding_mm",
              "clearance_mm","allow_all_rotations","carton","max_inner_cartons","max_carton_types"}
     if set(policy)-allowed or policy.get("schema_version")!=1:
@@ -276,6 +285,14 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
                                      increment=carton["dimension_increment_mm"],gap=carton["gap_mm"],executable=executable,rectangle_executable=rectangle_executable)
             if _pattern_cache is not None:_pattern_cache[key]=deepcopy(proposal)
         modules.append({"family":family,"unit_ids":[u["unit_id"] for u in units],"_cache_key":key,**proposal})
+    shared_diagnostics=None
+    if shared_footprint_seconds:
+        from .shared_footprints import search_shared_footprints
+        shared=search_shared_footprints(module_sets,carton,time_limit=shared_footprint_seconds)
+        for candidate in shared["candidates"]:
+            for module,pattern in zip(modules,candidate["patterns"]):module["patterns"].append(pattern)
+        shared_diagnostics={k:v for k,v in shared.items() if k!="candidates"}
+        shared_diagnostics["candidate_volumes_mm3"]=[c["volume_mm3"] for c in shared["candidates"]]
     tiling=tile_modules(modules,time_limit=max(1,min(25,time_limit-(perf_counter()-proposal_started))),wall=carton["wall_mm"],
                         foam=carton["protection_mm"],reserve=carton["reserved_top_mm"],
                         max_types=policy["max_carton_types"],increment=carton["dimension_increment_mm"])
@@ -339,6 +356,10 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
     if _pattern_cache is not None:
         for module in modules:
             _pattern_cache[module["_cache_key"]]={k:deepcopy(v) for k,v in module.items() if k in ("patterns","backend_checks","elapsed_seconds")}
+    if _incumbent_volume is not None and chosen["volume_mm3"]>=_incumbent_volume:
+        # This is not an accepted plan. Avoid expensive original-mesh replay
+        # only when it cannot replace the same-run already checked result.
+        raise NonImprovingProposal(chosen["volume_mm3"])
     container={"inner_mm":[v-2*wall for v in external],"wall_mm":[wall]*3,"protection_mm":[foam]*3,
                "reserved_top_mm":carton["reserved_top_mm"]}
     layers=[];envelope_poses=[];poses=[];module_manifest=[];assembly_groups={}
@@ -393,7 +414,7 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
             "physical_qualification":False,"retention_verified":False,"reference_used":False},
             "source_library_sha256":fingerprint(library),"search":{"modules":[{k:v for k,v in m.items() if k not in ("patterns","_cache_key")} for m in modules],
             "proposal_seconds":perf_counter()-started,"joint_refinement":refinement,"optimality_proven":False,
-            "family_partition":partition_diagnostics}}
+            "family_partition":partition_diagnostics,"shared_footprints":shared_diagnostics}}
     if nesting:
         result["groups"]=assembly_groups
         result["group_certificates"]=nesting["certificates"]

@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--nesting-budget",type=float,default=0,help="Additional compatible CAD nesting search budget")
     parser.add_argument("--nesting-workers",type=int,choices=range(1,9),default=1,help="Parallel disjoint CAD pair proposal streams")
     parser.add_argument("--heightfield-budget",type=float,default=0,help="Additional whole-family CAD insertion search budget; requires --portfolio")
+    parser.add_argument("--shared-footprint-budget",type=float,default=0,help="Common carton footprint search; portfolio caps each trial at half its budget")
     parser.add_argument("--split-largest-family",action="store_true",help="Try two cartons for the largest compatible family within policy caps")
     parser.add_argument("--largest-family-cartons",type=int,default=1,help="Geometry-based subdivision of the largest family, within policy caps")
     parser.add_argument("--partition-strategy",choices=("volume","packing"),default="volume",help="Select compatible carton membership using volume order or actual partial packings")
@@ -42,14 +43,15 @@ def main():
         from bom2kit.logistics_portfolio import design_portfolio
         result,plan=design_portfolio(values["library"],values["policy"],values["bom"],args.output,
                                     time_limit=args.time_limit,nesting_seconds=args.nesting_budget,heightfield_seconds=args.heightfield_budget,
-                                    executable=args.packing_solver,nesting_workers=args.nesting_workers,rectangle_executable=args.rectangle_solver)
+                                    executable=args.packing_solver,nesting_workers=args.nesting_workers,rectangle_executable=args.rectangle_solver,
+                                    shared_footprint_seconds=args.shared_footprint_budget)
     else:
         if args.heightfield_budget:parser.error("Whole-family heightfield discovery requires --portfolio")
         result,plan=design_logistics(values["library"],values["policy"],values["bom"],time_limit=args.time_limit,
                                    executable=args.packing_solver,nesting_seconds=args.nesting_budget,work_directory=args.output,
                                    split_largest_family=args.split_largest_family,largest_family_cartons=args.largest_family_cartons,
                                    partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons,nesting_workers=args.nesting_workers,
-                                   rectangle_executable=args.rectangle_solver)
+                                   rectangle_executable=args.rectangle_solver,shared_footprint_seconds=args.shared_footprint_budget)
     result["input_files_sha256"]=hashes
     final_code=code_hashes()
     result["run_provenance"]={"python":sys.version,"engine_files_sha256":initial_code,
@@ -57,6 +59,7 @@ def main():
                               "parameters":{"time_limit":args.time_limit,"nesting_budget":args.nesting_budget,
                                             "nesting_workers":args.nesting_workers,
                                             "heightfield_budget":args.heightfield_budget,
+                                            "shared_footprint_budget":args.shared_footprint_budget,
                                             "split_largest_family":args.split_largest_family,
                                             "largest_family_cartons":args.largest_family_cartons,
                                             "partition_strategy":args.partition_strategy,

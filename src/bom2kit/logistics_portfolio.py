@@ -6,29 +6,34 @@ from time import perf_counter
 
 from .compatible_nesting import discover_compatible_units,compose_compatible_units
 from .group_portfolio import group_configurations
-from .logistics_design import design_logistics
+from .logistics_design import design_logistics,NonImprovingProposal
 from .report import fingerprint
 
 
-def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=140,heightfield_seconds=0,nesting_workers=1,executable=None,rectangle_executable=None):
+def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=140,heightfield_seconds=0,nesting_workers=1,executable=None,rectangle_executable=None,shared_footprint_seconds=0):
     if not math.isfinite(time_limit) or time_limit<=0 or not math.isfinite(nesting_seconds) or nesting_seconds<0 or not math.isfinite(heightfield_seconds) or heightfield_seconds<0:
         raise ValueError("Finite positive proposal budget and nonnegative nesting budget required")
     from .bom import reconcile_bom
     if not reconcile_bom(bom,library)["complete"]:raise ValueError("Incomplete source BOM")
     started=perf_counter();output=Path(output);output.mkdir(parents=True,exist_ok=True)
     trials=[];best=None;proposal_used=0;pattern_cache={}
-    def attempt(name,budget,prepared=None,split=1,partition="volume"):
+    def attempt(name,budget,prepared=None,split=1,partition="volume",balanced=0):
         nonlocal best,proposal_used
         stage=perf_counter();directory=output/name;directory.mkdir(parents=True,exist_ok=True)
         try:
             result,plan=design_logistics(library,policy,bom,time_limit=budget,executable=executable,
                                          work_directory=directory,_prepared_nesting=prepared,largest_family_cartons=split,
-                                         _pattern_cache=pattern_cache,partition_strategy=partition,rectangle_executable=rectangle_executable)
+                                         _pattern_cache=pattern_cache,partition_strategy=partition,rectangle_executable=rectangle_executable,
+                                         balanced_cartons=balanced,_incumbent_volume=best[0] if best else None,
+                                         shared_footprint_seconds=min(shared_footprint_seconds,budget*.5))
             volume=result["envelope_design"]["candidate"]["volume_mm3"]
             (directory/"result.json").write_text(json.dumps(result,indent=2),encoding="utf8")
             (directory/"assembly-plan.json").write_text(json.dumps(plan,indent=2),encoding="utf8")
             trials.append({"name":name,"status":"validated","volume_mm3":volume,"seconds":perf_counter()-stage})
             if best is None or volume<best[0]:best=(volume,result,plan,name)
+        except NonImprovingProposal as error:
+            trials.append({"name":name,"status":"not_improved","volume_mm3":error.volume,
+                           "original_geometry_certified":False,"seconds":perf_counter()-stage})
         except ValueError as error:
             trials.append({"name":name,"status":"rejected","reason":str(error),"seconds":perf_counter()-stage})
         proposal_used+=perf_counter()-stage
@@ -46,7 +51,7 @@ def design_portfolio(library,policy,bom,output,*,time_limit=180,nesting_seconds=
             candidates.extend(heightfield["alternatives"]);discovery_seconds+=heightfield["seconds"]
             discovery_search.append({"method":"whole_family_heightfield","attempts":heightfield["attempts"],"seconds":heightfield["seconds"]})
         nesting=compose_compatible_units(library,policy,candidates,output/"discovery-combined",discovery_search,discovery_seconds)
-        pools=group_configurations(library,[a for _,a in nesting["alternatives"]],3,optimize=True)
+        pools=group_configurations(library,[a for _,a in nesting["alternatives"]],6,optimize=True)
         for index,pool in enumerate(pools):
             remaining=time_limit-proposal_used
             if remaining<5:break
