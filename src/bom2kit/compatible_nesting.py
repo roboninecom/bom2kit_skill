@@ -7,7 +7,7 @@ from pathlib import Path
 from time import perf_counter
 
 
-def discover_compatible_units(library, policy, output, time_limit=60, workers=1, pitch_mm=4):
+def discover_compatible_units(library, policy, output, time_limit=60, workers=1, pitch_mm=4, shape_objective="volume"):
     import numpy as np
     import trimesh
     from .parallel_nesting import discover_pair_shards
@@ -34,7 +34,7 @@ def discover_compatible_units(library, policy, output, time_limit=60, workers=1,
         subset={**library,"items":[i for i in library["items"] if policy["families"][i["id"]]==family]}
         family_start=perf_counter()
         portfolio=discover_pair_shards(subset,output/family,workers=workers,clearance_mm=max(policy["clearance_mm"],2*policy["item_padding_mm"]),
-                                 time_limit=budget*.65,pair_seconds=min(5,budget),max_pairs=min(48,max(12,int(budget/6))),pitch_mm=pitch_mm,proposal_rank="overlap_bound")
+                                 time_limit=budget*.65,pair_seconds=min(5,budget),max_pairs=min(48,max(12,int(budget/6))),pitch_mm=pitch_mm,proposal_rank="overlap_bound",shape_objective=shape_objective)
         extension_attempts=[]
         for round_index in range(2):
             left=budget-(perf_counter()-family_start)

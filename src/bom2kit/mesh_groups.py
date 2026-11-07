@@ -102,7 +102,7 @@ def check_workbench_axes(problem, layout):
 
 def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5, max_pairs=8,
                    required_item_ids=None, source_quantities=None, cavity_proposals=False, pitch_mm=2,
-                   proposal_rank="void", proposal_stride=1, proposal_offset=0):
+                   proposal_rank="void", proposal_stride=1, proposal_offset=0, shape_objective="volume"):
     """Generate a bounded portfolio balancing empty volume and shape diversity.
 
     Returns alternatives, not an asserted best complete-kit grouping. Original
@@ -205,7 +205,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
                    "container": {"inner_mm": [span] * 3}, "items": [
                        {"id": name, "quantity": 1, "mesh": entry["ref"]}
                        for name, entry in (("a", a), ("b", b))]}
-        result = solve_mesh_pair(problem, time_limit=min(pair_seconds, remaining), pitch_mm=pitch_mm,voxel_cache=voxel_cache)
+        result = solve_mesh_pair(problem, time_limit=min(pair_seconds, remaining), pitch_mm=pitch_mm,voxel_cache=voxel_cache,objective=shape_objective)
         attempt = {"members": [a["item"]["id"], b["item"]["id"]], "search": result["search"],
                    "status": result["status"]}
         attempts.append(attempt)

@@ -9,6 +9,9 @@ from hashlib import sha256
 import json
 import math
 from pathlib import Path
+from collections import OrderedDict
+
+_SOURCE_CACHE=OrderedDict()
 
 
 def validate_mesh_layout(problem, layout):
@@ -81,7 +84,7 @@ def validate_mesh_layout(problem, layout):
         errors.append(f"Invalid problem: {error}")
         return result()
 
-    loaded = {}
+    loaded = {};component_indices={}
     for iid in ids:
         item = next(i for i in problem["items"] if i["id"] == iid)
         try:
@@ -92,6 +95,13 @@ def validate_mesh_layout(problem, layout):
             if actual_hash != ref["sha256"]:
                 raise ValueError("Source SHA256 mismatch")
             sources[iid] = {"path": str(path.resolve()), "sha256": actual_hash}
+            if path.suffix.lower()!=".3mf" and actual_hash in _SOURCE_CACHE:
+                # The bytes are read and hashed on every validation. Only the
+                # immutable parsed mesh and topology analysis are reused;
+                # every pose, collision, clearance and enclosure is rechecked.
+                loaded[iid],component_indices[iid]=_SOURCE_CACHE[actual_hash]
+                _SOURCE_CACHE.move_to_end(actual_hash)
+                continue
             if path.suffix.lower() == ".3mf":
                 from .mesh_geometry import load_instance_mesh
 
@@ -116,6 +126,11 @@ def validate_mesh_layout(problem, layout):
             if not mesh.is_volume or np.any(mesh.area_faces <= 0):
                 raise ValueError("Mesh must be watertight, consistently wound, positive-volume, without degenerate faces")
             loaded[iid] = mesh
+            components=trimesh.graph.connected_components(mesh.edges_unique,nodes=np.arange(len(mesh.vertices)))
+            component_indices[iid]=[int(c[0]) for c in components]
+            if path.suffix.lower()!=".3mf":
+                _SOURCE_CACHE[actual_hash]=(mesh,component_indices[iid])
+                if len(_SOURCE_CACHE)>128:_SOURCE_CACHE.popitem(last=False)
         except (OSError, ValueError, KeyError, TypeError, OverflowError) as error:
             errors.append(f"Invalid source {iid}: {error}")
 
@@ -159,8 +174,7 @@ def validate_mesh_layout(problem, layout):
             manager = trimesh.collision.CollisionManager()
             manager.add_object(uid, mesh)
             managers[uid] = manager
-            components = trimesh.graph.connected_components(mesh.edges_unique, nodes=np.arange(len(mesh.vertices)))
-            representatives[uid] = mesh.vertices[[int(component[0]) for component in components]]
+            representatives[uid] = mesh.vertices[component_indices[expected[uid]["id"]]]
         entries = list(placed.items())
         for index, (a_id, a) in enumerate(entries):
             for b_id, b in entries[index + 1:]:
