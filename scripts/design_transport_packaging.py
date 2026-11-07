@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--rectangle-solver",type=Path,help="Optional PackingSolver rectangle executable for floor-supported proposals")
     parser.add_argument("--nesting-budget",type=float,default=0,help="Additional compatible CAD nesting search budget")
     parser.add_argument("--nesting-workers",type=int,choices=range(1,9),default=1,help="Parallel disjoint CAD pair proposal streams")
+    parser.add_argument("--nesting-pitch",type=float,default=4,help="Voxel proposal pitch in mm; original triangle clearance is always rechecked")
     parser.add_argument("--heightfield-budget",type=float,default=0,help="Additional whole-family CAD insertion search budget; requires --portfolio")
     parser.add_argument("--shared-footprint-budget",type=float,default=0,help="Common carton footprint search; portfolio caps each trial at half its budget")
     parser.add_argument("--split-largest-family",action="store_true",help="Try two cartons for the largest compatible family within policy caps")
@@ -44,20 +45,21 @@ def main():
         result,plan=design_portfolio(values["library"],values["policy"],values["bom"],args.output,
                                     time_limit=args.time_limit,nesting_seconds=args.nesting_budget,heightfield_seconds=args.heightfield_budget,
                                     executable=args.packing_solver,nesting_workers=args.nesting_workers,rectangle_executable=args.rectangle_solver,
-                                    shared_footprint_seconds=args.shared_footprint_budget)
+                                    shared_footprint_seconds=args.shared_footprint_budget,nesting_pitch_mm=args.nesting_pitch)
     else:
         if args.heightfield_budget:parser.error("Whole-family heightfield discovery requires --portfolio")
         result,plan=design_logistics(values["library"],values["policy"],values["bom"],time_limit=args.time_limit,
                                    executable=args.packing_solver,nesting_seconds=args.nesting_budget,work_directory=args.output,
                                    split_largest_family=args.split_largest_family,largest_family_cartons=args.largest_family_cartons,
                                    partition_strategy=args.partition_strategy,balanced_cartons=args.balanced_cartons,nesting_workers=args.nesting_workers,
-                                   rectangle_executable=args.rectangle_solver,shared_footprint_seconds=args.shared_footprint_budget)
+                                   rectangle_executable=args.rectangle_solver,shared_footprint_seconds=args.shared_footprint_budget,nesting_pitch_mm=args.nesting_pitch)
     result["input_files_sha256"]=hashes
     final_code=code_hashes()
     result["run_provenance"]={"python":sys.version,"engine_files_sha256":initial_code,
                               "engine_files_unchanged_during_run":initial_code==final_code,
                               "parameters":{"time_limit":args.time_limit,"nesting_budget":args.nesting_budget,
                                             "nesting_workers":args.nesting_workers,
+                                            "nesting_pitch_mm":args.nesting_pitch,
                                             "heightfield_budget":args.heightfield_budget,
                                             "shared_footprint_budget":args.shared_footprint_budget,
                                             "split_largest_family":args.split_largest_family,

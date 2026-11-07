@@ -7,7 +7,7 @@ from pathlib import Path
 from time import perf_counter
 
 
-def discover_compatible_units(library, policy, output, time_limit=60, workers=1):
+def discover_compatible_units(library, policy, output, time_limit=60, workers=1, pitch_mm=4):
     import numpy as np
     import trimesh
     from .parallel_nesting import discover_pair_shards
@@ -34,7 +34,7 @@ def discover_compatible_units(library, policy, output, time_limit=60, workers=1)
         subset={**library,"items":[i for i in library["items"] if policy["families"][i["id"]]==family]}
         family_start=perf_counter()
         portfolio=discover_pair_shards(subset,output/family,workers=workers,clearance_mm=max(policy["clearance_mm"],2*policy["item_padding_mm"]),
-                                 time_limit=budget*.65,pair_seconds=min(5,budget),max_pairs=min(48,max(12,int(budget/6))),pitch_mm=4,proposal_rank="overlap_bound")
+                                 time_limit=budget*.65,pair_seconds=min(5,budget),max_pairs=min(48,max(12,int(budget/6))),pitch_mm=pitch_mm,proposal_rank="overlap_bound")
         extension_attempts=[]
         for round_index in range(2):
             left=budget-(perf_counter()-family_start)
@@ -50,13 +50,13 @@ def discover_compatible_units(library, policy, output, time_limit=60, workers=1)
                                        for i,a in enumerate(alternatives)],12,members)
             seeds={**portfolio,"alternatives":[alternatives[i] for _,i,_ in ranked]}
             extensions=extend_groups(subset,seeds,output/(family+f"-extensions-{round_index+1}"),
-                                     time_limit=left/(2-round_index),pair_seconds=5,max_pairs=min(24,max(8,int(left/6))),pitch_mm=4,
+                                     time_limit=left/(2-round_index),pair_seconds=5,max_pairs=min(24,max(8,int(left/6))),pitch_mm=pitch_mm,
                                      proposal_rank="overlap_bound")
             extension_attempts.extend(extensions["attempts"])
             if not extensions["alternatives"]:break
             portfolio["alternatives"].extend(extensions["alternatives"])
         search.append({"family":family,"attempts":portfolio["attempts"],"seconds":perf_counter()-family_start,
-                       "extension_attempts":extension_attempts,"proposal_pitch_mm":4,"workers":workers})
+                       "extension_attempts":extension_attempts,"proposal_pitch_mm":pitch_mm,"workers":workers})
         candidates.extend((family,a) for a in portfolio["alternatives"])
     return compose_compatible_units(library,policy,candidates,output,search,perf_counter()-started)
 
