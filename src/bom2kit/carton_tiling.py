@@ -68,6 +68,32 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
                 selected.append(c)
         return selected
 
+    # Prune each leaf before the expensive subset products. A smaller pattern
+    # can always be expanded to a dominated leaf's dimensions, even with a
+    # carton-type cap, so this particular dominance rule is safe for leaves.
+    for mask,pool in list(states.items()):
+        ordered=sorted(pool,key=lambda p:tuple(p["size"]))
+        skyline=[]
+        for candidate in ordered:
+            if not any(all(a<=b for a,b in zip(p["size"],candidate["size"])) for p in skyline):skyline.append(candidate)
+        states[mask]=skyline
+    # Build useful complete layouts before bounded subset search. Previously a
+    # timeout before the final mask fell back to a tall stack of unrelated
+    # minimum-volume patterns, losing all work on external proportions.
+    complete=[]
+    orders=[list(range(count)),sorted(range(count),key=lambda i:-min(math.prod(p["size"]) for p in states[1<<i]))]
+    for order in orders:
+        beam=states[1<<order[0]]
+        for index in order[1:]:
+            pool=[]
+            for left,right in product(beam,states[1<<index]):
+                for axis in range(3):
+                    dims=[max(a,b) for a,b in zip(left["size"],right["size"])];dims[axis]=left["size"][axis]+right["size"][axis]
+                    pool.append({"size":dims,"axis":axis,"children":[left,right]})
+            unique={}
+            for p in sorted(pool,key=lambda p:math.prod(v+2*(wall+foam) for v in p["size"])):unique.setdefault(tuple(p["size"]),p)
+            beam=list(unique.values())[:32]
+        complete.extend(beam)
     for size in range(2, count+1):
         for mask in range(1, 1 << count):
             if mask.bit_count() != size:
@@ -89,13 +115,6 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
             if perf_counter()-started > time_limit:
                 # Still construct one complete fallback from the leaves; a time
                 # limit cannot turn a partial partition into an accepted plan.
-                root = states[1][0]
-                for j in range(1,count):
-                    leaf=states[1<<j][0]
-                    root={"size":[max(root["size"][0],leaf["size"][0]),
-                                  max(root["size"][1],leaf["size"][1]),root["size"][2]+leaf["size"][2]],
-                          "axis":2,"children":[root,leaf]}
-                states.setdefault((1<<count)-1, [root])
                 break
         if perf_counter()-started > time_limit:
             break
@@ -113,7 +132,7 @@ def tile_modules(modules, *, time_limit=20, frontier=64, wall=7, foam=15,
         expand(left,origin,a,leaves);expand(right,b_origin,b,leaves)
 
     candidates=[]
-    for root in states.get((1<<count)-1,[]):
+    for root in [*complete,*states.get((1<<count)-1,[])]:
         dims=[math.ceil(v/increment-1e-9)*increment for v in root["size"]]
         leaves=[];expand(root,[foam]*3,dims,leaves)
         distinct=len({carton_size_key(l["external_mm"]) for l in leaves})

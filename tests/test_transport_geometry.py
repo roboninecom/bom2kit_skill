@@ -187,3 +187,12 @@ def test_supported_order_search_improves_height_without_relaxing_support():
     problem={"container":{"inner_mm":[25,25,50]},"gap_mm":.2,"items":[
         {"id":str(i),"quantity":1,"dimensions_mm":s,"allowed_rotations":[list(r) for r in permutations(range(3))]} for i,s in enumerate(sizes)]}
     assert validate(problem,result["packing"])["valid"]
+
+
+def test_carton_timeout_retains_compact_complete_incumbent():
+    modules=[{"patterns":[{"external_mm":s}]} for s in
+             ([100,20,80],[80,30,30],[90,40,10],[50,50,50],[20,20,20])]
+    candidate=tile_modules(modules,time_limit=.000001,max_types=5)["candidate"]
+    assert candidate["volume_mm3"]<3_000_000
+    assert sorted(l["module"] for l in candidate["leaves"])==list(range(5))
+    assert sum(math.prod(l["external_mm"]) for l in candidate["leaves"])==math.prod(candidate["block_mm"])
