@@ -4,6 +4,10 @@ Research date: 7 November 2026. Audited code: `ffb2a5e`.
 Scope: code inspection, frozen 101/102 artifacts and primary-source research.
 No new packing search, supplier quotation or physical test was performed.
 
+Follow-up: [algorithm and implementation design](transport-packaging-algorithms.md)
+provides concrete data contracts, optimization constraints, floorplan/foam
+algorithms and executed research probes. This audit remains the problem analysis.
+
 ## Decision
 
 Keep the existing CAD, BOM and motion validators. Replace volume-first grouping

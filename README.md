@@ -45,6 +45,9 @@ to synchronize both agent copies.
 The [transport-packaging audit and redesign](docs/transport-packaging-research.md)
 explains the remaining gaps in foam specification, kitting groups, shared carton
 sizes and physical retention, with a prioritized implementation plan.
+The [algorithm design and executable research probes](docs/transport-packaging-algorithms.md)
+specify constrained module generation, CP-SAT selection, carton floorplan search,
+foam construction and the required changes to the current engine.
 
 **Status:** reference-free group and carton search and checked visual reports work,
 but the complete no-worse 101/102 benchmark remains unfinished.
