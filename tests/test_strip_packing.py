@@ -56,3 +56,11 @@ def test_repair_keeps_existing_unit_and_packs_every_remaining_unit(order):
     assert result["placements"][1]["position_mm"][0] >= 10.2
     with pytest.raises(ValueError,match="membership"):
         pack_strip(units,21,10,.2,depth=10,initial_placements=initial*2)
+
+
+def test_floor_area_bound_retains_smaller_permitted_upright_footprints():
+    problem = {"container":{"inner_mm":[11,10,10]},"gap_mm":.2,"items":[
+        {"id":"plate","quantity":2,"dimensions_mm":[10,10,1],"allowed_rotations":[[0,1,2],[2,0,1]]}]}
+    result = pack_strip(normalize(problem)["units"],11,10,.2,depth=10,placement_score="height_fill")
+    assert validate(problem,result)["valid"]
+    assert len(result["placements"]) == 2

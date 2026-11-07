@@ -26,6 +26,17 @@ def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, pri
                 continue
             return None
         available.append((unit, choices))
+    if depth is not None and not allow_partial:
+        # Necessary floor-area bound over permitted orientations. This cannot
+        # reject a feasible rectangle packing, and avoids expensive failed fits.
+        minimum_area = 0.0
+        for _,choices in available:
+            areas = [s[0]*s[1] for _,s in choices if s[1] <= depth+1e-8]
+            if not areas:
+                return None
+            minimum_area += min(areas)
+        if minimum_area > width*depth*(1+1e-10):
+            return None
     if item_order != "input":
         available.sort(key=lambda entry: (entry[0]["unit_id"] != priority_unit,
                                          -(min(s[0]*s[1] for _,s in entry[1]) if item_order == "compact" else

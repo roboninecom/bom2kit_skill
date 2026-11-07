@@ -8,7 +8,7 @@ from .models import normalize, number
 from .strip_packing import pack_strip
 
 
-def improve_layer_membership(candidate, *, increment=1, time_limit=30, seed=0, max_iterations=10000):
+def improve_layer_membership(candidate, *, increment=1, time_limit=30, seed=0, max_iterations=10000, diversify=False):
     """Improve an internal incumbent; never supply an engineer reference here.
 
     Source dimensions, rotations, protection and walls stay fixed. Only complete,
@@ -25,7 +25,7 @@ def improve_layer_membership(candidate, *, increment=1, time_limit=30, seed=0, m
         raise ValueError("A valid generated layer incumbent is required")
     layers = candidate["layout"]["layers"]
     result = {"candidate":deepcopy(candidate), "iterations":0, "accepted_moves":0,
-              "improvements":0, "seed":seed, "elapsed_seconds":0}
+              "improvements":0, "seed":seed, "diversify":diversify, "elapsed_seconds":0}
     if len({tuple(l["inner_mm"][:2]) for l in layers}) != 1 or len({tuple(l["position_mm"][:2]) for l in layers}) != 1:
         result["elapsed_seconds"] = perf_counter()-started
         return result
@@ -66,10 +66,11 @@ def improve_layer_membership(candidate, *, increment=1, time_limit=30, seed=0, m
                 break
             if perf_counter()-started >= time_limit:
                 break
-            for mode,order in (("height_fill","area"),("bottom_left","area"),("short_side","area"),
-                               ("height_fill","compact"),("short_side","compact"),("height_fill","volume"),
-                               ("short_side","best_fit"),("area","best_fit"),
-                               ("height_fill","input"),("short_side","input")):
+            variants = [("height_fill","area"),("bottom_left","area"),("short_side","area"),("height_fill","volume")]
+            if diversify:
+                variants += [("height_fill","compact"),("short_side","compact"),("short_side","best_fit"),
+                             ("area","best_fit"),("height_fill","input"),("short_side","input")]
+            for mode,order in variants:
                 ordered = list(members)
                 if order == "input":
                     ordered.sort(key=lambda u:-math.prod(u["dimensions"])*rng.uniform(.4,1.6))

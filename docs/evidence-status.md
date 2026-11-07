@@ -1,5 +1,9 @@
 # Packaging acceptance evidence
 
+**Historical prepared-layout evidence:** the results below do not establish
+independent design from scratch. The current independent engine has not met the
+no-worse target; see the [latest bounded-run report](one-hour-progress-report.md).
+
 ## Reference and scope
 
 The acceptance target is the complete kit, including its protection and packing instructions. Matching the outer carton alone does not satisfy it.

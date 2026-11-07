@@ -14,10 +14,11 @@ def split_stack():
             "layout":{"placements":poses,"layers":layers},"external_mm":[35,35,37],"volume_mm3":35*35*37}
 
 
-def test_membership_search_merges_layers_without_changing_protection_or_contents():
+@pytest.mark.parametrize("diversify",[False,True])
+def test_membership_search_merges_layers_without_changing_protection_or_contents(diversify):
     original = split_stack()
     before = deepcopy(original)
-    result = improve_layer_membership(original,time_limit=2,max_iterations=30)
+    result = improve_layer_membership(original,time_limit=2,max_iterations=30,diversify=diversify)
     candidate = result["candidate"]
     assert original == before
     assert len(candidate["layout"]["layers"]) == 1

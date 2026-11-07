@@ -3,6 +3,9 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
+For the final bounded-session results, fresh-run timings and visual artifact,
+see [the one-hour progress report](one-hour-progress-report.md).
+
 ## Bounded resumption: 2026-11-07
 
 The user authorized one hour of resumed work, starting at 12:52 UTC. The latest

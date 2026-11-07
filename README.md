@@ -1,12 +1,14 @@
 # BOM to Kit
 
-**Status:** reference-free group and carton search works, but the complete
-no-worse 101/102 benchmark and final illustrated delivery remain unfinished.
+**Status:** reference-free group and carton search and checked visual reports work,
+but the complete no-worse 101/102 benchmark remains unfinished.
 Historical layouts adapted prepared recipes and Alan's carton targets; those
 are not evidence of design from scratch. See the
 [implementation audit and proposed replacement pipeline](docs/from-scratch-design-review.md).
 The [independent implementation progress](docs/independent-design-progress.md)
 documents the new reference-free carton stage and remaining work.
+See the [one-hour progress report](docs/one-hour-progress-report.md) for measured
+improvements, fresh-run timings and the remaining gap to the engineer reference.
 
 A local Python engine and shared Codex / Claude Code skill for reproducible packing plans. The engine searches rigid rectangular packing envelopes, independently checks layouts, and renders instructions from their coordinates. Optional STEP inspection supplies geometry evidence.
 
@@ -32,7 +34,7 @@ reconciled expected BOM using the source adapters described in the
 with `python -m pip install -e ".[mesh]"`.
 
 ```powershell
-python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6
+python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6 --improvement-budget 120
 ```
 
 This command discovers groups, generates inner/outer cartons, checks original
@@ -43,6 +45,27 @@ original-pose checks and is not a certified layout. Budgets are per stage and
 soft; record the whole run's elapsed time. Reference comparison happens only
 after the selected result is frozen. Current benchmark assumptions and remaining
 gaps are documented in [implementation progress](docs/independent-design-progress.md).
+
+The optional improvement phase changes memberships and orientations in the
+current run's generated layers. It preserves protection and replays original
+meshes and assembly before accepting a smaller result. An explicit inner-wall
+policy always requires closed inner cartons; a wall-free shelf is not a fallback.
+
+For a frozen result, generate a checked geometric assembly plan and carton views:
+
+```powershell
+python scripts/build_assembly_plan.py RESULT.json EXPECTED.json --output packaging-results/review/assembly-plan.json
+python scripts/render_design_review.py RESULT.json EXPECTED.json --output packaging-results/review
+```
+
+`scripts/render_packing_comparison.py CASES.json --output packaging-results/comparison`
+adds source-PDF reference images, before/after volume, numbered carton contents,
+group assembly views and insertion steps to a portable HTML report. Install
+`.[report]` first. Its separate evaluator config contains a `cases` array with
+`name`, `result`, `before_result`, `bom`, `reference_external_mm`, `reference_pdf`
+and zero-based `reference_pages`. Never pass that config to the design engine.
+Before/after source manifests and protection must match. Geometric instructions
+do not establish physical shipping qualification.
 
 ## Fixed-container utilities
 

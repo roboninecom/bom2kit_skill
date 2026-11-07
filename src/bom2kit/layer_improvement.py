@@ -27,7 +27,7 @@ def improve_generated_layers(candidate, time_limit=60, increment=1, seed=0, max_
         if remaining <= 0:
             break
         moved = improve_layer_membership(best,increment=increment,time_limit=remaining*(.55 if cycle==0 else .75),
-                                         seed=seed+cycle,max_iterations=100000)
+                                         seed=seed+cycle,max_iterations=100000,diversify=cycle>0)
         retain(moved["candidate"])
         stages.append({"stage":"membership","cycle":cycle,**{k:v for k,v in moved.items() if k!="candidate"}})
         while perf_counter()-started < time_limit:
