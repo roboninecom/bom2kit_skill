@@ -15,7 +15,8 @@ def test_insertion_field_matches_direct_column_sweep(shape):
             assert actual[x,y]==expected
 
 
-def test_whole_family_nesting_preserves_source_geometry_and_insertion(tmp_path):
+@pytest.mark.parametrize("score",["volume","waste"])
+def test_whole_family_nesting_preserves_source_geometry_and_insertion(tmp_path,score):
     import json
     from hashlib import sha256
     trimesh=pytest.importorskip("trimesh");pytest.importorskip("fcl")
@@ -29,7 +30,7 @@ def test_whole_family_nesting_preserves_source_geometry_and_insertion(tmp_path):
         path.write_text(json.dumps({"units":"mm","vertices_mm":mesh.vertices.tolist(),"triangles":mesh.faces.tolist()}))
         items.append({"id":iid,"quantity":quantity,"mesh":{"path":str(path),"sha256":sha256(path.read_bytes()).hexdigest()}})
     shapes=prepare_shapes(items,1)
-    proposal=pack_heightfield(items,shapes,33,33,pitch=1,clearance=.2,time_limit=20)
+    proposal=pack_heightfield(items,shapes,33,33,pitch=1,clearance=.2,time_limit=20,score=score)
     assert proposal and len(proposal["layout"]["placements"])==4
     problem={"units":"mm","items":items,"container":{"inner_mm":proposal["container_mm"]},"clearance_mm":.2}
     assert validate_mesh_layout(problem,proposal["layout"])["valid"]

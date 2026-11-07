@@ -60,10 +60,11 @@ def prepare_shapes(items, pitch):
     return shapes
 
 
-def pack_heightfield(items, shapes, width, depth, *, pitch=4, clearance=2, order="volume", time_limit=30):
+def pack_heightfield(items, shapes, width, depth, *, pitch=4, clearance=2, order="volume", time_limit=30, score="volume"):
     import numpy as np
     import trimesh
     started=perf_counter();top=np.zeros((int(width),int(depth)),dtype=float)
+    if score not in ("volume","waste"):raise ValueError("Unknown heightfield score")
     units=[(item["id"],f"{item['id']}#{copy+1}") for item in items for copy in range(item["quantity"])]
     if order=="volume":units.sort(key=lambda p:(-shapes[p[0]]["box_volume"],p[1]))
     elif order=="void":units.sort(key=lambda p:(-(shapes[p[0]]["box_volume"]-shapes[p[0]]["material_volume"]),p[1]))
@@ -81,10 +82,19 @@ def pack_heightfield(items, shapes, width, depth, *, pitch=4, clearance=2, order
             scores=(ex+4)*(ey+4)*(ez+4)+(ys*width+xs)*1e-6
             # Several candidates permit exact clearance corrections without
             # assuming the raster's best point must be geometrically feasible.
-            indices=np.argpartition(scores.ravel(),min(2,scores.size-1))[:3]
+            count=12 if score=="waste" else 3
+            indices=np.argpartition(scores.ravel(),min(count-1,scores.size-1))[:count]
             for flat in indices:
                 x,y=np.unravel_index(flat,scores.shape)
-                options.append((float(scores[x,y]),float(ez[x,y]),index,int(x),int(y),float(heights[x,y])))
+                value=float(scores[x,y])
+                if score=="waste":
+                    # Raising the insertion surface seals off everything below
+                    # it for subsequent vertical placements. Penalize that lost
+                    # capacity, not only the current bounding box volume.
+                    region=top[x:x+sx,y:y+sy];mask=choice["mask"]
+                    lost=np.maximum(0,heights[x,y]+choice["upper"][mask]-region[mask]).sum()
+                    value=.3*value+float(lost)
+                options.append((value,float(ez[x,y]),index,int(x),int(y),float(heights[x,y])))
         accepted=None
         for _,_,index,x,y,z in sorted(options):
             choice=shape["choices"][index]
@@ -138,13 +148,13 @@ def discover_heightfield_groups(library, policy, output, time_limit=180, pitch=4
                 footprints.append((math.ceil(math.sqrt(area)*density*aspect),math.ceil(math.sqrt(area)*density/aspect),order))
         footprints.extend((math.ceil(scale*f*a),math.ceil(scale*f/a),order) for f,a,order in
                           ((.9,1,"volume"),(.8,1.4,"volume"),(1.1,.8,"void"),(.75,1,"area"),(1.1,1.4,"volume"),(.9,.65,"void")))
-        for width,depth,order in dict.fromkeys(footprints):
+        for trial,(width,depth,order) in enumerate(dict.fromkeys(footprints)):
             left=time_limit-(perf_counter()-started)
             if left<5:break
             proposal=pack_heightfield(items,shapes,width,depth,pitch=pitch,
                                      clearance=max(policy["clearance_mm"],2*policy["item_padding_mm"]),
-                                     order=order,time_limit=min(40,left))
-            attempt={"family":family,"footprint_cells":[width,depth],"order":order,"status":"proposal_failed"}
+                                     order=order,time_limit=min(40,left),score="waste")
+            attempt={"family":family,"footprint_cells":[width,depth],"order":order,"score":"waste","status":"proposal_failed"}
             attempts.append(attempt)
             if proposal is None:continue
             attempt["volume_mm3"]=math.prod(proposal["bounds_mm"])
