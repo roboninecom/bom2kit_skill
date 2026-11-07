@@ -49,20 +49,26 @@ def solve_columns(data):
     seed={p["unit_id"]:p for p in data["seed"]}
     max_depth=math.ceil((max(p["position_mm"][1]+p["dimensions_mm"][1] for p in seed.values())*1.1+gap+2*len(units)*grid)/grid)
     model=cp_model.CpModel();depth=model.new_int_var(0,max_depth,"depth")
-    xs=[];ys=[];coverage={u["unit_id"]:[] for u in units};records=[];hinted=set()
-    for index,column in enumerate(column_options(units,height)):
+    xs=[];ys=[];coverage={u["unit_id"]:[] for u in units};records=[]
+    columns=column_options(units,height);hinted=set();hint_columns=set()
+    for index in sorted(range(len(columns)),key=lambda i:-len(columns[i]["members"])):
+        members=columns[index]["members"]
+        if any(p["unit_id"] in hinted or p["unit_id"] not in seed for p in members):continue
+        anchor=seed[members[0]["unit_id"]]["position_mm"]
+        if any(seed[p["unit_id"]]["dimensions_mm"]!=p["dimensions_mm"] or
+               any(abs(seed[p["unit_id"]]["position_mm"][k]-p["position_mm"][k]-(anchor[k] if k<2 else 0))>1e-7 for k in range(3)) for p in members):continue
+        hint_columns.add(index);hinted.update(p["unit_id"] for p in members)
+    for index,column in enumerate(columns):
         dx,dy=[math.ceil((v+gap)/grid-1e-9) for v in column["size"][:2]]
         if dx>width or dy>max_depth:continue
         present=model.new_bool_var(f"p{index}");x=model.new_int_var(0,width-dx,f"x{index}");y=model.new_int_var(0,max_depth-dy,f"y{index}")
         model.add(y+dy<=depth).only_enforce_if(present)
         xs.append(model.new_optional_fixed_size_interval_var(x,dx,present,f"ix{index}"));ys.append(model.new_optional_fixed_size_interval_var(y,dy,present,f"iy{index}"))
         for p in column["members"]:coverage[p["unit_id"]].append(present)
-        selected=False
-        if len(column["members"])==1:
-            p=column["members"][0];uid=p["unit_id"]
-            selected=uid not in hinted and uid in seed and p["dimensions_mm"]==seed[uid]["dimensions_mm"]
-            if selected:
-                hinted.add(uid);model.add_hint(x,round(seed[uid]["position_mm"][0]/grid));model.add_hint(y,round(seed[uid]["position_mm"][1]/grid))
+        selected=index in hint_columns
+        if selected:
+            anchor=seed[column["members"][0]["unit_id"]]["position_mm"]
+            model.add_hint(x,round(anchor[0]/grid));model.add_hint(y,round(anchor[1]/grid))
         model.add_hint(present,int(selected));records.append((present,x,y,column))
     for values in coverage.values():model.add_exactly_one(values)
     model.add_no_overlap_2d(xs,ys);model.minimize(depth)
