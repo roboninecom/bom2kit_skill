@@ -84,6 +84,20 @@ compatible layout. It does not prove that a better one is impossible. Five
 different carton sizes in the smaller 102 candidate still impose procurement
 overhead; the three-size alternative costs another 0.50 L.
 
+The selected carton blocks occupy 11.966 L and 14.024 L. With the declared
+15 mm foam and 7 mm outer wall per face, even an ideal cubic block of those
+volumes would need at least 20.286 L and 23.186 L outside (optimistically ignoring
+the extra top reserve). Changing outer proportions alone cannot meet the targets.
+The inner block must shrink by at least approximately 5.1% / 15.8%, even under
+that optimistic shape assumption. This bound applies to these block volumes,
+not to every possible arrangement of the source parts.
+
+Envelope occupancy is about 74-85% across the selected 101 cartons; the 102
+learning-object carton is only 51% occupied by packing envelopes after resizing
+to the shared block. These are envelope measurements, not free material-space
+or stability guarantees. Further work needs coordinated regrouping and deeper
+CAD nesting inside the block, not just another outer-box arrangement.
+
 The block prevents nominal inter-carton gaps, but contents are not physically
 restrained merely because meshes fit. Real contact support, protective bags,
 foam grade/compression, carton strength, handling clearance and manufacturing
