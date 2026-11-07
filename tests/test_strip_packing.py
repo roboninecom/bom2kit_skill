@@ -41,3 +41,18 @@ def test_height_fill_uses_allowed_vertical_span_without_changing_dimensions():
     result = pack_strip(units,10,4,depth=10,placement_score="height_fill")
     assert result["placements"][0]["dimensions_mm"][2] == 4
     assert validate(problem,result)["valid"]
+
+
+@pytest.mark.parametrize("order",["input","compact","best_fit"])
+def test_repair_keeps_existing_unit_and_packs_every_remaining_unit(order):
+    problem = {"container":{"inner_mm":[21,10,10]},"gap_mm":.2,"items":[
+        {"id":"cube","quantity":2,"dimensions_mm":[10,10,10],"allowed_rotations":"fixed"}]}
+    units = normalize(problem)["units"]
+    initial = [{"item_id":"cube","unit_id":"cube#1","position_mm":[0,0,0],
+                "dimensions_mm":[10,10,10],"rotation":[0,1,2]}]
+    result = pack_strip(units,21,10,.2,depth=10,item_order=order,initial_placements=initial)
+    assert validate(problem,result)["valid"]
+    assert result["placements"][0] == initial[0]
+    assert result["placements"][1]["position_mm"][0] >= 10.2
+    with pytest.raises(ValueError,match="membership"):
+        pack_strip(units,21,10,.2,depth=10,initial_placements=initial*2)

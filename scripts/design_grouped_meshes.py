@@ -32,6 +32,8 @@ def main():
     parser.add_argument("--nesting-rounds", type=int, default=0,
                         help="Optional group/part or group/group extension rounds, each using the pair budget")
     parser.add_argument("--carton-budget", type=float, default=10)
+    parser.add_argument("--improvement-budget", type=float, default=0,
+                        help="Optional final in-run layer improvement budget; requires --bom")
     parser.add_argument("--group-configurations", type=int, default=4,
                         help="Maximum distinct grouping evaluations: greedy, leave-one-out neighbors, anchors and singles")
     args = parser.parse_args()
@@ -39,6 +41,10 @@ def main():
         parser.error("--group-configurations must be positive and --nesting-rounds nonnegative")
     if not math.isfinite(args.cavity_budget) or args.cavity_budget < 0:
         parser.error("--cavity-budget must be finite and nonnegative")
+    if not math.isfinite(args.improvement_budget) or args.improvement_budget < 0:
+        parser.error("--improvement-budget must be finite and nonnegative")
+    if args.improvement_budget and not args.bom:
+        parser.error("--improvement-budget requires --bom for original-part assembly replay")
     input_files, parsed = {}, {}
     for name,path in (("library",args.library),("policy",args.policy),("bom",args.bom)):
         if path:
@@ -112,6 +118,25 @@ def main():
             best_result = result
             record["external_volume_l"] = box["volume_mm3"] / 1e6
         evaluations.append(record)
+    if args.improvement_budget and best_result:
+        from bom2kit.layer_improvement import improve_generated_layers
+        from bom2kit.repacking import apply_layer_candidate
+        original = best_result.get("envelope_candidate",best_result)["envelope_design"]["candidate"]
+        if original["layout"].get("layers"):
+            stage_started = perf_counter()
+            improvement = improve_generated_layers(original,time_limit=args.improvement_budget,
+                                                   increment=policy["carton"].get("dimension_increment_mm",1),
+                                                   max_external_mm=policy["carton"].get("max_external_mm"))
+            stage_timings.append({"stage":"layer_improvement_search","seconds":perf_counter()-stage_started})
+            (args.output/"layer-improvement.json").write_text(json.dumps(improvement,allow_nan=False))
+            if improvement["candidate"]["volume_mm3"] < original["volume_mm3"]:
+                stage_started = perf_counter()
+                validated = apply_layer_candidate(best_result,improvement["candidate"],expected_bom)
+                stage_timings.append({"stage":"layer_improvement_validation","seconds":perf_counter()-stage_started})
+                (args.output/"improved-result.json").write_text(json.dumps(validated["result"],allow_nan=False))
+                (args.output/"assembly-plan.json").write_text(json.dumps(validated["assembly_plan"],allow_nan=False))
+                box = improvement["candidate"]
+                choices.append((box["volume_mm3"],"improved-result.json",box["external_mm"]))
     selected = min(choices) if choices else None
     summary = {"status": "validated_geometry_candidate" if selected else "no_verified_candidate",
                "selected_result": selected[1] if selected else None,

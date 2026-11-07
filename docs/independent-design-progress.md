@@ -3,7 +3,35 @@
 The original objective remains open. No new complete-kit comparison has passed.
 This document records executable progress, not acceptance of the finished product.
 
-## Pause checkpoint: 2026-11-07
+## Bounded resumption: 2026-11-07
+
+The user authorized one hour of resumed work, starting at 12:52 UTC. The latest
+membership search reduces 101 to **253 x 253 x 305 mm = 19.522745 L** and trims
+102 to **252 x 264 x 330 mm = 21.954240 L**. Both pass fresh original-mesh,
+declared-BOM, carton hierarchy, internal assembly and external insertion replay.
+Evidence: `packaging-results/independent/{101,102}/hour-membership/result.json`
+and `assembly-plan.json`. These are improvements of independently generated
+cached incumbents, not fresh source-to-result runs. Both remain above reference.
+
+The generic runner now offers `--improvement-budget`, requiring `--bom`.
+It moves/swaps units between its own layers and tries nearby footprints without
+changing source geometry, packing states or protection. New part poses come from
+rigid envelope transfers, followed by original-source assembly replay. A separate
+best incumbent prevents neutral search moves from degrading the selected result.
+
+A policy bug was also fixed: a smaller wall-free shelf could previously replace
+a generated closed-carton candidate despite an explicit `inner_wall_mm` policy.
+The hierarchical path now receives the carton budget and cannot use that fallback.
+The existing selected 101/102 candidates already had validated closed cartons.
+Validation: **143 tests passed in 17.88 seconds**, plus a fresh synthetic CLI run
+with closed cartons and the optional improvement phase.
+
+Negative experiments in this session: wider beam-search footprints, full layer
+repacking and splitting generated layers into smaller cartons did not beat these
+incumbents. The carton-partition prototype is retained only as an ignored local
+experiment, not promoted into the engine.
+
+## Previous pause checkpoint: 2026-11-07
 
 Work is paused at the user's request. The objective is not achieved.
 The best validated complete-kit results remain:

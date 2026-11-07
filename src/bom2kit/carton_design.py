@@ -66,9 +66,20 @@ def design_carton(request, time_limit=5, footprint_hints=()):
     validation_seconds = 0.0
     if "inner_wall_mm" in policy:
         from .layered_design import design_layers
-        layered = design_layers(request, units, time_limit=time_limit*.5,footprint_hints=footprint_hints)
+        layered = design_layers(request, units, time_limit=time_limit,footprint_hints=footprint_hints)
         best = layered["candidate"]
         attempts.extend({**a,"method":"generated_inner_carton_layers"} for a in layered["attempts"])
+        # A closed-inner-carton policy must not lose its walls by selecting a
+        # smaller flat shelf fallback. Search and validate that hierarchy only.
+        elapsed = perf_counter()-started
+        return {"status":"validated_envelope_design" if best else "no_verified_candidate",
+                "candidate":best,"request_sha256":_fingerprint(request),
+                "search":{"attempts":attempts,"time_budget_seconds":time_limit,
+                          "in_run_footprints":[list(hint) for hint in footprint_hints],
+                          "preparation_seconds":prepared-started,
+                          "layer_search_and_validation_seconds":elapsed-(prepared-started),
+                          "total_seconds":elapsed,"optimality_proven":False,"reference_used":False},
+                "scope":"Generated closed inner cartons with independently checked support and coverage"}
 
     def problem_for(usable):
         external = [math.ceil((usable[k] + shell[k]) / increment - 1e-10) * increment for k in range(3)]

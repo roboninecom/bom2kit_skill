@@ -62,7 +62,7 @@ adjacent stacks of different widths. Keep the best fully verified result across
 experiments. These settings do not relax walls, padding or part geometry.
 
 ```powershell
-python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --pair-seconds 8 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6
+python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --pair-seconds 8 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6 --improvement-budget 120
 ```
 
 The runner discovers pairs, optionally extends groups, compares greedy,
@@ -76,6 +76,14 @@ evaluations, with source-library and hierarchy checks. It generates new poses.
 Layered search also tries local repacking of its generated single-column layer
 memberships and nearby manufacturing dimensions; complete proposals require
 independent hierarchy validation. This is a heuristic, not an optimality proof.
+`--improvement-budget` optionally moves and swaps units between generated layers,
+then repairs nearby footprints. It requires `--bom`. The runner uses only the
+winner from its current run, transfers unchanged original meshes rigidly, and
+replays geometry, BOM and assembly before retaining any improvement. Existing
+in-run poses may be preserved during local repair; external recipes remain
+forbidden. Search and final replay times are reported separately for this stage.
+When `inner_wall_mm` is specified, a wall-free shelf cannot replace the required
+closed-carton hierarchy. The whole carton budget is used for hierarchical search.
 `run.json` records input-file hashes, parameters and per-stage wall times.
 Stage times include their checks and exclude source import; they are not a
 disjoint preparation/search/validation breakdown.

@@ -81,3 +81,14 @@ def test_in_run_footprints_are_repacked_and_revalidated():
     assert any(attempt["external_mm"][:2] == [24,24] for attempt in result["attempts"])
     with pytest.raises(ValueError,match="footprint"):
         design_layers(request,units,time_limit=.4,footprint_hints=[(0,21)])
+
+
+def test_closed_carton_policy_cannot_select_wall_free_shelf_fallback():
+    from bom2kit.carton_design import design_carton
+    request = {"units":"mm","items":[{"id":"cube","quantity":2,"dimensions_mm":[10,10,10]}],
+               "policy":{"wall_mm":1,"inner_wall_mm":1.5}}
+    result = design_carton(request,time_limit=.5)
+    candidate = result["candidate"]
+    assert candidate["layout"]["layers"]
+    assert candidate["packaging_bom"]
+    assert validate_layered(candidate["input"],candidate["layout"])["valid"]
