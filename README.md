@@ -42,6 +42,10 @@ to synchronize both agent copies.
 
 ## Current capabilities and limits
 
+The [transport-packaging audit and redesign](docs/transport-packaging-research.md)
+explains the remaining gaps in foam specification, kitting groups, shared carton
+sizes and physical retention, with a prioritized implementation plan.
+
 **Status:** reference-free group and carton search and checked visual reports work,
 but the complete no-worse 101/102 benchmark remains unfinished.
 Historical layouts adapted prepared recipes and Alan's carton targets; those
