@@ -171,7 +171,7 @@ def module_patterns(units, wall, *, time_limit=15, increment=1, gap=.2, executab
 
 def design_logistics(library, policy, expected_bom, *, time_limit=120, executable=None,
                      nesting_seconds=0, work_directory=None, split_largest_family=False, largest_family_cartons=1,
-                     _prepared_nesting=None, _pattern_cache=None):
+                     partition_strategy="volume", _prepared_nesting=None, _pattern_cache=None):
     import numpy as np
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -207,6 +207,8 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
     module_sets=sorted(groups.items())
     requested=max(largest_family_cartons,2 if split_largest_family else 1)
     if type(requested) is not int or requested<1:raise ValueError("Positive integer family carton count required")
+    if partition_strategy not in ("volume","packing"):raise ValueError("Unknown family partition strategy")
+    partition_diagnostics=None
     if requested>1 and len(groups)<policy["max_inner_cartons"]:
         largest=max(range(len(module_sets)),key=lambda i:sum(math.prod(u["dimensions"]) for u in module_sets[i][1]))
         family,units=module_sets.pop(largest)
@@ -221,7 +223,15 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
             cut=min(range(cuts[-1]+1,len(ordered)-(count-index)+1),key=lambda cut:abs(prefix[cut]-prefix[-1]*index/count))
             cuts.append(cut)
         cuts.append(len(ordered))
-        module_sets.extend((family,ordered[a:b]) for a,b in zip(cuts,cuts[1:]))
+        subdivisions=[ordered[a:b] for a,b in zip(cuts,cuts[1:])]
+        if partition_strategy=="packing" and count>1:
+            from .family_partition import packing_partition
+            proposal=packing_partition(units,count,wall=t,gap=carton["gap_mm"],
+                                       increment=carton["dimension_increment_mm"],time_limit=min(5,time_limit*.1))
+            if proposal["groups"]:subdivisions=proposal["groups"]
+            partition_diagnostics={k:v for k,v in proposal.items() if k!="groups"}
+            partition_diagnostics["selected_strategy"]="packing" if proposal["groups"] else "volume_fallback"
+        module_sets.extend((family,group) for group in subdivisions)
     all_units={u["unit_id"]:u for units in groups.values() for u in units}
     packing_hashes={i["id"]:i["mesh"]["sha256"] for i in packing_library["items"]}
     for family,units in module_sets:
@@ -351,7 +361,8 @@ def design_logistics(library, policy, expected_bom, *, time_limit=120, executabl
             "block_mm":chosen["block_mm"],"carton_count":len(layers),"carton_types":chosen["distinct_carton_sizes"],
             "physical_qualification":False,"retention_verified":False,"reference_used":False},
             "source_library_sha256":fingerprint(library),"search":{"modules":[{k:v for k,v in m.items() if k not in ("patterns","_cache_key")} for m in modules],
-            "proposal_seconds":perf_counter()-started,"joint_refinement":refinement,"optimality_proven":False}}
+            "proposal_seconds":perf_counter()-started,"joint_refinement":refinement,"optimality_proven":False,
+            "family_partition":partition_diagnostics}}
     if nesting:
         result["groups"]=assembly_groups
         result["group_certificates"]=nesting["certificates"]

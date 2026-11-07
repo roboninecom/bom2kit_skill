@@ -90,10 +90,11 @@ def test_design_replays_original_geometry_bom_and_fingerprint(tmp_path):
     assert sorted(len(m["unit_ids"]) for m in result["logistics"]["modules"])==[1,2]
     assert not result["logistics"]["retention_verified"]
     split_policy={**policy,"max_inner_cartons":3,"max_carton_types":3}
-    split,split_plan=design_logistics(library,split_policy,bom,time_limit=3,largest_family_cartons=3)
+    split,split_plan=design_logistics(library,split_policy,bom,time_limit=3,largest_family_cartons=3,partition_strategy="packing")
     assert split["logistics"]["carton_count"]==3
     assert split["logistics"]["validation"]["valid"]
     assert split_plan["result_fingerprint"]==fingerprint(split)
+    assert split["search"]["family_partition"]["attempts"]>0
     wrong=deepcopy(bom);wrong["components"][0]["quantity"]+=1
     with pytest.raises(ValueError,match="BOM"):
         design_logistics(library,policy,wrong,time_limit=3)
