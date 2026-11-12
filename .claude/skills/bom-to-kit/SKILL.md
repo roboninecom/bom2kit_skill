@@ -14,6 +14,10 @@ For shipping kits and manual kitting, default to the **Practical manual packing*
 workflow below. The older compound engines are research/baseline tools: their
 collision-free groups do not establish a practical way to carry loose parts.
 
+For requests emphasizing meaningful groups and simple kitting, also evaluate the
+**Concept-first packing** workflow. Retain the better independently verified
+incumbent: the new architecture alone is not evidence of improved packaging.
+
 ## Prepare independent inputs
 
 Keep private sources in `packaging-inputs/` and results in `packaging-results/`.
@@ -103,6 +107,40 @@ Voxel emptiness alone never certifies a fit. This differs from the older
 `--cavity-proposals` bounds/occupancy ranking experiment.
 
 ## Validate, illustrate and compare
+
+### Concept-first packing
+
+Read `docs/concept-packing-design.md`. Build evidence-tagged property cards, form
+semantic groups, generate executable motifs, compare bounded kit concepts, refine
+geometry and independently replay. Name inference, shape similarity and visual
+annotations guide grouping only; they never authorize reduced protection or loads.
+
+```powershell
+python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts --cache packaging-results/pose-cache --grouping type --motifs hybrid --placement-style cohesive --time-limit 180 --wall-limit 900 --max-replays 4 --refinement-budget 45 --surface-budget 60 --repair-budget 90
+```
+
+Compare `assembly`, `type`, `shape` and `adaptive` grouping when names are incomplete
+or height differences waste space. Keep original identities even for geometrically
+similar parts. An annotation file may supply evidence-tagged type/assembly/material/
+fragility labels; it cannot replace geometry. Same-SKU rows, explicit protected
+stacks, alternating floor pairs and supported nesting remain individually handled.
+Existing protective packets retain their source contents; a newly proposed bag
+does not certify a rigid group, protection or restraint.
+
+The planner records alternatives and rejected trials. Joint refinement uses only
+its own generated carton footprints; source-surface refinement and local repair
+must pass unchanged support, source clearance, BOM and finger checks. Do not use
+Alan's dimensions, grouping or target volume as search inputs. Report every stage,
+including preparation, failed replay and repair, and distinguish warm caches from
+cold runs. A timeout is not an infeasibility result.
+
+Evaluate before/after with the same property cards. Count cartons, factory boxes,
+packets, liners and contact sheets separately. Group cohabitation and 10 mm spatial
+connectivity are organization proxies; inspect the actual CAD guide. Report the
+free-translation retention screen separately: an empty path proves potential
+movement, while overlapping/blocked bounding boxes do not prove restraint. Its
+5 mm threshold is diagnostic, not a shipping standard. Exercise a modified BOM.
+Use the rendering workflow below only for an independently replayed selected result.
 
 ### Practical manual packing
 

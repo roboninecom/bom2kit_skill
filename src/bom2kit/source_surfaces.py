@@ -3,7 +3,7 @@ import math
 from time import perf_counter
 
 
-def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,max_height=None,objective='height',priority_units=()):
+def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,max_height=None,objective='height',priority_units=(),semantic_labels=None):
     import numpy as np
     import trimesh
     from shapely.affinity import translate,affine_transform
@@ -65,6 +65,7 @@ def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,m
             surfaces=[(None,padding,None)]
             for parent in placed:
                 if parent['depth']>=2 or declared_state(source_items[parent['item_id']])['kind'] not in ('source_part','factory_carton'):continue
+                if semantic_labels and semantic_labels[parent['item_id']]!=semantic_labels[iid]:continue
                 for z,polygon in parent['faces']:
                     surfaces.append((parent,z+2*padding+gap,polygon))
             for parent,z,polygon in surfaces:

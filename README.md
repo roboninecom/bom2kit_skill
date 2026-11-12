@@ -45,6 +45,13 @@ to synchronize both agent copies.
 
 ## Current capabilities and limits
 
+The experimental [concept-first planner](docs/concept-packing-design.md) adds
+evidence-tagged part properties, semantic grouping, reusable placement motifs,
+bounded concept search, local repair and a free-movement diagnostic. It compares
+organization and handling tradeoffs alongside volume. The [current goal](docs/concept-packing-goal.md)
+requires measured improvement on both kits; the architecture and passing tests
+alone do not meet that target. Keep the best independently verified incumbent.
+
 The [practical packing redesign](docs/practical-packing-design.md) adds explicit
 packing states, source-based support checks, individual placement sequences,
 simplified fingertip clearance and operational tradeoffs. Its experimental

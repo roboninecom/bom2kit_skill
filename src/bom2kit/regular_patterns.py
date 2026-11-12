@@ -33,7 +33,7 @@ def compact_access_rows(placements, units, gap, access_lane, *, reach_depth=8.1)
 
 def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., seconds=10,
                    hand_border=0., target_footprints=(), stack_height_factor=0.,rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,supported_nesting=False,
-                   access_units=(),unit_access_margin=0.):
+                   access_units=(),unit_access_margin=0.,semantic_labels=None,stack_overhang_fraction=.25):
     """Keep identical source SKUs in one stable orientation per pattern.
 
     Every original unit is placed independently on a specified floor liner.
@@ -89,6 +89,8 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                 uid=item.get('packing_unit_ids',[f"{item['id']}#{k+1}" for k in range(item['quantity'])])[copy]
                 units.append({"item_id": item["id"], "unit_id": uid,
                               "dimensions": dims, "orientations": [((0, 1, 2), tuple(dims)), ((1, 0, 2), (dims[1], dims[0], dims[2]))]})
+                if semantic_labels:
+                    units[-1]['cohesion_group']=semantic_labels[item['id']]
         area = sum(math.prod(u["dimensions"][:2]) for u in units)
         height = max(u["dimensions"][2] for u in units)
         expansions={u['unit_id']:{'members':[{'unit':u,'offset_mm':[0.,0.,0.]}],'separators':[]} for u in units}
@@ -101,7 +103,8 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
             height=max(u['dimensions'][2] for u in units);area=sum(math.prod(u['dimensions'][:2]) for u in units)
         elif stack_height_factor:
             from .regular_stacks import make_flat_columns
-            units,expansions=make_flat_columns(units,choices,{i['id']:i for i in items},padding,height*stack_height_factor)
+            units,expansions=make_flat_columns(units,choices,{i['id']:i for i in items},padding,height*stack_height_factor,
+                                               max_overhang_fraction=stack_overhang_fraction)
             height=max(u['dimensions'][2] for u in units)
             area=sum(math.prod(u['dimensions'][:2]) for u in units)
         if floor_pair_budget>pair_used:
@@ -112,6 +115,12 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
             pair_used+=perf_counter()-pair_start
             height=max(u['dimensions'][2] for u in units);area=sum(math.prod(u['dimensions'][:2]) for u in units)
         by_unit={u['unit_id']:u for u in units}
+        if semantic_labels:
+            for unit in units:
+                labels=tuple(sorted({semantic_labels[m['unit']['item_id']] for m in expansions[unit['unit_id']]['members']}))
+                unit['cohesion_group']=labels
+            order={label:index for index,label in enumerate(dict.fromkeys(semantic_labels[i['id']] for i in items))}
+            units.sort(key=lambda u:(min(order[label] for label in u['cohesion_group']),-math.prod(u['dimensions'][:2])))
         lane_extra=max(0.,access_lane_mm-gap)
         margins={u['unit_id']:unit_access_margin if u['unit_id'] in access_units else 0. for u in units}
         packing_units=[{**u,'dimensions':[u['dimensions'][0],u['dimensions'][1]+lane_extra+2*margins[u['unit_id']],u['dimensions'][2]],
@@ -125,9 +134,9 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
         for target_index,(width, depth) in enumerate(targets):
             if width <= 0 or (depth is not None and depth <= 0):
                 continue
-            for mode in ("short_side", "area", "bottom_left"):
+            for mode in (("cohesive",) if semantic_labels else ("short_side", "area", "bottom_left")):
                 p = pack_strip(packing_units, width, height, gap, depth=None if depth is None else depth+lane_extra,
-                               placement_score=mode, item_order="area")
+                               placement_score=mode, item_order="input" if semantic_labels else "area")
                 if p is None:
                     continue
                 if rectangle_executable and mode=='short_side' and rectangle_used<rectangle_budget:

@@ -13,7 +13,7 @@ def _pose_caps(path,digest,transform_values):
     from .practical_geometry import load_mesh
     mesh=load_mesh({'mesh':{'path':path,'sha256':digest}})
     mesh.apply_transform(np.asarray(transform_values).reshape(4,4))
-    return {'top':horizontal_cap(mesh,mesh.bounds[1,2]),'bottom':horizontal_cap(mesh,mesh.bounds[0,2]),
+    return {'top':horizontal_cap(mesh,mesh.bounds[1,2],normal_sign=1),'bottom':horizontal_cap(mesh,mesh.bounds[0,2],normal_sign=-1),
             'center':mesh.center_mass.tolist(),'height':float(mesh.bounds[1,2])}
 
 
@@ -199,6 +199,8 @@ def make_flat_columns(units,choices,source_items,padding,max_height,*,max_count=
         while len(members)<max_count and topkind in ('source_part','factory_carton'):
             options=[]
             for index,unit in enumerate(pending):
+                if unit.get('cohesion_group')!=base.get('cohesion_group'):
+                    continue
                 dims=unit['dimensions']
                 if size[2]+dims[2]>max_height+1e-7 or any(dims[k]>size[k]*(1+max_overhang_fraction)+1e-7 for k in (0,1)):
                     continue

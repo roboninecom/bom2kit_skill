@@ -8,16 +8,18 @@ def placement_modes(score):
 
 
 def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, priority_unit=None,
-               placement_score="bottom_left", item_order="area", initial_placements=()):
+               placement_score="bottom_left", item_order="area", initial_placements=(),cohesion_weight=.35):
     """Place envelope units on the floor, selecting individual orientations.
 
     Free rectangles may overlap one another, but each is empty. All rectangles
     overlapping a placement are split. No support or artificial filler is needed.
     """
-    if placement_score not in ("bottom_left","short_side","area","height_fill"):
+    if placement_score not in ("bottom_left","short_side","area","height_fill","cohesive"):
         raise ValueError("Unknown rectangle placement score")
     if item_order not in ("area","volume","input","compact","best_fit"):
         raise ValueError("Unknown item order")
+    if not math.isfinite(cohesion_weight) or cohesion_weight<0:
+        raise ValueError('Nonnegative finite cohesion weight required')
     available = []
     for unit in units:
         choices = [(r, s) for r, s in unit["orientations"] if s[0] <= width + 1e-8 and s[2] <= height + 1e-8]
@@ -91,7 +93,22 @@ def pack_strip(units, width, height, gap=0, depth=None, allow_partial=False, pri
                 dx, dy = size[0] + gap, size[1] + gap
                 if dx <= w + 1e-8 and dy <= h + 1e-8:
                     short,long = min(w-dx,h-dy),max(w-dx,h-dy)
-                    if placement_score == "height_fill":
+                    if placement_score == "cohesive":
+                        label = unit.get("cohesion_group", unit["item_id"])
+                        neighbors = [q for q in placements if by_id[q["unit_id"]].get("cohesion_group", by_id[q["unit_id"]]["item_id"]) == label]
+                        if neighbors:
+                            left = min(q["position_mm"][0] for q in neighbors)
+                            front = min(q["position_mm"][1] for q in neighbors)
+                            right = max(q["position_mm"][0]+q["dimensions_mm"][0] for q in neighbors)
+                            back = max(q["position_mm"][1]+q["dimensions_mm"][1] for q in neighbors)
+                            growth = (max(right,x+size[0])-min(left,x))*(max(back,y+size[1])-min(front,y))-(right-left)*(back-front)
+                            # Both terms are lengths. Raw area as the primary
+                            # lexicographic score would reserve almost rigid
+                            # group rectangles and waste the entire strip.
+                            score = (max(used_y,y+size[1])+cohesion_weight*growth/max(width,1e-9), growth, short, y, x, size)
+                        else:
+                            score = (max(used_y,y+size[1]), 0., short, y, x, size)
+                    elif placement_score == "height_fill":
                         score = (-size[2],max(used_y,y+size[1]),short,y,x,size)
                     elif placement_score == "short_side":
                         score = (short,long,max(used_y,y+size[1]),y,x,size)

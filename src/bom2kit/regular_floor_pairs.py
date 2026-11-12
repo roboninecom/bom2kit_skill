@@ -2,44 +2,91 @@
 from copy import deepcopy
 import math
 from time import perf_counter
+from functools import lru_cache
+
+
+@lru_cache(maxsize=512)
+def _source_pose(path,digest,transform):
+    import numpy as np
+    from .practical_geometry import load_mesh
+    mesh=load_mesh({'mesh':{'path':path,'sha256':digest}})
+    mesh.apply_transform(np.asarray(transform).reshape(4,4))
+    return mesh
+
+
+_pair_recipes = {}
+
+
+def _pair_recipe(first_key, second_key, padding, gap, seconds):
+    """Reuse a discovered source-relative motif, never another unit's identity.
+
+    Cache keys bind both source hashes, rigid frames and protection. A timed
+    search may cache a feasible proposal, but never treats failure as infeasible.
+    Independent source and insertion replay is still required by the caller.
+    """
+    import numpy as np
+    import trimesh
+    key = (first_key, second_key, padding, gap)
+    if key in _pair_recipes:
+        return deepcopy(_pair_recipes[key])
+    started = perf_counter()
+    a = _source_pose(*first_key); original_b = _source_pose(*second_key)
+    area = math.prod(a.extents[:2]+2*padding)+math.prod(original_b.extents[:2]+2*padding)
+    manager = trimesh.collision.CollisionManager(); manager.add_object('base', a)
+    best = None
+    for angle in (180, 0, 90, 270):
+        if perf_counter()-started >= seconds: break
+        yaw = trimesh.transformations.rotation_matrix(math.radians(angle), [0, 0, 1])
+        b = original_b.copy(); b.apply_transform(yaw)
+        yaw[:3, 3] -= b.bounds[0]; b.apply_translation(-b.bounds[0])
+        moving = trimesh.collision.CollisionManager(); moving.add_object('other', b)
+        for dy in (0., .25, -.25, .5, -.5, .75, -.75):
+            if perf_counter()-started >= seconds: break
+            y = dy*max(a.extents[1], b.extents[1])
+            pitch = max(2., min(a.extents[0], b.extents[0])/16)
+            for x in np.arange(0., a.extents[0]+2*padding+gap+pitch, pitch):
+                if perf_counter()-started >= seconds: break
+                low = np.minimum([0., 0., 0.], [x, y, 0.])
+                high = np.maximum(a.bounds[1], b.bounds[1]+[x, y, 0.])
+                dims = (high-low+2*padding).tolist(); score = math.prod(dims[:2])
+                if score >= area*.94 or (best and score >= best['score']): continue
+                transform = np.eye(4); transform[:3, 3] = [x, y, 0.]
+                moving.set_transform('other', transform)
+                if manager.min_distance_other(moving) < 2*padding+gap-1e-6: continue
+                best = {'score': score, 'yaw': yaw.tolist(), 'offset': [float(x), float(y), 0.],
+                        'low': low.tolist(), 'size': dims}
+    if best is not None:
+        if len(_pair_recipes) >= 512: _pair_recipes.pop(next(iter(_pair_recipes)))
+        _pair_recipes[key] = deepcopy(best)
+    return best
 
 
 def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3):
     import numpy as np
-    import trimesh
-    from .practical_geometry import load_mesh
-    from .packing_states import declared_state
     started=perf_counter();pending=sorted(units,key=lambda u:-math.prod(u['dimensions'][:2]))
-    shapes={};pairs=[];expansions={};certificates=[];has_void={}
+    shapes={};keys={};pairs=[];expansions={};certificates=[];has_void={}
     for iid,(_,option) in choices.items():
-        mesh=load_mesh(source_items[iid]);mesh.apply_transform(option['transform']);shapes[iid]=mesh
+        ref=source_items[iid]['mesh']
+        keys[iid]=(ref['path'],ref['sha256'],tuple(np.asarray(option['transform']).ravel()))
+        mesh=_source_pose(*keys[iid]);shapes[iid]=mesh
         # A hollow declared clamp/bearing proxy can provide floor-space savings
         # without being assumed a load-bearing carton. Preserve its evidence
         # status; independent source/floor replay remains mandatory.
         has_void[iid]=abs(mesh.volume)<.9*math.prod(mesh.extents)
     while pending:
         first=pending.pop(0);members=[{'unit':first,'offset_mm':[0.,0.,0.]}];size=first['dimensions'].copy()
-        if has_void[first['item_id']] and perf_counter()-started<seconds:
-            a=shapes[first['item_id']];manager=trimesh.collision.CollisionManager();manager.add_object('base',a)
-            candidates=list(enumerate(pending))
+        if has_void[first['item_id']]:
+            candidates=[(i,u) for i,u in enumerate(pending) if u.get('cohesion_group')==first.get('cohesion_group')]
             candidates.sort(key=lambda iu:(iu[1]['item_id']!=first['item_id'],-math.prod(iu[1]['dimensions'][:2])))
             best=None
             for index,other in candidates[:4]:
-                if perf_counter()-started>=seconds:break
-                for angle in (180,0,90,270):
-                    yaw=trimesh.transformations.rotation_matrix(math.radians(angle),[0,0,1])
-                    b=shapes[other['item_id']].copy();b.apply_transform(yaw);yaw[:3,3]-=b.bounds[0];b.apply_translation(-b.bounds[0])
-                    area=sum(math.prod(u['dimensions'][:2]) for u in (first,other))
-                    for dy in (0.,.25,-.25,.5,-.5,.75,-.75):
-                        y=dy*max(a.extents[1],b.extents[1]);pitch=max(2.,min(a.extents[0],b.extents[0])/16)
-                        for x in np.arange(0.,a.extents[0]+2*padding+gap+pitch,pitch):
-                            if perf_counter()-started>=seconds:break
-                            low=np.minimum([0.,0.,0.],[x,y,0.]);high=np.maximum(a.bounds[1],b.bounds[1]+[x,y,0.])
-                            dims=(high-low+2*padding).tolist();score=math.prod(dims[:2])
-                            if score>=area*.94 or (best and score>=best[0]):continue
-                            transform=np.eye(4);transform[:3,3]=[x,y,0.]
-                            if manager.in_collision_single(b,transform) or manager.min_distance_single(b,transform)<2*padding+gap-1e-6:continue
-                            best=(score,index,other,yaw,[x,y,0.],low,dims)
+                cache_key=(keys[first['item_id']],keys[other['item_id']],padding,gap)
+                if perf_counter()-started>=seconds and cache_key not in _pair_recipes:continue
+                recipe=_pair_recipe(keys[first['item_id']],keys[other['item_id']],padding,gap,
+                                    max(0.,seconds-(perf_counter()-started)))
+                if recipe and (best is None or recipe['score']<best[0]):
+                    best=(recipe['score'],index,other,np.asarray(recipe['yaw']),recipe['offset'],
+                          np.asarray(recipe['low']),recipe['size'])
             if best:
                 _,index,other,yaw,offset,low,size=best;pending.pop(index)
                 first_offset=(-low).tolist();second_offset=(np.asarray(offset)-low).tolist()

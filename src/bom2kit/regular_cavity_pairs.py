@@ -42,7 +42,7 @@ def make_supported_pairs(units,choices,source_items,padding,gap,max_height,*,sec
         best=None
         if declared_state(source_items[first['item_id']])['kind'] in ('source_part','factory_carton') and perf_counter()<deadline:
             manager=trimesh.collision.CollisionManager();manager.add_object('lower',a)
-            eligible=[(i,u) for i,u in enumerate(pending) if all(u['dimensions'][k]<=first['dimensions'][k]*1.25 for k in (0,1))]
+            eligible=[(i,u) for i,u in enumerate(pending) if u.get('cohesion_group')==first.get('cohesion_group') and all(u['dimensions'][k]<=first['dimensions'][k]*1.25 for k in (0,1))]
             ranked=sorted(eligible,key=lambda iu:(iu[1]['item_id']!=first['item_id'],-math.prod(iu[1]['dimensions'])))
             candidates=ranked[:8]+[entry for entry in ranked[-4:] if entry not in ranked[:8]]
             for index,unit in candidates:
