@@ -51,6 +51,10 @@ bounded concept search, local repair and a free-movement diagnostic. It compares
 organization and handling tradeoffs alongside volume. The [current goal](docs/concept-packing-goal.md)
 requires measured improvement on both kits; the architecture and passing tests
 alone do not meet that target. Keep the best independently verified incumbent.
+The [measured concept-planner outcome](docs/concept-packing-outcome.md) records
+the remaining gap: selected 101 is 28.975 L; 102 retains its 36.127 L incumbent.
+Neither meets Alan's nominal volume. The report distinguishes new candidates
+from retained layouts and records why better grouping did not solve space use.
 
 The [practical packing redesign](docs/practical-packing-design.md) adds explicit
 packing states, source-based support checks, individual placement sequences,
