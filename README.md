@@ -13,6 +13,9 @@ files, backed by a shared Python engine.
   geometry and quantities, and records assumptions and evidence.
 - **Visual reports:** show shaded CAD cutaways, numbered contents and geometric
   assembly steps from the checked coordinates.
+- **Packing guide PDF:** an [R3-style operator document](docs/visual-packing-guide.md)
+  with an exploded foam/carton view, visible CAD contents, part thumbnails,
+  quantities and a closing checklist.
 
 The skill orchestrates the tools; the Python engine performs the geometry work.
 The engine can also run directly from the command line.
@@ -41,6 +44,17 @@ this repository root. To update the shared instructions, edit
 to synchronize both agent copies.
 
 ## Current capabilities and limits
+
+The [transport packaging workflow](docs/transport-packaging.md) implements
+compatible-family cartons, a complete adjustable carton block without spacers,
+six-face foam geometry and checked CAD assembly reports. It includes an optional
+PackingSolver proposal adapter; the default engine does not require that binary.
+Physical restraint and transport performance remain unqualified.
+
+The [latest measured report](docs/transport-round-two-report.md) records the
+second window's 101/102 improvements, three-carton layouts, tested solver
+alternatives and the remaining gap to Alan. The
+[first-window report](docs/two-hour-transport-report.md) retains the earlier results.
 
 The [transport-packaging audit and redesign](docs/transport-packaging-research.md)
 explains the remaining gaps in foam specification, kitting groups, shared carton

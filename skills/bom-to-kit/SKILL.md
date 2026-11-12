@@ -97,6 +97,77 @@ Voxel emptiness alone never certifies a fit. This differs from the older
 
 ## Validate, illustrate and compare
 
+### Transport-compatible carton search
+
+For requests requiring compatible groups, a no-spacer carton block and explicit
+foam, use the experimental `scripts/design_transport_packaging.py` pipeline:
+
+```powershell
+python scripts/design_transport_packaging.py LIBRARY.json TRANSPORT_POLICY.json EXPECTED.json --output packaging-results/transport --portfolio --time-limit 240 --nesting-budget 140
+```
+
+Prepare the explicit SKU-to-family policy with
+`scripts/prepare_transport_policy.py --help`; review its description-based
+classifications. The transport policy is separate from the older layered policy.
+Its carton and protection dimensions are requirements, never reference targets.
+Each closed carton contains one compatible family. The search chooses floor
+packings and supported envelope columns, optionally discovers CAD pairs and
+extensions within families, and joins adjustable
+cartons into an exact slicing partition. It enlarges carton dimensions rather
+than generating spacers. Joint refinement repacks contents against dimensions
+found in the current run. `--split-largest-family` tests two cartons for the
+largest family, within the declared carton and type caps; compare separately
+with the unsplit run and keep the smaller fully verified result.
+
+The portfolio automatically compares a fresh baseline, several in-run grouping portfolios and subdivision,
+retaining the smallest fully checked result. It never imports old packing poses.
+The reported duration includes all trials, including rejected ones. This is
+still a bounded heuristic; use the separate evaluator for the no-worse target.
+Omit `--portfolio` to evaluate a single strategy. The policy generator can
+combine printed families and protected electronics explicitly; bare mechanics
+must remain separate from unprotected printed parts. Record those assumptions.
+
+The transport portfolio also compares integer-selected group quantities with
+greedy alternatives. It skips original-mesh replay for `not_improved` proposals;
+those are not certified layouts. `--nesting-workers 4` explores disjoint CAD
+pair proposals in separate processes; `--nesting-pitch 2` trades finer proposals
+for more work. Exact source clearance never changes with voxel resolution.
+`--shared-footprint-budget 40` searches common carton footprints and heights.
+`--polish-budget 180` adds supported order/orientation search on the best
+grouping generated in this invocation. It cannot replace the checked incumbent
+with a worse proposal. `--nesting-objective balanced` is an experimental pair
+ranking alternative, not a reduction in protection or a proven improvement.
+For explicit non-portfolio trials, `--balanced-cartons N` and
+`--partition-strategy packing` alter family subdivisions. Compare complete
+results: identical small boxes or more partitions can substantially increase
+shipping volume. See `docs/transport-packaging.md` for the experimental controls.
+
+`--packing-solver PATH` optionally requests proposals from an explicitly supplied
+PackingSolver box executable. Its output must pass independent coverage,
+orientation, collision and envelope-support checks. Backend success alone is
+not acceptance. No binary is automatically downloaded. The default path does
+not depend on that executable.
+
+`--rectangle-solver PATH` optionally improves floor-only layouts with the
+PackingSolver rectangle executable. Box proposals can seed a new supported
+reconstruction; both adapters require independent envelope validation. Neither
+backend permits an unsupported part or an imaginary shelf in an accepted result.
+
+`--cp-sat-python PATH` optionally uses an isolated Python interpreter with
+OR-Tools for floor orientation. `--cp-sat-columns` adds experimental supported-column
+selection without displacing the floor proposals. See the transport
+workflow for installation. Its rounded model and bounded column candidates
+only generate proposals; exact envelopes and original CAD still require replay.
+Do not interpret solver optimality as global packing optimality.
+
+The result records six nonoverlapping foam panels, an outer carton specification,
+inner cartons, compatibility checks and a geometric assembly plan. Nesting and
+proposal budgets are separate, soft limits; final validation is additional.
+Report total runtime and preserve all source hashes. Carton dimensions are not
+supplier-approved dielines. Envelope support, an exact carton block and clear
+CAD insertion paths do not establish part restraint, cushion performance or
+transport qualification. Those remain explicitly unverified.
+
 Require expected-BOM reconciliation, original triangle validation, internal
 group assembly and external insertion checks. For layered envelopes, also run
 `bom2kit.layered_design.validate_layered` on the nested envelope candidate's
@@ -122,6 +193,27 @@ rigid copy mappings and part-to-carton containment. It produces a machine-readab
 geometric plan, including workbench poses and carton insertion order. Use this
 as the source for illustrated steps; the JSON alone is not the finished operator
 instruction. Its fingerprints bind parsed result/BOM objects, not raw file bytes.
+
+### Deliver a visual packing guide
+
+For transport results, make the primary deliverable an English A4 PDF in the
+Visual Layout R3 style: exploded outer carton with foam and visible CAD contents,
+numbered inner boxes, isometric/top/side views, part thumbnails and quantities,
+nested-group assembly cards, and a closing checklist. Keep the technical
+comparison HTML as supporting evidence rather than the operator-facing report.
+
+```powershell
+python scripts/build_visual_packing_guide.py RESULT.json EXPECTED.json --kit MY-KIT --output packaging-results/my-kit/visual-guide
+```
+
+The renderer replays the source/BOM/assembly checks and outputs `packing-guide.pdf`,
+`assembly-plan.json` and `guide-manifest.json`. Use the calculated carton count
+and placement, not Alan's geometry or page count. Exploded gaps and cutaway walls
+are display conventions only; the source poses stay unchanged. Show declared
+envelopes honestly when purchased-part CAD is unavailable. Do not synthesize
+replacement geometry with image generation. Render and inspect the resulting
+PDF pages before delivery. Keep geometric draft/prototype status visible until
+the separate shipping qualifications are supported. See `docs/visual-packing-guide.md`.
 
 For local 101/102 cases, read `docs/benchmark-assumptions.md`: preserve accepted
 content revisions and the user-confirmed 106 mm custom clamp frame. Old

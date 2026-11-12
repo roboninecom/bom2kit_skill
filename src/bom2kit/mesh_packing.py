@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 
 
-def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=12, voxel_cache=None):
+def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=12, voxel_cache=None, objective="volume"):
     import numpy as np
     import trimesh
     from scipy.signal import fftconvolve
@@ -25,6 +25,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         raise ValueError("Positive finite time_limit and pitch_mm required")
     if not isinstance(candidates_per_rotation, int) or candidates_per_rotation < 1:
         raise ValueError("candidates_per_rotation must be a positive integer")
+    if objective not in ("volume","balanced"):raise ValueError("Unknown pair objective")
     if problem.get("units") != "mm":
         raise ValueError("Explicit mm units required")
     units, meshes, mesh_hashes = [], [], []
@@ -101,9 +102,12 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         proposal_grids.insert(0,(expanded,radius))
     search_started = perf_counter()
     checked, rotations_done, best, best_spread = 0, 0, None, -1.
+    best_pose = None
+    balance_padding=(sum(float(np.prod(m.extents)) for m in meshes)**(1/3))*.4 if objective=="balanced" else 0
+    best_score=math.inf
 
     def accept(rotation, shift):
-        nonlocal checked, best, best_spread
+        nonlocal checked, best, best_spread, best_pose, best_score
         transform = np.eye(4)
         transform[:3, :3] = rotation
         transform[:3, 3] = shift
@@ -113,10 +117,11 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         high = np.maximum(fixed.bounds[1], candidate.bounds[1])
         dimensions = high - low
         volume = float(np.prod(dimensions))
+        score=float(np.prod(dimensions+balance_padding))
         spread = float(np.linalg.norm(candidate.bounds.mean(axis=0)-fixed.bounds.mean(axis=0)))
         if np.any(dimensions > inner - 2 * margin + 1e-8):
             return
-        if best and (round(volume,6),-spread) >= (round(best[0],6),-best_spread):
+        if best and (round(score,6),-spread) >= (round(best_score,6),-best_spread):
             return
         checked += 1
         if manager.in_collision_single(candidate):
@@ -136,6 +141,8 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         offset[:3, 3] = margin - low
         best = (volume, [offset @ transforms[0], offset @ transform @ transforms[1]], dimensions)
         best_spread = spread
+        best_score=score
+        best_pose = (rotation.copy(), shift.copy())
 
     # Always try simple non-nested adjacency as a valid fallback.
     for axis in range(3):
@@ -143,7 +150,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
         shift[axis] = fixed.extents[axis] + max(clearance, 0.01)
         accept(np.eye(3), shift)
     pending = {}
-    proposal_budget = time_limit * .5
+    proposal_budget = time_limit * .4
     for perm in permutations(range(3)):
         for signs in product((1, -1), repeat=3):
             if perf_counter() - search_started >= proposal_budget:
@@ -171,7 +178,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
                 high = np.maximum(np.array(grids[0].shape), shifts+np.array(grid.shape))
                 possible = np.all((high-low)*pitch_mm <= inner-2*margin+2*pitch_mm,axis=1)
                 shifts,low,high = shifts[possible],low[possible],high[possible]
-                volumes = np.prod(high-low,axis=1)
+                volumes = np.prod(high-low+balance_padding/pitch_mm,axis=1)
                 count = min(candidates_per_rotation,len(volumes))
                 if count:
                     selected = np.argpartition(volumes,count-1)[:count]
@@ -183,7 +190,7 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
                         rotated = corners @ rotation.T + shift
                         lo = np.minimum(fixed.bounds[0],rotated.min(axis=0))
                         hi = np.maximum(fixed.bounds[1],rotated.max(axis=0))
-                        volume = float(np.prod(hi-lo))
+                        volume = float(np.prod(hi-lo+balance_padding))
                         key = (*rotation.ravel(),*shift)
                         pending[key] = (volume,rotation.copy(),shift.copy())
             rotations_done += 1
@@ -193,14 +200,32 @@ def solve_mesh_pair(problem, time_limit=30, pitch_mm=2, candidates_per_rotation=
     # Exact checks must compete across orientations, rather than allowing the
     # first expensive orientation to consume the entire short search budget.
     for _,rotation,shift in sorted(pending.values(),key=lambda p:p[0]):
-        if perf_counter()-search_started >= time_limit:
+        if perf_counter()-search_started >= time_limit*.8:
             break
         accept(rotation,shift)
+    # Coarse voxel translations are proposals, not manufacturing coordinates.
+    # Refine the best exact pose with decreasing physical steps. Every accepted
+    # move still passes original-triangle distance and containment checks.
+    refinement_started = perf_counter()
+    for step in (pitch_mm/2, pitch_mm/4, pitch_mm/8):
+        for _ in range(16):
+            if best_pose is None or perf_counter()-search_started>=time_limit:break
+            rotation,shift=best_pose
+            previous=best_score
+            for axis in range(3):
+                for sign in (-1,1):
+                    if perf_counter()-search_started>=time_limit:break
+                    trial=shift.copy();trial[axis]+=sign*step
+                    accept(rotation,trial)
+            if best_score>=previous-1e-7:break
+    refinement_seconds=perf_counter()-refinement_started
     result = {"units": "mm", "status": "no_verified_candidate", "placements": [],
               "scope": "two_part_static_mesh_nesting",
               "search": {"pitch_mm": pitch_mm, "checked_mesh_candidates": checked,
+                         "objective":objective,"shape_balance_padding_mm":balance_padding,
                          "rotations_checked": rotations_done,
                          "orientation_proposals":len(pending), "proposal_seconds":proposal_seconds,
+                         "translation_refinement_seconds":refinement_seconds,
                          "rotation_count_scope":"Rotations with voxel proposals; exact candidates are counted separately", "elapsed_seconds": perf_counter() - start,
                          "preparation_seconds": search_started - start,
                          "voxel_cache_hits": cache_hits,

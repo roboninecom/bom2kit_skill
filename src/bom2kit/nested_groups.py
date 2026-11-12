@@ -7,7 +7,7 @@ from .mesh_frames import packing_bounds
 from time import perf_counter
 
 
-def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max_pairs=8, cavities=False):
+def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max_pairs=8, cavities=False, pitch_mm=2, proposal_rank="void"):
     """Search group/part and group/group nesting without supplied carton targets.
 
     Existing groups are virtual rigid meshes only during proposal generation.
@@ -65,7 +65,8 @@ def extend_groups(library, portfolio, output, time_limit=60, pair_seconds=8, max
     else:
         candidates = discover_pairs(virtual,output/"virtual-pairs",portfolio["clearance_mm"],
                                     time_limit=time_limit,pair_seconds=pair_seconds,max_pairs=max_pairs,
-                                    required_item_ids=set(expansions),source_quantities=quantities)
+                                    required_item_ids=set(expansions),source_quantities=quantities,pitch_mm=pitch_mm,
+                                    proposal_rank=proposal_rank)
     alternatives, attempts = [], []
     original_box_volumes = {}
     for candidate in candidates["alternatives"]:

@@ -22,3 +22,14 @@ def test_frame_still_finds_smaller_bounds_for_rotated_source():
     assert np.prod(size) == pytest.approx(8*15*30)
     assert np.prod(size) < np.prod(mesh.extents)
     assert np.allclose(size,np.ptp(trimesh.transform_points(mesh.vertices,frame),axis=0))
+
+
+def test_cached_bounds_are_isolated_from_callers_and_changed_geometry():
+    mesh=trimesh.creation.box([9,17,31])
+    frame,size=packing_bounds(mesh)
+    frame[:3,3]=999;size[:]=999
+    fresh_frame,fresh_size=packing_bounds(mesh)
+    assert np.allclose(fresh_frame,np.eye(4)) and np.allclose(fresh_size,[9,17,31])
+    mesh.apply_scale([2,1,1])
+    _,changed=packing_bounds(mesh)
+    assert np.allclose(changed,[18,17,31])

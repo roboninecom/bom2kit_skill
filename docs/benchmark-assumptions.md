@@ -8,6 +8,12 @@ minor packaging details must not stop the search.
 
 - Use Visual Layout R3 for 101: electronics in BOX4 and disassembled ArUco.
 - Use the pinned current SO-ARM-102 repository BOM for 102.
+  On 7 November 2026, upstream HEAD was checked at
+  `77e2469737f30ee30cac6da9c3ecb82e7ff2539d`. The BOM is unchanged from
+  `4b9d7eb8d6d8e4860b6ba238b665120fdc48644e`; the Board cap
+  `SO102.02.101-01` CAD was updated to the fixed-ear version. Its outer bounds
+  remain unchanged, but its triangles and volume differ. Current comparisons
+  must identify this revision and replay geometry rather than assuming a fit.
 - Alan's BOX1–BOX7 dimensions are external. Cardboard walls are 1.5 mm;
   subtract 3 mm from each dimension to obtain the nominal cavity.
 - Bearings may be removed from factory cartons and packed in a protective bag.

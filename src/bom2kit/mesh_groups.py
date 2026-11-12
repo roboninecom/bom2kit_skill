@@ -1,6 +1,7 @@
 """Discover small assembly-checked groups from individual geometry, without recipes."""
 from copy import deepcopy
 from collections import Counter
+from itertools import permutations
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -100,7 +101,8 @@ def check_workbench_axes(problem, layout):
 
 
 def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5, max_pairs=8,
-                   required_item_ids=None, source_quantities=None, cavity_proposals=False):
+                   required_item_ids=None, source_quantities=None, cavity_proposals=False, pitch_mm=2,
+                   proposal_rank="void", proposal_stride=1, proposal_offset=0, shape_objective="volume"):
     """Generate a bounded portfolio balancing empty volume and shape diversity.
 
     Returns alternatives, not an asserted best complete-kit grouping. Original
@@ -118,6 +120,10 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
     pair_seconds = number(pair_seconds, "pair_seconds", True)
     if type(max_pairs) is not int or max_pairs < 1:
         raise ValueError("max_pairs must be positive")
+    if proposal_rank not in ("void","overlap_bound"):
+        raise ValueError("Unknown pair proposal ranking")
+    if type(proposal_stride) is not int or proposal_stride < 1 or type(proposal_offset) is not int or not 0 <= proposal_offset < proposal_stride:
+        raise ValueError("Invalid proposal shard")
     if library.get("units") != "mm" or not library.get("all_meshes_valid_volumes"):
         raise ValueError("Verified mm source library required")
     identities = [item.get("id") for item in library.get("items", [])]
@@ -167,16 +173,26 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
                 if any(count > source_quantities.get(iid,0) for iid,count in needed.items()):
                     continue
             empty = a["box_volume"] + b["box_volume"] - a["mesh"].volume - b["mesh"].volume
+            if proposal_rank=="overlap_bound":
+                # Even perfect nesting cannot make a union smaller than either
+                # envelope along each axis. Do not spend the short budget on a
+                # tiny partner merely because the other part has a huge void.
+                lower=min(float(np.prod(np.maximum(a["mesh"].extents,b["mesh"].extents[list(r)])))
+                          for r in permutations(range(3)))
+                potential=a["box_volume"]+b["box_volume"]-lower
+                if potential<=1e-6:continue
+                empty=min(empty,potential)
             proposals.append((-float(empty), i, j))
     attempts, alternatives = [], []
     voxel_cache = {}
     source_members = {index:set(entry["item"].get("source_members",[entry["item"]["id"]]))
                       for index,entry in enumerate(prepared)}
-    ranked = rank_pair_proposals(proposals, max_pairs, source_members)
+    ranked = rank_pair_proposals(proposals, max_pairs * proposal_stride, source_members)
     shapes = [{"box_volume": e["box_volume"], "volume": float(e["mesh"].volume),
                "extents": e["mesh"].extents.tolist()} for e in prepared]
     if cavity_proposals:
-        ranked = diversify_cavity_proposals(ranked, proposals, shapes, max_pairs, clearance_mm)
+        ranked = diversify_cavity_proposals(ranked, proposals, shapes, max_pairs * proposal_stride, clearance_mm)
+    ranked = ranked[proposal_offset::proposal_stride]
     for _, i, j in ranked:
         remaining = time_limit - (perf_counter() - started)
         if remaining <= 0:
@@ -189,7 +205,7 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
                    "container": {"inner_mm": [span] * 3}, "items": [
                        {"id": name, "quantity": 1, "mesh": entry["ref"]}
                        for name, entry in (("a", a), ("b", b))]}
-        result = solve_mesh_pair(problem, time_limit=min(pair_seconds, remaining), pitch_mm=2,voxel_cache=voxel_cache)
+        result = solve_mesh_pair(problem, time_limit=min(pair_seconds, remaining), pitch_mm=pitch_mm,voxel_cache=voxel_cache,objective=shape_objective)
         attempt = {"members": [a["item"]["id"], b["item"]["id"]], "search": result["search"],
                    "status": result["status"]}
         attempts.append(attempt)
@@ -226,6 +242,9 @@ def discover_pairs(library, output, clearance_mm, time_limit=60, pair_seconds=5,
               "source_library_sha256": sha256(json.dumps(library, sort_keys=True).encode()).hexdigest(),
               "clearance_mm": clearance_mm, "alternatives": alternatives, "attempts": attempts,
               "cavity_proposals": cavity_proposals,
+              "proposal_pitch_mm":pitch_mm,
+              "proposal_rank":proposal_rank,
+              "proposal_shard":{"stride":proposal_stride,"offset":proposal_offset},
               "elapsed_seconds": perf_counter() - started, "time_budget_seconds": time_limit,
               "deadline_scope": "Soft search deadline; geometry and motion verification may overrun"}
     write(output / "pairs.json", result)

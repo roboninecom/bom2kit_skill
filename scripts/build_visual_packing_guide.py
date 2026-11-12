@@ -1,0 +1,220 @@
+"""Create an R3-style illustrated packing PDF from a checked transport result."""
+import argparse
+from collections import Counter
+from hashlib import sha256
+from html import escape
+import json
+from pathlib import Path
+import sys
+
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
+from bom2kit.assembly_plan import build_assembly_plan
+from bom2kit.transport_validation import validate_transport
+from bom2kit.packing_illustrations import render_scene,carton_shell,cuboid,exploded_scene,PART,CARTON
+
+
+def name(item):
+    return str(item.get('name') or item.get('source_name') or item.get('source_evidence',{}).get('source_item') or item['id'])
+
+
+def load_geometry(result):
+    import trimesh
+    sources={}
+    for item in result['input']['items']:
+        raw=Path(item['mesh']['path']).read_bytes()
+        if sha256(raw).hexdigest()!=item['mesh']['sha256']:raise ValueError('Source changed before illustration')
+        data=json.loads(raw);sources[item['id']]=trimesh.Trimesh(data['vertices_mm'],data['triangles'],process=False)
+    meshes={}
+    for pose in result['layout']['placements']:
+        mesh=sources[pose['item_id']].copy();mesh.apply_transform(pose['transform']);meshes[pose['unit_id']]=mesh
+    return sources,meshes
+
+
+def carton_records(result,plan):
+    """One shared numbering scheme for drawings, contents and insertion steps."""
+    candidate=result['envelope_design']['candidate'];records=[];seen=[]
+    poses={p['unit_id']:p for p in result['layout']['placements']}
+    for index,entry in enumerate(plan['cartons_in_outer_insertion_order'],1):
+        module=next(m for m in result['logistics']['modules'] if m['id']==entry['id'])
+        layer=next(l for l in candidate['layout']['layers'] if l['id']==entry['id'])
+        slots=[];mapping={}
+        for number,slot in enumerate([p for p in candidate['layout']['placements'] if p['layer_id']==entry['id']],1):
+            members=result.get('groups',{}).get('assembly-'+slot['unit_id'],[slot['unit_id']])
+            slots.append({'number':number,'members':members,'pose':slot})
+            mapping.update({uid:number for uid in members});seen.extend(members)
+        counts=Counter(poses[uid]['item_id'] for slot in slots for uid in slot['members'])
+        item_slots={iid:sorted({s['number'] for s in slots if any(poses[uid]['item_id']==iid for uid in s['members'])}) for iid in counts}
+        order=[sorted({mapping[uid] for uid in step['unit_ids']}) for step in entry['packing_sequence']]
+        records.append({'number':index,'module':module,'layer':layer,'slots':slots,'counts':counts,'item_slots':item_slots,'order':order})
+    if Counter(seen)!=Counter(poses.keys()):raise ValueError('Illustrated cartons must cover every original unit exactly once')
+    return records
+
+
+def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
+    import numpy as np
+    from reportlab.pdfgen import canvas
+    from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Image,Table,TableStyle,PageBreak,KeepTogether
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from matplotlib import font_manager
+
+    output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
+    raw=Path(result_path).read_bytes();bom_raw=Path(bom_path).read_bytes()
+    result=json.loads(raw);bom=json.loads(bom_raw)
+    checks=validate_transport(result,result['logistics']['policy'])
+    if not checks['valid']:raise ValueError(checks['errors'])
+    plan=build_assembly_plan(result,bom)
+    sources,meshes=load_geometry(result);records=carton_records(result,plan)
+    items={i['id']:i for i in result['input']['items']}
+    assets=output/'illustrations';assets.mkdir(exist_ok=True)
+    def illustrate(*args,**kwargs):return render_scene(*args,trim=True,**kwargs)
+    scene,labels,offsets=exploded_scene(result,[r['module'] for r in records],meshes)
+    illustrate(scene,assets/'outer-exploded.png',labels=labels,size=(1300,1700))
+    thumbnails={}
+    for number,(iid,mesh) in enumerate(sources.items(),1):
+        path=assets/f'part-{number}.png'
+        illustrate([(mesh,PART)],path,size=(360,260));thumbnails[iid]=path
+    for record in records:
+        n=record['number'];layer=record['layer'];origin=np.asarray(layer['position_mm'])+layer['wall_mm']
+        parts=[];slot_labels=[]
+        for slot in record['slots']:
+            local=[]
+            for uid in slot['members']:
+                mesh=meshes[uid].copy();mesh.apply_translation(-origin);parts.append((mesh,PART));local.append(mesh)
+            bounds=np.asarray([m.bounds for m in local]);center=(bounds[:,0].min(0)+bounds[:,1].max(0))/2
+            center[2]=layer['inner_mm'][2]+2;slot_labels.append((str(slot['number']),center))
+        shell=carton_shell([-layer['wall_mm']]*3,record['module']['external_mm'],layer['wall_mm'],cutaway=True)
+        illustrate(parts+shell,assets/f'box-{n}-iso.png',size=(1400,800))
+        illustrate(parts+shell,assets/f'box-{n}-top.png',view='top',labels=slot_labels,size=(1000,750))
+        illustrate(parts,assets/f'box-{n}-side.png',view='side',size=(1000,750))
+    # Workbench views preserve each certified internal group frame.
+    template_images={}
+    for index,template in enumerate(plan['templates'],1):
+        parts=[];labels=[]
+        sequence=[uid for step in template['packing_sequence'] for uid in step['unit_ids']]
+        for pose in template['workbench_layout']['placements']:
+            mesh=sources[pose['item_id']].copy();mesh.apply_transform(pose['transform']);parts.append((mesh,PART))
+            labels.append((str(sequence.index(pose['unit_id'])+1),mesh.bounds.mean(0)))
+        path=assets/f'group-{index}.png';illustrate(parts,path,labels=labels,size=(700,450));template_images[template['id']]=path
+    outer=result['envelope_design']['candidate']['external_mm']
+    illustrate([(cuboid([0,0,0],outer),CARTON)],assets/'closed-carton.png',labels=[(kit,np.array(outer)*[.5,0,.5])],size=(1100,750))
+
+    pdfmetrics.registerFont(TTFont('Guide',font_manager.findfont('DejaVu Sans')))
+    pdfmetrics.registerFont(TTFont('GuideBold',font_manager.findfont(font_manager.FontProperties(family='DejaVu Sans',weight='bold'))))
+    pdfmetrics.registerFontFamily('Guide',normal='Guide',bold='GuideBold',italic='Guide',boldItalic='GuideBold')
+    styles=getSampleStyleSheet()
+    for key in ('Normal','BodyText'):styles[key].fontName='Guide';styles[key].fontSize=9;styles[key].leading=13
+    styles.add(ParagraphStyle('TitleGuide',fontName='GuideBold',fontSize=17,leading=22,spaceAfter=7))
+    styles.add(ParagraphStyle('SubGuide',fontName='GuideBold',fontSize=11,leading=15,spaceAfter=6,spaceBefore=7))
+    styles.add(ParagraphStyle('SmallGuide',fontName='Guide',fontSize=7.5,leading=10,textColor=colors.HexColor('#59636d')))
+    styles.add(ParagraphStyle('CellGuide',fontName='Guide',fontSize=8,leading=11))
+    W,H=A4;margin=32;width=W-2*margin
+    def P(text,style='BodyText'):return Paragraph(text,styles[style])
+    def pic(path,w,h):
+        from PIL import Image as PILImage
+        iw,ih=PILImage.open(path).size;scale=min(w/iw,h/ih)
+        return Image(str(path),width=iw*scale,height=ih*scale)
+    def dims(values):return ' x '.join(f'{v:g}' for v in values)
+    def table(rows,widths):
+        t=Table(rows,colWidths=widths,repeatRows=1,hAlign='LEFT')
+        t.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e7edf3')),
+                              ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f7f9')]),
+                              ('LINEBELOW',(0,0),(-1,-1),.3,colors.HexColor('#d7dfe6')),('LEFTPADDING',(0,0),(-1,-1),7),
+                              ('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+        return t
+    flow=[P('Where each box goes','TitleGuide'),P(f'{escape(kit)} | Visual packing guide | {escape(revision)}','SmallGuide'),Spacer(1,8)]
+    levels=sorted({r['module']['position_mm'][2] for r in records})
+    steps=['Prepare and close the numbered inner boxes using the following sheets.','Fit the bottom and four side foam panels in the outer carton.']
+    for i,z in enumerate(levels,1):
+        numbers=', '.join(str(r['number']) for r in records if r['module']['position_mm'][2]==z)
+        steps.append(f'Insert level {i}: boxes {numbers}, in that order.')
+    steps.append('Fit the foam lid and close the outer carton.')
+    for i,step in enumerate(steps,1):flow.append(P(f'<b>{i}.</b> {step}'))
+    flow.extend([Spacer(1,5),P(f'Exterior: {dims(outer)} mm | {np.prod(outer)/1e6:.3f} L | {len(records)} inner boxes','SmallGuide'),
+                 pic(assets/'outer-exploded.png',width,540),
+                 P('Exploded display only: gaps are not packing clearances. Walls are cut down and lids hidden to reveal the original CAD. Close all inner boxes before insertion.','SmallGuide'),
+                 Spacer(1,5),P('Geometric draft. Source quantities and geometry checked; physical restraint and transport release still require a prototype.','SmallGuide')])
+    template_for_unit={uid:t['id'] for t in plan['templates'] for copy in t['copies'] for uid in copy['unit_mapping'].values()}
+    for r in records:
+        n=r['number'];label=result['logistics']['policy'].get('family_labels',{}).get(r['module']['family'],r['module']['family'])
+        label=label.replace('Factory-boxed servos, protected electronics and cables','Protected servos, electronics and cables')
+        flow.extend([PageBreak(),P(f'Box {n}: how the parts sit','TitleGuide'),P(escape(label)),
+                     P(f'Outside {dims(r["module"]["external_mm"])} mm | Cavity {dims(r["layer"]["inner_mm"])} mm','SmallGuide'),
+                     pic(assets/f'box-{n}-iso.png',width,245),P('Isometric - walls cut down; lid omitted','SmallGuide')])
+        views=Table([[pic(assets/f'box-{n}-top.png',width/2-8,180),pic(assets/f'box-{n}-side.png',width/2-8,180)],
+                     [P('Top - numbered slots','SmallGuide'),P('Side - carton walls omitted','SmallGuide')]],colWidths=[width/2]*2)
+        flow.extend([views,Spacer(1,8)])
+        order=' / '.join(', '.join(map(str,s)) for s in r['order'])
+        flow.append(P(f'<b>Insertion order (slots):</b> {order}.'))
+        used=sorted({template_for_unit[uid] for s in r['slots'] for uid in s['members'] if uid in template_for_unit})
+        if used:flow.append(P('Preassemble nested groups using the group cards at the end, then orient each group as shown here.','SmallGuide'))
+        flow.extend([Spacer(1,8),P(f'Box {n}: count before closing','SubGuide')])
+        rows=[[P('<b>Part</b>','CellGuide'),P(f'<b>BOX {n} - source / packing state</b>','CellGuide'),P('<b>Qty</b>','CellGuide'),P('<b>Slots</b>','CellGuide')]]
+        for iid,count in r['counts'].items():
+            item=items[iid];description=f'<b>{escape(name(item))}</b><br/>{escape(iid)}'
+            if item.get('packing_state'):description+='<br/>'+escape(str(item['packing_state']))
+            if item.get('contents'):description+='<br/>Per packet: '+escape('; '.join(f'{q} x {key}' for key,q in item['contents'].items()))
+            rows.append([pic(thumbnails[iid],48,38),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
+        flow.append(table(rows,[62,width-62-36-90,36,90]))
+        flow.append(Spacer(1,6));flow.append(P('Qty counts packing units; packet contents are stated separately. Purchased shapes are declared envelopes where detailed CAD is unavailable.','SmallGuide'))
+    if plan['templates']:
+        flow.extend([PageBreak(),P('Nested groups: workbench assembly','TitleGuide'),P('Build each group in numbered order, then rotate the completed group into its box slot. These are certified workbench frames, not extra packing boxes.','SmallGuide')])
+        cards=[]
+        for template in plan['templates']:
+            refs=[]
+            members={uid for copy in template['copies'] for uid in copy['unit_mapping'].values()}
+            for r in records:
+                for slot in r['slots']:
+                    if members.intersection(slot['members']):refs.append(f'Box {r["number"]} / slot {slot["number"]}')
+            lookup={p['unit_id']:p['item_id'] for p in template['workbench_layout']['placements']}
+            sequence=[uid for step in template['packing_sequence'] for uid in step['unit_ids']]
+            caption='<br/>'.join(f'{i}. {escape(lookup[uid])}' for i,uid in enumerate(sequence,1))
+            card=[P(escape('; '.join(refs)),'SubGuide'),pic(template_images[template['id']],width/2-18,140),P(caption,'CellGuide')]
+            cards.append(card)
+        for i in range(0,len(cards),2):
+            row=Table([[cards[i],cards[i+1] if i+1<len(cards) else '']],colWidths=[width/2]*2)
+            row.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('BOX',(0,0),(-1,-1),.3,colors.HexColor('#d7dfe6')),('BOTTOMPADDING',(0,0),(-1,-1),10)]))
+            flow.append(KeepTogether([row,Spacer(1,8)]))
+    flow.extend([PageBreak(),P('Checklist before taping','TitleGuide')])
+    checks_text=['Count every source SKU and packet against its box sheet.',f'Close all {len(records)} inner boxes and keep their numbers identifiable.',
+                 'Preserve the declared protective packing of servos and electronics.','Fit all six foam panels, including the lid.',
+                 'Confirm actual restraint and closure on a physical prototype before release.','Apply the approved kit identification label.']
+    rows=[[P('<b>Check</b>','CellGuide'),P('<b>Done</b>','CellGuide')]]
+    for text in checks_text:rows.append([P(text),P('[   ]')])
+    flow.extend([table(rows,[width-50,50]),Spacer(1,15),pic(assets/'closed-carton.png',width,300),
+                 P('Outer carton illustration; no production label or carton dieline is implied.','SmallGuide'),Spacer(1,10),
+                 P('Evidence','SubGuide'),P(f'Result SHA256: {sha256(raw).hexdigest()}','SmallGuide'),
+                 P(f'BOM SHA256: {sha256(bom_raw).hexdigest()}','SmallGuide'),
+                 P('Full geometric assembly steps and display offsets are included in the companion JSON files. Foam grade, material strength, manufacturing tolerances and shipping performance are not certified by these drawings.','SmallGuide')])
+    class NumberedCanvas(canvas.Canvas):
+        def __init__(self,*args,**kwargs):
+            super().__init__(*args,**kwargs);self.states=[];self.setTitle(f'{kit} - Visual packing guide');self.setAuthor('BOM to Kit')
+        def showPage(self):self.states.append(dict(self.__dict__));self._startPage()
+        def save(self):
+            total=len(self.states)
+            for state in self.states:
+                self.__dict__.update(state);self.setStrokeColor(colors.HexColor('#d7dfe6'));self.line(margin,32,W-margin,32)
+                self.setFont('Guide',7);self.setFillColor(colors.HexColor('#65717d'))
+                self.drawString(margin,20,f'{kit} | {revision} | Geometric packing guide')
+                self.drawRightString(W-margin,20,f'{self._pageNumber} / {total}');super().showPage()
+            super().save()
+    pdf=output/'packing-guide.pdf'
+    SimpleDocTemplate(str(pdf),pagesize=A4,leftMargin=margin,rightMargin=margin,topMargin=30,bottomMargin=44).build(flow,canvasmaker=NumberedCanvas)
+    (output/'assembly-plan.json').write_text(json.dumps(plan,indent=2),encoding='utf8')
+    manifest={'result_sha256':sha256(raw).hexdigest(),'bom_sha256':sha256(bom_raw).hexdigest(),'pdf_sha256':sha256(pdf.read_bytes()).hexdigest(),
+              'kit':kit,'revision':revision,'source_units':len(meshes),'carton_numbering':[{ 'number':r['number'],'id':r['module']['id'],'unit_ids':r['module']['unit_ids']} for r in records],
+              'display_offsets':offsets,'source_geometry_modified':False,'explosion_is_display_only':True,
+              'physical_qualification':False,'transport_checks':checks,
+              'illustrations_sha256':{p.name:sha256(p.read_bytes()).hexdigest() for p in assets.glob('*.png')}}
+    (output/'guide-manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf8')
+    return {'pdf':str(pdf),'cartons':len(records),'source_units':len(meshes)}
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('result',type=Path);parser.add_argument('bom',type=Path);parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--kit',default='Kit');parser.add_argument('--revision',default='Draft 1')
+    args=parser.parse_args();print(json.dumps(build(args.result,args.bom,args.output,kit=args.kit,revision=args.revision)))

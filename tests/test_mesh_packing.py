@@ -11,7 +11,8 @@ pytest.importorskip("scipy")
 from bom2kit.mesh_packing import solve_mesh_pair
 
 
-def test_pair_search_emits_independent_mesh_certificate(tmp_path):
+@pytest.mark.parametrize("objective",["volume","balanced"])
+def test_pair_search_emits_independent_mesh_certificate(tmp_path,objective):
     meshes = [trimesh.creation.annulus(r_min=3, r_max=5, height=2, sections=24),
               trimesh.creation.cylinder(radius=1, height=2, sections=24)]
     items = []
@@ -23,7 +24,7 @@ def test_pair_search_emits_independent_mesh_certificate(tmp_path):
                       "mesh": {"path": str(path), "sha256": sha256(path.read_bytes()).hexdigest()}})
     problem = {"units": "mm", "container": {"inner_mm": [12, 12, 5]}, "clearance_mm": .1, "items": items}
     cache = {}
-    result = solve_mesh_pair(problem, time_limit=5, pitch_mm=.5,voxel_cache=cache)
+    result = solve_mesh_pair(problem, time_limit=5, pitch_mm=.5,voxel_cache=cache,objective=objective)
     assert result["status"] == "validated_static_layout", result
     assert result["validation"]["valid"]
     assert result["envelope_volume_l"] < result["separate_envelope_volume_l"]
@@ -37,7 +38,7 @@ def test_pair_search_emits_independent_mesh_certificate(tmp_path):
     assert timing["proposal_seconds"] <= timing["search_seconds"]
     assert sum(timing[k] for k in ("preparation_seconds", "search_seconds", "verification_seconds")) == pytest.approx(
         timing["total_elapsed_seconds_including_validation"], abs=.01)
-    reused = solve_mesh_pair(problem,time_limit=5,pitch_mm=.5,voxel_cache=cache)
+    reused = solve_mesh_pair(problem,time_limit=5,pitch_mm=.5,voxel_cache=cache,objective=objective)
     assert reused["search"]["voxel_cache_hits"] == 2
     assert reused["validation"]["valid"]
     assert reused["envelope_volume_l"] == pytest.approx(result["envelope_volume_l"])

@@ -6,7 +6,8 @@ PALETTE = ((.78, .82, .86), (.45, .57, .66), (.85, .80, .68),
            (.61, .70, .68), (.70, .67, .76), (.80, .69, .59))
 
 
-def render_solid_views(parts, output, *, title, cavity=None, wall=1.5):
+def render_solid_views(parts, output, *, title, cavity=None, wall=1.5,
+                       caption="Original CAD triangles / simplified supplied envelopes", label_slots=True,label_numbers=None):
     """Render (mesh, slot number) pairs in their existing local coordinates.
 
     Left: open carton cutaway (two camera-facing walls omitted for visibility).
@@ -120,12 +121,13 @@ def render_solid_views(parts, output, *, title, cavity=None, wall=1.5):
             renderer.ResetCameraClippingRange()
             text(renderer, title, 28, 948, 25)
             text(renderer, "3D cutaway - front/right walls hidden" if cavity is not None and view == 0
-                 else "3D assembly" if view == 0 else "Top view - numbered slots", 28, 910, 20)
-            text(renderer, "Original CAD triangles / simplified supplied envelopes", 28, 28, 18)
+                 else "3D assembly" if view == 0 else "Top view - numbered slots" if label_slots else "Top view", 28, 910, 20)
+            text(renderer, caption, 28, 28, 18)
             window.Render()
             labels = []
-            if view == 1:
+            if view == 1 and label_slots:
                 for number in sorted({n for _, n in parts}):
+                    if label_numbers is not None and number not in label_numbers:continue
                     bounds = np.asarray([m.bounds for m, n in parts if n == number])
                     p = (bounds[:, 0].min(axis=0)+bounds[:, 1].max(axis=0))/2
                     p[2] = high[2]+span*.01
@@ -162,6 +164,7 @@ def _draw_labels(picture, labels):
     font = ImageFont.truetype(font_manager.findfont("DejaVu Sans"), 22)
     draw = ImageDraw.Draw(picture)
     placed = []
+    entries = []
     for text, x, vtk_y in sorted(labels, key=lambda row: (-row[2], row[1])):
         y = picture.height-vtk_y
         width = draw.textbbox((0, 0), text, font=font)[2]+10
@@ -175,8 +178,13 @@ def _draw_labels(picture, labels):
             if cy > 870:
                 cy = max(140, y-35*(attempt+1))
         placed.append(bounds)
+        entries.append((text, x, y, cx, cy, bounds))
+    # Draw every leader before any text box. Later leaders must not cross
+    # earlier numbers when vertically stacked slots share the same anchor.
+    for text, x, y, cx, cy, bounds in entries:
         if abs(cx-x)+abs(cy-y) > 5:
             draw.line((x, y, cx, cy), fill=(45, 55, 65), width=2)
             draw.ellipse((x-3, y-3, x+3, y+3), fill=(45, 55, 65))
+    for text, x, y, cx, cy, bounds in entries:
         draw.rounded_rectangle(bounds, radius=3, fill="white", outline=(155, 165, 175))
         draw.text((cx, cy), text, font=font, fill=(25, 35, 45), anchor="mm")

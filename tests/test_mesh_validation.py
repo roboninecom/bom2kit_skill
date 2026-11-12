@@ -54,6 +54,18 @@ def test_surface_overlap_rejected(tmp_path):
     assert any("Surface collision" in e for e in result["errors"])
 
 
+def test_source_cache_rechecks_bytes_and_each_pose(tmp_path):
+    from pathlib import Path
+    problem,layout=problem_and_layout(tmp_path,[trimesh.creation.box([4,4,4])])
+    assert validate_mesh_layout(problem,layout)["valid"]
+    moved=deepcopy(layout);moved["placements"][0]["transform"][0][3]=100
+    assert not validate_mesh_layout(problem,moved)["valid"]
+    assert validate_mesh_layout(problem,layout)["valid"]
+    Path(problem["items"][0]["mesh"]["path"]).write_text("changed source")
+    result=validate_mesh_layout(problem,layout)
+    assert not result["valid"] and any("SHA256" in error for error in result["errors"])
+
+
 def test_aabb_shortcut_preserves_diagonal_clearance(tmp_path):
     problem, layout = problem_and_layout(tmp_path, [trimesh.creation.box([2, 2, 2])] * 2)
     layout["placements"][1]["transform"][0][3] += 4

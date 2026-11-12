@@ -1,5 +1,9 @@
 # Transport packaging: implementation audit and recommended redesign
 
+**Subsequent requirement:** no spacers between inner cartons. The spacer
+recommendation below is superseded by adjusting carton dimensions to form a
+complete block; the external six-face protective foam is still required.
+
 Research date: 7 November 2026. Audited code: `ffb2a5e`.
 Scope: code inspection, frozen 101/102 artifacts and primary-source research.
 No new packing search, supplier quotation or physical test was performed.
