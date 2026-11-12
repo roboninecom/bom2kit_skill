@@ -79,7 +79,8 @@ Alan's complete matching source poses/BOM/protection cannot be replayed from the
 supplied illustrations; his dimensions are used only after search.
 
 The synthetic changed-BOM case increases `hardware-line-52` from six to seven:
-109 packing units are reconciled and replayed, yielding 38.153808 L in 185.6 s.
+109 packing units are reconciled and replayed by the current default typed-row
+workflow, yielding 37.990500 L in 244.0 s.
 This is a regression case, not the actual 102 BOM. The selected 101 run took
 282.4 s including preparation/search/replay; the illustrated new 102 run took
 375.0 s. Timings use prepared source meshes,

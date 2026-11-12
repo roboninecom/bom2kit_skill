@@ -203,11 +203,14 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
             flow.append(table(rows,[85,85,width-170]))
         used=sorted({template_for_unit[uid] for s in r['slots'] for uid in s['members'] if uid in template_for_unit})
         if used:flow.append(P('Preassemble nested groups using the group cards at the end, then orient each group as shown here.','SmallGuide'))
-        flow.extend([Spacer(1,8),P(f'Box {n}: count before closing','SubGuide')])
+        two_columns=len(r['counts'])>12
+        if two_columns:flow.append(PageBreak())
+        flow.extend([Spacer(1,8),P(f'Box {n}: count before closing','TitleGuide' if two_columns else 'SubGuide')])
         note=P('Qty counts packing units; packet contents are stated separately. Purchased shapes are declared envelopes where detailed CAD is unavailable.','SmallGuide')
         note.keepWithNext=True
         flow.extend([note,Spacer(1,4)])
         rows=[[P('<b>Part</b>','CellGuide'),P(f'<b>BOX {n} - source / packing state</b>','CellGuide'),P('<b>Qty</b>','CellGuide'),P('<b>Slots</b>','CellGuide')]]
+        part_cards=[]
         entries=sorted(r['counts'].items(),key=lambda entry:(property_cards.get(entry[0],{}).get('part_type',{}).get('value',''),entry[0])) if property_cards else r['counts'].items()
         for iid,count in entries:
             item=items[iid];display_name=name(item)
@@ -229,11 +232,27 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
             confirmed_frame=item.get('source_geometry_definition',{}).get('confirmed_frame_length_mm')
             if confirmed_frame is not None:
                 description+=f'<br/>Confirmed frame: {float(confirmed_frame):g} mm'
+            elif str(item.get('dimension_basis','')).startswith('User-confirmed'):
+                description+='<br/>'+escape(item['dimension_basis'].split('. ')[0])
             contents=item.get('contents',{})
             if state['kind']=='protective_packet' or (contents and contents!={iid:1}):
                 description+='<br/>Contents per unit: '+escape('; '.join(f'{q} x {key}' for key,q in contents.items()))
             rows.append([pic(thumbnails[iid],48,30 if state['kind']=='source_part' else 32),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
-        flow.append(table(rows,[62,width-62-36-90,36,90],compact=True))
+            if two_columns:
+                text=description+f'<br/><b>Qty: {count} | Slots:</b> '+', '.join(map(str,r['item_slots'][iid]))
+                card=Table([[pic(thumbnails[iid],34,32),P(text,'CellGuide')]],colWidths=[42,width/2-54])
+                card.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),2),
+                    ('RIGHTPADDING',(0,0),(-1,-1),2),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+                part_cards.append(card)
+        if two_columns:
+            headings=[P(f'<b>BOX {n} - part / quantity / slots</b>','CellGuide') for _ in range(2)]
+            grid=Table([headings,*[[part_cards[i],part_cards[i+1] if i+1<len(part_cards) else ''] for i in range(0,len(part_cards),2)]],colWidths=[width/2]*2,repeatRows=1)
+            grid.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),0),
+                ('RIGHTPADDING',(0,0),(-1,-1),0),('TOPPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),0),
+                ('ROWBACKGROUNDS',(0,0),(-1,-1),[colors.HexColor('#f5f7f9'),colors.white]),
+                ('LINEBELOW',(0,0),(-1,-1),.3,colors.HexColor('#d7dfe6'))]))
+            flow.append(grid)
+        else:flow.append(table(rows,[62,width-62-36-90,36,90],compact=True))
     if plan['templates']:
         flow.extend([PageBreak(),P('Nested groups: workbench assembly','TitleGuide'),P('Build each group in numbered order, then rotate the completed group into its box slot. These are certified workbench frames, not extra packing boxes.','SmallGuide')])
         cards=[]
