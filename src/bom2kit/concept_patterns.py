@@ -100,6 +100,29 @@ def transform_pattern(pattern, position, rotation, body_size, wall):
     return poses, sheets
 
 
+def carton_orientation_patterns(patterns,wall):
+    """Retain an intact carton's horizontal quarter-turn for outer block search."""
+    result=list(patterns)
+    for pattern in patterns:
+        if abs(pattern['external_mm'][0]-pattern['external_mm'][1])<1e-7:
+            continue
+        # Projected contours need their own bound polygon transform. These
+        # alternatives cover the original-source row/stack/pair patterns.
+        if any('footprint' in p for p in pattern['placements']):continue
+        rotated=deepcopy(pattern);body=[v-2*wall for v in pattern['external_mm']]
+        rotated['placements'],rotated['protective_separators']=transform_pattern(pattern,[0.,0.,0.],(1,0,2),body,wall)
+        rotated['external_mm']=[pattern['external_mm'][1],pattern['external_mm'][0],pattern['external_mm'][2]]
+        for zone in rotated.get('semantic_zones',[]):
+            if 'origin_mm' in zone and 'dimensions_mm' in zone:
+                x,y,z=zone['origin_mm'];w,d,h=zone['dimensions_mm']
+                zone['origin_mm']=[body[1]-y-d,x,z];zone['dimensions_mm']=[d,w,h]
+        for pair in rotated.get('individual_floor_pairs',[]):
+            if 'bounding_floor_mm' in pair:pair['bounding_floor_mm']=pair['bounding_floor_mm'][::-1]
+        rotated['carton_quarter_turn']=True
+        result.append(rotated)
+    return result
+
+
 def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
                   increment=1., seconds=3., target_footprints=()):
     """Pack named source zones, retaining low-height and narrow alternatives."""
@@ -158,7 +181,7 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
                                    "preassemblies": 0, "protective_separators": sheets,
                                    "source_contact_slots": source_contact, "source_clearance_slots": source_clearance,
                                    "semantic_zones": records, "motif_operations": operations})
-    return diverse_patterns(candidates, 16)
+    return diverse_patterns(carton_orientation_patterns(candidates,wall), 16)
 
 
 def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=None,minimum_sheet_side=10.):
@@ -250,4 +273,4 @@ def cohesive_carton_patterns(groups, options, policy, *, seconds=2., mode="rows"
         p['motif_operations']=[{'action':'place_semantic_group_individually','semantic_group':g['id'],
                                 'materials':'Listed protective sheets and retained source packing states',
                                 'instruction':'Place original units separately in the checked sequence; preserve same-type neighbors.'} for g in ordered]
-    return generated['patterns']
+    return carton_orientation_patterns(generated['patterns'],spec['inner_wall_mm'])

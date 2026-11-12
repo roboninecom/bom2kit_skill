@@ -248,6 +248,15 @@ def test_supported_pair_rotates_child_inside_a_rectangular_recess(tmp_path):
     tiled=tile_modules(modules,time_limit=.1,max_types=1)['candidate']
     result=build_candidate({'units':'mm','items':items},policy,modules,tiled)
     assert result['practical']['valid'],(result['practical']['support'].get('errors'),result['practical']['hand_access'].get('failures'))
+    from bom2kit.concept_patterns import carton_orientation_patterns
+    turned=carton_orientation_patterns([pattern],policy['carton']['inner_wall_mm'])[-1]
+    assert turned['carton_quarter_turn']
+    assert turned['external_mm']==[pattern['external_mm'][1],pattern['external_mm'][0],pattern['external_mm'][2]]
+    modules=[{'family':'print','items':items,'patterns':[turned]}]
+    tiled=tile_modules(modules,time_limit=.1,max_types=1)['candidate']
+    checked=build_candidate({'units':'mm','items':items},policy,modules,tiled)
+    assert checked['practical']['valid']
+    assert len(checked['practical']['protective_separators'])==1
 
 
 def test_cached_pair_reuses_geometry_with_new_unit_ids_and_preserved_clearance(tmp_path):

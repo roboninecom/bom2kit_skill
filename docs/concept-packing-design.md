@@ -51,6 +51,10 @@ preserved and later concepts may reunite them. Packets are never opened by this 
    block. Six-face foam, cardboard walls and the no-interbox-spacer rule are retained.
    Joint refinement feeds only footprints generated during this invocation back
    into the same source groups.
+   Intact source-based carton patterns retain a horizontal quarter-turn option;
+   source poses, contact sheets and geometric zone metadata rotate together.
+   This preserves gravity support and avoids relying on an independently
+   regenerated floor pattern to rediscover the opposite carton footprint.
 5. Optional source-surface refinement tries smaller footprints and real 3D support
    surfaces within each compatible carton, with soft type/assembly affinity. It preserves the unrefined geometric
    proposal when no smaller complete arrangement is found. Independent replay can
