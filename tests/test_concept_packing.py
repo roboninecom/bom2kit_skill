@@ -82,6 +82,34 @@ def test_compact_concept_does_not_buy_extra_cartons_only_for_more_labels():
     assert len(beam['states'][0])==1
 
 
+def test_repeated_group_split_can_reunite_without_duplicating_original_units(tmp_path):
+    from bom2kit.part_properties import replicated_groups,coalesce_items
+    library,policy,bom=inputs(tmp_path);library['items'][0]['quantity']=4
+    bom['components'][0]['quantity']=4
+    options={i['id']:stable_pose_options(i) for i in library['items']}
+    cards=describe_parts(library,policy,options)['cards']
+    groups=replicated_groups(library,cards,options,policy)
+    assert any(g['semantic_mode']=='replicated' for g in groups)
+    merged=coalesce_items([i for g in groups for i in g['items']])
+    assert {i['id']:i['quantity'] for i in merged}=={i['id']:i['quantity'] for i in library['items']}
+    assert len({uid for i in merged for uid in i['packing_unit_ids']})==8
+    with pytest.raises(ValueError,match='duplicate source'):
+        coalesce_items([merged[0],merged[0]])
+    run=design_concepts(library,policy,bom,seconds=.5,beam_width=4,carton_counts=(2,3),type_caps=(3,),
+        motif_modes=('rows',),grouping_modes=('replicated',),placement_style='cohesive',max_replays=1,refinement_budget=0)
+    assert run['status']=='verified',run['trials']
+    assert len(run['results'][0]['layout']['placements'])==8
+
+
+def test_manual_material_screen_rejects_tiny_cut_patches_without_changing_geometry():
+    from bom2kit.concept_patterns import manual_pattern_screen
+    pattern={'protective_separators':[{'lower_unit_id':'a','upper_unit_id':'b','dimensions_mm':[.7,1.6,2]}]}
+    original=deepcopy(pattern)
+    assert manual_pattern_screen(pattern)['valid'] is False
+    assert pattern==original
+    assert manual_pattern_screen({'protective_separators':[]})['valid'] is True
+
+
 def test_access_row_compaction_preserves_clearance_for_near_disjoint_x():
     from bom2kit.regular_patterns import compact_access_rows
     units=[{'unit_id':'a','dimensions':[10,10,10]}, {'unit_id':'b','dimensions':[10,10,25]}]
@@ -104,6 +132,32 @@ def test_equal_bounding_boxes_do_not_erase_opposite_supported_faces(tmp_path):
     assert np.allclose(sorted(upright[0]['dimensions_mm'][:2]),sorted(upright[1]['dimensions_mm'][:2]),atol=.05)
     assert any(np.dot(a['contact_frame_signature'],b['contact_frame_signature'])<-.999 for a in upright for b in upright)
     assert all(p['contact']['valid'] for p in options)
+
+
+def test_compact_surface_search_uses_a_real_cavity_before_unused_floor(tmp_path):
+    from bom2kit.source_surfaces import propose
+    from bom2kit.practical_geometry import contact_certificate
+    from bom2kit.practical_design import build_candidate
+    from bom2kit.carton_tiling import tile_modules
+    bottom=trimesh.creation.cylinder(radius=25,height=5,sections=32);bottom.apply_translation([25,25,2.5])
+    rim=trimesh.creation.annulus(r_min=20,r_max=25,height=25,sections=32);rim.apply_translation([25,25,17.5])
+    cup=trimesh.util.concatenate([bottom,rim])
+    child=trimesh.creation.box([20,20,10]);child.apply_translation(-child.bounds[0])
+    items=[];options={}
+    for iid,mesh in [('cup',cup),('child',child)]:
+        path=tmp_path/(iid+'.json');path.write_text(json.dumps({'units':'mm','vertices_mm':mesh.vertices.tolist(),'triangles':mesh.faces.tolist()}))
+        items.append({'id':iid,'quantity':1,'mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}})
+        options[iid]=[{'dimensions_mm':mesh.extents.tolist(),'transform':np.eye(4).tolist(),'contact':contact_certificate(mesh)}]
+    generated=propose(items,options,[110,90],1,1.5,border=9,seconds=3,objective='volume',
+        compact_voids=True,semantic_labels={'cup':'frames','child':'blocks'})
+    assert generated['status']=='complete_source_surface_proposal'
+    assert generated['supported_units']==1
+    assert generated['pattern']['external_mm'][2]<=35
+    _,policy,_=inputs(tmp_path);policy['families']={'cup':'print','child':'print'}
+    modules=[{'family':'print','items':items,'patterns':[generated['pattern']]}]
+    tile=tile_modules(modules,time_limit=.1,max_types=1)['candidate']
+    result=build_candidate({'units':'mm','items':items},policy,modules,tile)
+    assert result['practical']['valid']
 
 
 def test_cached_pair_reuses_geometry_with_new_unit_ids_and_preserved_clearance(tmp_path):
@@ -167,6 +221,23 @@ def test_stack_motifs_do_not_mix_semantic_groups(tmp_path):
     columns,expanded=make_flat_columns(units,choices,items,1,200,max_overhang_fraction=0)
     assert len(columns)==2
     assert all(len({m['unit']['cohesion_group'] for m in group['members']})==1 for group in expanded.values())
+
+
+def test_small_contact_cut_rejects_only_that_stack_not_the_valid_neighbors(tmp_path):
+    from bom2kit.regular_stacks import make_flat_columns
+    from bom2kit.practical_geometry import contact_certificate
+    sources={};choices={};units=[]
+    for iid,dims in [('wide',[20,20,5]),('thin',[30,2,5])]:
+        mesh=trimesh.creation.box(dims);mesh.apply_translation(-mesh.bounds[0])
+        path=tmp_path/(iid+'.json');path.write_text(json.dumps({'units':'mm','vertices_mm':mesh.vertices.tolist(),'triangles':mesh.faces.tolist()}))
+        sources[iid]={'id':iid,'quantity':2,'mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}}
+        choices[iid]=(0,{'transform':np.eye(4).tolist(),'dimensions_mm':dims,'contact':contact_certificate(mesh)})
+        units.extend({'item_id':iid,'unit_id':f'{iid}#{n+1}','cohesion_group':iid,'dimensions':[d+2 for d in dims]} for n in range(2))
+    columns,expanded=make_flat_columns(units,choices,sources,1,30,max_overhang_fraction=0,minimum_sheet_side=10)
+    assert len(columns)==3
+    sheets=[sheet for group in expanded.values() for sheet in group['separators']]
+    assert len(sheets)==1 and sheets[0]['lower_unit_id'].startswith('wide#')
+    assert {m['unit']['unit_id'] for group in expanded.values() for m in group['members']}=={u['unit_id'] for u in units}
 
 
 @pytest.mark.parametrize('style',['zones','cohesive'])

@@ -16,6 +16,7 @@ from bom2kit.transport_validation import validate_transport
 from bom2kit.packing_illustrations import exploded_scene,render_scene
 from bom2kit.part_properties import describe_parts,organization_metrics
 from bom2kit.retention_screen import screen_retention
+from bom2kit.space_use import measure_space_use
 from build_visual_packing_guide import load_geometry
 
 
@@ -48,7 +49,7 @@ def render(config_path,output):
         if 'practical' not in after:raise ValueError('A practical candidate is required')
         annotations=json.loads(Path(case['annotations']).read_bytes()) if case.get('annotations') else None
         cards=describe_parts(after['input'],after['logistics']['policy'],annotations=annotations)['cards']
-        images=[];metrics=[];plans=[];checks=[];organizations=[];retention=[]
+        images=[];metrics=[];plans=[];checks=[];organizations=[];retention=[];space=[]
         for label,result in (('before',before),('after',after)):
             geometry=validate_mesh_layout(result['input'],result['layout'])
             transport=validate_transport(result,result['logistics']['policy'])
@@ -60,6 +61,7 @@ def render(config_path,output):
             retention.append(screen_retention(result))
             (directory/(label+'-assembly-plan.json')).write_text(json.dumps(plan,indent=2),encoding='utf8')
             _,meshes=load_geometry(result)
+            space.append(measure_space_use(result,meshes))
             modules=[next(m for m in result['logistics']['modules'] if m['id']==entry['id']) for entry in plan['cartons_in_outer_insertion_order']]
             scene,labels,_=exploded_scene(result,modules,meshes)
             image=directory/(label+'.png');render_scene(scene,image,labels=labels,size=(1000,1200),trim=True)
@@ -85,8 +87,8 @@ def render(config_path,output):
               ['Extra orientations / SKU splits',*[f"{m['additional_sku_orientations']} / {m['split_source_skus']}" for m in metrics],'Not counted'],
               ['Type cohabitation pairs / fragments',*[f"{o['type']['mixed_group_pairs']} / {o['type']['additional_spatial_fragments']}" for o in organizations],'Not measurable from illustration'],
               ['Units with free travel > 5 mm',*[str(r['units_with_demonstrated_movement']) for r in retention],'Not replayed'],
-              ['Actual support / finger replay','Pass / pass' if 'practical' in before else 'Not checked by old engine','Pass / pass','Not replayed'],
-              ['Recorded run, seconds',str(case.get('before_seconds','Not recorded')),f'{after_seconds:.1f}' if after_seconds is not None else 'Partial run; see audit','Not measured']]
+              ['Outside protected bounds, L',*[f"{s['space_outside_protected_bounds_l']:.2f}" for s in space],'Not replayed'],
+              ['Recorded run, seconds',f"{case['before_seconds']:.1f}" if isinstance(case.get('before_seconds'),(float,int)) else 'Not recorded',f'{after_seconds:.1f}' if after_seconds is not None else 'Partial run; see audit','Not measured']]
         pdf.setFillColor(colors.HexColor('#0f172a'));pdf.setFont('Helvetica-Bold',18)
         pdf.drawString(margin,height-32,case['kit']+' | Practical packing comparison')
         pdf.setFont('Helvetica-Bold',10);pdf.setFillColor(colors.HexColor('#9a3412') if delta>0 else colors.HexColor('#166534'))
@@ -107,9 +109,9 @@ def render(config_path,output):
         _,table_height=table.wrap(available,220);table.drawOn(pdf,margin,306-table_height)
         spec=after['logistics']['policy']['carton'];grip=after['practical']['hand_access']['parameters']
         notes=[
-            'Gray = source CAD; tan = declared factory carton; blue = packet; purple = declared envelope, not an extra box. Views use independent camera scales.',
+            'Gray = CAD; tan = factory carton; blue = packet; purple = declared envelope. Independent camera scales. Original geometry, support and access replay pass.',
             f"Before/after keep the same sources, {spec['protection_mm']:g} mm six-face foam, {spec['wall_mm']:g} mm outer wall, {spec['inner_wall_mm']:g} mm inner walls and declared part protection. Finger model: {grip['radius_mm']:g} mm radius, up to {grip['insertion_depth_mm']:g} mm engagement, vertical paths.",
-            'Cohabitation counts shared-carton type pairs; fragments use 10 mm AABB adjacency. Same cards score both layouts. These are organization proxies.',
+            'Cohabitation counts shared-carton type pairs; fragments use 10 mm AABB adjacency. Empty space outside protected bounds is a lower bound, not usable capacity.',
             'Free travel is a conservative geometric diagnostic, not a transport standard. Blocked/overlapping bounds do not prove restraint. Strength and shipping performance remain unqualified.',
             'Placements are not measured labor. Forming/closure add work. Timings use prepared meshes and warm pose caches; concurrent runs are not a controlled speed comparison.',
             case.get('note','')]
@@ -126,6 +128,7 @@ def render(config_path,output):
                 'after_seconds':after_seconds,'note':case.get('note'),'physical_qualification':False}
         record['organization']=dict(zip(('before','after'),organizations))
         record['retention_screen']=dict(zip(('before','after'),retention))
+        record['space_use']=dict(zip(('before','after'),space))
         record['evaluation_cards']=cards
         records.append(record)
         def picture(path):return 'data:image/png;base64,'+base64.b64encode(path.read_bytes()).decode()

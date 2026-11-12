@@ -5,6 +5,7 @@ two facing item-padding allowances; geometry is not shrunk to manufacture contac
 """
 import math
 from functools import lru_cache
+from .part_properties import motif_neighbors
 
 
 @lru_cache(maxsize=512)
@@ -178,7 +179,7 @@ def removal_stability_checker(meshes,sheets,floor_z):
     return stable
 
 
-def make_flat_columns(units,choices,source_items,padding,max_height,*,max_count=4,max_overhang_fraction=.25):
+def make_flat_columns(units,choices,source_items,padding,max_height,*,max_count=4,max_overhang_fraction=.25,minimum_sheet_side=0.):
     """Form bounded compatible stacks; only actual parts/factory cartons support others."""
     import numpy as np
     from shapely.affinity import translate
@@ -199,7 +200,7 @@ def make_flat_columns(units,choices,source_items,padding,max_height,*,max_count=
         while len(members)<max_count and topkind in ('source_part','factory_carton'):
             options=[]
             for index,unit in enumerate(pending):
-                if unit.get('cohesion_group')!=base.get('cohesion_group'):
+                if not motif_neighbors(unit,base):
                     continue
                 dims=unit['dimensions']
                 if size[2]+dims[2]>max_height+1e-7 or any(dims[k]>size[k]*(1+max_overhang_fraction)+1e-7 for k in (0,1)):
@@ -215,6 +216,7 @@ def make_flat_columns(units,choices,source_items,padding,max_height,*,max_count=
                 center=Point(np.asarray(surface['center'][:2])+np.asarray(offset[:2])+padding)
                 hull=contact.convex_hull
                 if contact.area<=1e-6 or not hull.covers(center) or hull.boundary.distance(center)<.05:continue
+                if min(contact.bounds[2]-contact.bounds[0],contact.bounds[3]-contact.bounds[1])<minimum_sheet_side-1e-7:continue
                 options.append((unit['item_id']!=members[-1]['unit']['item_id'],-math.prod(dims[:2]),index,offset,contact,base_shift,new_footprint))
             if not options:break
             _,_,index,offset,contact,base_shift,new_footprint=min(options,key=lambda entry:entry[:3])

@@ -10,6 +10,17 @@ from time import perf_counter
 
 from .regular_patterns import floor_patterns
 from .strip_packing import pack_strip
+from .part_properties import coalesce_items
+
+
+def manual_pattern_screen(pattern,minimum_sheet_side_mm=10.):
+    """Declared manual-cutting assumption, not a material-strength standard."""
+    rejected=[{'lower_unit_id':s['lower_unit_id'],'upper_unit_id':s['upper_unit_id'],
+               'dimensions_mm':s['dimensions_mm']} for s in pattern.get('protective_separators',[])
+              if min(s['dimensions_mm'][:2])<minimum_sheet_side_mm-1e-7]
+    return {'valid':not rejected,'minimum_contact_sheet_side_mm':minimum_sheet_side_mm,
+            'basis':'Declared manual handling/cutting assumption; supplier capability unmeasured',
+            'rejected_contact_sheets':rejected,'physical_qualification':False}
 
 
 def diverse_patterns(patterns, limit=10):
@@ -150,17 +161,17 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
     return diverse_patterns(candidates, 16)
 
 
-def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=None):
+def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=None,minimum_sheet_side=10.):
     """Generate source-derived motifs; all outputs still require independent replay."""
     if mode=='hybrid':
-        generated=[group_patterns(group,options,policy,seconds=seconds/3,mode=m,cache=cache)
+        generated=[group_patterns(group,options,policy,seconds=seconds/3,mode=m,cache=cache,minimum_sheet_side=minimum_sheet_side)
                    for m in ('rows','stacks','alternating')]
         return {'patterns':diverse_patterns([p for g in generated for p in g['patterns']],20),
                 'diagnostics':[d for g in generated for d in g['diagnostics']]}
     wall = policy["carton"]["inner_wall_mm"]; padding = policy["item_padding_mm"]
     gap = policy["carton"]["gap_mm"]; zones = []; diagnostics = []
     for item in group["items"]:
-        key = (item["id"], item["quantity"], tuple(item.get("packing_unit_ids", [])), mode)
+        key = (item["id"], item["quantity"], tuple(item.get("packing_unit_ids", [])), mode,minimum_sheet_side)
         cached = cache.get(key) if cache is not None else None
         if cached is None:
             patterns = repeated_rows(item, options, padding, wall, gap=gap)
@@ -168,7 +179,7 @@ def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=Non
                 try:
                     generated = floor_patterns([item], options, padding, wall, gap=gap, seconds=max(.1, seconds/max(1, len(group["items"]))),
                                                hand_border=0., access_lane_mm=6.4,
-                                               stack_overhang_fraction=0.,
+                                               stack_overhang_fraction=0.,minimum_sheet_side=minimum_sheet_side,
                                                stack_height_factor=3. if mode == "stacks" else 1.5,
                                                supported_nesting=mode == "nesting")
                     patterns.extend(generated["patterns"])
@@ -188,7 +199,7 @@ def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=Non
                                        seconds=seconds, hand_border=0., access_lane_mm=6.4,
                                        floor_pair_budget=seconds if mode == "alternating" else 0.,
                                        stack_height_factor=1.5 if mode == "nesting" else 0.,
-                                       supported_nesting=mode == "nesting")
+                                       supported_nesting=mode == "nesting",minimum_sheet_side=minimum_sheet_side)
             for p in generated["patterns"]:
                 pairs = p.get("supported_pairs", []) if mode == "nesting" else p.get("individual_floor_pairs", [])
                 if not pairs:
@@ -207,32 +218,34 @@ def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=Non
 
 
 def cohesive_carton_patterns(groups, options, policy, *, seconds=2., mode="rows", hand_border=7.2,
-                             access_lane=6.4, packing_gap=None,target_footprints=(),semantic_order='portfolio'):
+                             access_lane=6.4, packing_gap=None,target_footprints=(),semantic_order='portfolio',minimum_sheet_side=10.):
     """Keep meaningful neighbors without assigning rectangular private zones."""
     if mode=='hybrid':
         return diverse_patterns([p for m in ('rows','stacks','alternating')
             for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/3,mode=m,
                 hand_border=hand_border,access_lane=access_lane,packing_gap=packing_gap,
-                target_footprints=target_footprints,semantic_order=semantic_order)],24)
+                target_footprints=target_footprints,semantic_order=semantic_order,minimum_sheet_side=minimum_sheet_side)],24)
     if semantic_order=='portfolio':
         return diverse_patterns([p for order in ('group','area')
             for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/2,mode=mode,
                 hand_border=hand_border,access_lane=access_lane,packing_gap=packing_gap,
-                target_footprints=target_footprints,semantic_order=order)],24)
+                target_footprints=target_footprints,semantic_order=order,minimum_sheet_side=minimum_sheet_side)],24)
     ordered = sorted(groups, key=lambda g: (-max(min(max(o['dimensions_mm']) for o in options[i['id']]) for i in g['items']), g['id']))
-    items = [i for g in ordered for i in g['items']]
-    labels = {i['id']: g['id'] for g in ordered for i in g['items']}
+    items = coalesce_items([i for g in ordered for i in g['items']])
+    labels = {i['id']: g.get('semantic_parent',g['id']) for g in ordered for i in g['items']}
+    affinities={iid:values for g in ordered for iid,values in g.get('nesting_affinities',{}).items()}
     spec = policy['carton']
     generated = floor_patterns(items, options, policy['item_padding_mm'], spec['inner_wall_mm'],
         gap=max(spec['gap_mm'],packing_gap or 0.), seconds=seconds, hand_border=hand_border, access_lane_mm=access_lane,
         target_footprints=target_footprints,
         semantic_order=semantic_order,
-        semantic_labels=labels, stack_height_factor=2.5 if mode=='stacks' else 1.5 if mode=='nesting' else 0.,
-        stack_overhang_fraction=0.,
+        semantic_labels=labels,semantic_affinities=affinities,
+        stack_height_factor=2.5 if mode=='stacks' else 1.5 if mode=='nesting' else 0.,
+        stack_overhang_fraction=0.,minimum_sheet_side=minimum_sheet_side,
         supported_nesting=mode=='nesting', floor_pair_budget=seconds if mode=='alternating' else 0.)
     for p in generated['patterns']:
         p['method']='cohesive_'+p['method']
-        p['semantic_zones']=[{'id':g['id'],'unit_ids':[q['unit_id'] for q in p['placements'] if labels[q['item_id']]==g['id']],
+        p['semantic_zones']=[{'id':g['id'],'unit_ids':[uid for i in g['items'] for uid in i.get('packing_unit_ids',[f"{i['id']}#{n+1}" for n in range(i['quantity'])])],
                               'physical_container':False,'constraint':'soft adjacency, no reserved rectangle'} for g in ordered]
         p['motif_operations']=[{'action':'place_semantic_group_individually','semantic_group':g['id'],
                                 'materials':'Listed protective sheets and retained source packing states',

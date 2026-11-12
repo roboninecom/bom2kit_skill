@@ -1,11 +1,21 @@
 """PackingSolver polygon proposals on complete stable-pose projections."""
 from collections import Counter
+from functools import lru_cache
 import json
 import math
 from pathlib import Path
 import subprocess
 import tempfile
 from time import perf_counter
+
+
+@lru_cache(maxsize=256)
+def _source_projection(path,digest,transform):
+    import numpy as np
+    from .practical_geometry import load_mesh,projected_polygon
+    mesh=load_mesh({'mesh':{'path':path,'sha256':digest}})
+    mesh.apply_transform(np.asarray(transform).reshape(4,4))
+    return projected_polygon(mesh)
 
 
 def polygon_data(polygon):
@@ -28,7 +38,8 @@ def propose(items,options,seed,padding,wall,*,executable,time_limit=3.,gap=.2,ha
     if width<=0:return {'status':'invalid_width'}
     for item in items:
         option=options[item['id']][seed['stable_sku_orientations'][item['id']]]
-        projection=shape(option['footprint'])
+        projection=(shape(option['footprint']) if 'footprint' in option else
+                    _source_projection(item['mesh']['path'],item['mesh']['sha256'],tuple(np.asarray(option['transform']).ravel())))
         full=projection.buffer(padding,join_style='round')
         extra=max(0.,access_lane_mm-gap)/2
         if extra:
@@ -55,6 +66,7 @@ def propose(items,options,seed,padding,wall,*,executable,time_limit=3.,gap=.2,ha
     depth=sum(max(g.bounds[2],g.bounds[3])*i['quantity']+gap*i['quantity'] for g,i in zip(geometries,items))
     data={'objective':'open-dimension-y','bin_types':[{'type':'rectangle','width':width,'height':depth,'copies':1}],
           'item_types':definitions}
+    preparation=perf_counter()-started
     with tempfile.TemporaryDirectory(prefix='bom2kit-irregular-') as directory:
         source=Path(directory)/'input.json';target=Path(directory)/'solution.json'
         source.write_text(json.dumps(data),encoding='utf8')
@@ -103,5 +115,5 @@ def propose(items,options,seed,padding,wall,*,executable,time_limit=3.,gap=.2,ha
              'placements':original,'method':'packingsolver_stable_projection_floor',
              'preassemblies':0,'stable_sku_orientations':seed['stable_sku_orientations']}
     pattern['access_lane_mm']=access_lane_mm
-    return {'status':'validated_planar_proposal','pattern':pattern,'seconds':perf_counter()-started,
+    return {'status':'validated_planar_proposal','pattern':pattern,'seconds':perf_counter()-started,'preparation_seconds':preparation,
             'validation':check,'source_mesh_replay_required':True}

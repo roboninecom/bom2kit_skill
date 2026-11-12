@@ -15,10 +15,14 @@ protection or use a part as a structural support. Unknown materials remain unkno
 The optional annotation JSON maps item IDs to `part_type`, `assembly`, `material`
 or `fragility`, each with `value`, `status` and `source`.
 
-Grouping modes are `assembly`, `type`, `sku`, `shape` and `adaptive`. Shape cohorts
+Grouping modes are `assembly`, `type`, `sku`, `shape`, `adaptive`, `adaptive_type`
+and `replicated`. Shape cohorts
 use Trimesh's rigid-invariant descriptor only to suggest neighbors; every original
 mesh and identity remains in the final replay. Adaptive grouping splits whole SKUs
 when height/footprint estimates justify the added group, and permits later reunion.
+`adaptive_type` applies that split to type groups. `replicated` also proposes two
+balanced repetitions when a group contains repeated units; original unit IDs are
+preserved and later concepts may reunite them. Packets are never opened by this split.
 
 ## Search and geometry
 
@@ -39,7 +43,7 @@ when height/footprint estimates justify the added group, and permits later reuni
    Joint refinement feeds only footprints generated during this invocation back
    into the same source groups.
 5. Optional source-surface refinement tries smaller footprints and real 3D support
-   surfaces within each semantic group. It preserves the unrefined geometric
+   surfaces within each compatible carton, with soft type/assembly affinity. It preserves the unrefined geometric
    proposal when no smaller complete arrangement is found. Independent replay can
    still reject either proposal.
 6. Validation failures identify affected cartons. Local repair keeps unaffected
@@ -52,6 +56,32 @@ Pair motifs cache source-relative transforms keyed by both source hashes, frames
 and protection. Reuse creates fresh unit identities. Cached proposal success never
 substitutes for original-mesh clearance or insertion replay. Timed failure is not
 cached as infeasibility. Stable-pose preparation is also reusable and separately timed.
+Already explored bounded pair probes can be deferred until a larger budget is
+available; other partners remain eligible. Source-hash equality allows repeated
+geometry at different paths to share a proposal, never an identity. Vertex-plane
+offsets complement coarse pair sampling; FCL still checks original triangle clearance.
+
+Motifs prefer shared type **or** assembly labels within the hard compatibility
+family. Compact 3D proposals retain separately ranked empty-floor fallbacks so a
+bounded queue of colliding cavity candidates cannot hide all free positions.
+The `--minimum-sheet-side 10` default rejects generated contact sheets with width
+or depth below 10 mm. This is an explicit manual cutting/handling assumption,
+not a strength or cushioning standard; source packets remain unchanged.
+The check acts while selecting individual interfaces so one tiny contact does
+not discard every otherwise valid stack in a carton. Final replay and the guide
+recompute the material screen from the actual sheet dimensions.
+
+Source-surface refinement includes a footprint-first alternative, with a height
+cap derived from the minimum-footprint stable source orientations. A low existing
+carton must not accidentally forbid those taller poses. This remains a proposal;
+actual contact, complete intermediate load states and individual access decide acceptance.
+
+`--irregular-solver PATH --irregular-budget 150` optionally invokes the installed
+PackingSolver Irregular binary on full projected source outlines. Projections are
+prepared lazily for selected stable frames and cached within the invocation.
+The solver preserves compatible-carton membership; it does not promise type
+adjacency. Report measured organization and retain the simpler in-run fallback
+if original geometry, access, or subsequent repair rejects an apparent improvement.
 
 `--preserve-contact-faces` retains different stable support faces with equal
 bounding dimensions, including opposite orientations. Floor pairs may reuse the
@@ -94,6 +124,11 @@ transport standard. Overlapping bounds are indeterminate; blocked bounds do not
 prove restraint. Friction, rotation, bag compliance, cushion performance and drop/
 vibration tests remain outside this screen. Geometric acceptance must never be
 presented as shipping qualification.
+
+`space_use.py` measures the exact union of protected source AABBs and declared
+liners/contact sheets inside each cavity. Space outside that union is a lower
+bound on unoccupied volume, not usable extra capacity; concave source shapes can
+have additional internal voids. Report it separately from wall/outer-foam overhead.
 
 Render only independently passing results with `build_visual_packing_guide.py`.
 Preserve full current BOMs, the confirmed 106 mm clamp, 1.5 mm inner walls and the

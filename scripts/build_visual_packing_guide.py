@@ -31,6 +31,16 @@ def bound_property_cards(result,properties_path=None):
     return properties['cards']
 
 
+def check_manual_materials(result):
+    """Recompute the declared cutting screen; never trust a stored pass flag."""
+    from bom2kit.concept_patterns import manual_pattern_screen
+    declared=result.get('concept',{}).get('manual_material_screen',{})
+    checked=manual_pattern_screen(result.get('practical',{}),declared.get('minimum_contact_sheet_side_mm',10.))
+    if declared.get('valid') is False or not checked['valid']:
+        raise ValueError('Failed manual-material screen: use a diagnostic mesh report instead of an operator guide')
+    return checked
+
+
 def load_geometry(result):
     import trimesh
     sources={}
@@ -79,6 +89,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     raw=Path(result_path).read_bytes();bom_raw=Path(bom_path).read_bytes()
     result=json.loads(raw);bom=json.loads(bom_raw)
+    check_manual_materials(result)
     property_cards=bound_property_cards(result,properties_path)
     checks=validate_transport(result,result['logistics']['policy'])
     if not checks['valid']:raise ValueError(checks['errors'])
@@ -189,14 +200,25 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
         rows=[[P('<b>Part</b>','CellGuide'),P(f'<b>BOX {n} - source / packing state</b>','CellGuide'),P('<b>Qty</b>','CellGuide'),P('<b>Slots</b>','CellGuide')]]
         entries=sorted(r['counts'].items(),key=lambda entry:(property_cards.get(entry[0],{}).get('part_type',{}).get('value',''),entry[0])) if property_cards else r['counts'].items()
         for iid,count in entries:
-            item=items[iid];description=f'<b>{escape(name(item))}</b><br/>{escape(iid)}'
+            item=items[iid];display_name=name(item)
             category=property_cards.get(iid,{}).get('part_type',{}).get('value')
-            if category and category!='unclassified':
+            if category and category!='unclassified' and any(s in display_name.lower() for s in ('.stl','.3mf','.step')):
+                display_name=str(category).replace('_',' ').capitalize()
+            description=f'<b>{escape(display_name)}</b><br/>{escape(iid)}'
+            if category and category!='unclassified' and display_name.lower()!=str(category).replace('_',' ').lower():
                 description+='<br/>Group: '+escape(str(category).replace('_',' '))
             state=declared_state(item)
-            description+='<br/>'+escape(state['kind'].replace('_',' '))+' | '+escape(state['measurement_status'].replace('_',' '))
-            if item.get('packing_state'):description+='<br/>'+escape(str(item['packing_state']))
-            if item.get('contents'):description+='<br/>Per packet: '+escape('; '.join(f'{q} x {key}' for key,q in item['contents'].items()))
+            state_label={'source_part':'Original CAD part','factory_carton':'Factory carton',
+                         'protective_packet':'Protective packet',
+                         'declared_envelope':'Declared envelope'}[state['kind']]
+            if state['kind']!='source_part':
+                evidence={'measured':'measured dimensions','supplier_verified':'supplier dimensions',
+                          'declared_estimate':'estimated dimensions'}.get(state.get('measurement_status'),'dimension evidence requires review')
+                state_label+=' - '+evidence
+            description+='<br/>'+state_label
+            contents=item.get('contents',{})
+            if state['kind']=='protective_packet' or (contents and contents!={iid:1}):
+                description+='<br/>Contents per unit: '+escape('; '.join(f'{q} x {key}' for key,q in contents.items()))
             rows.append([pic(thumbnails[iid],48,38),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
         flow.append(table(rows,[62,width-62-36-90,36,90],compact=True))
     if plan['templates']:

@@ -6,6 +6,7 @@ box top cannot. Geometry, padding, support and grip paths require final replay.
 import math
 from functools import lru_cache
 from time import perf_counter
+from .part_properties import motif_neighbors
 
 
 @lru_cache(maxsize=256)
@@ -23,7 +24,7 @@ def _surfaces(path,digest,transform):
     return mesh,shelves,horizontal_cap(mesh,mesh.bounds[0,2],normal_sign=-1)
 
 
-def make_supported_pairs(units,choices,source_items,padding,gap,max_height,*,seconds=3):
+def make_supported_pairs(units,choices,source_items,padding,gap,max_height,*,seconds=3,minimum_sheet_side=0.):
     import numpy as np
     import trimesh
     from shapely.affinity import translate
@@ -42,7 +43,7 @@ def make_supported_pairs(units,choices,source_items,padding,gap,max_height,*,sec
         best=None
         if declared_state(source_items[first['item_id']])['kind'] in ('source_part','factory_carton') and perf_counter()<deadline:
             manager=trimesh.collision.CollisionManager();manager.add_object('lower',a)
-            eligible=[(i,u) for i,u in enumerate(pending) if u.get('cohesion_group')==first.get('cohesion_group') and all(u['dimensions'][k]<=first['dimensions'][k]*1.25 for k in (0,1))]
+            eligible=[(i,u) for i,u in enumerate(pending) if motif_neighbors(u,first) and all(u['dimensions'][k]<=first['dimensions'][k]*1.25 for k in (0,1))]
             ranked=sorted(eligible,key=lambda iu:(iu[1]['item_id']!=first['item_id'],-math.prod(iu[1]['dimensions'])))
             candidates=ranked[:8]+[entry for entry in ranked[-4:] if entry not in ranked[:8]]
             for index,unit in candidates:
@@ -70,6 +71,7 @@ def make_supported_pairs(units,choices,source_items,padding,gap,max_height,*,sec
                         # A rectangular protective sheet must also fit the cavity;
                         # disconnected contact pads cannot conceal a central boss.
                         x,y,right,back=contact.bounds
+                        if min(right-x,back-y)<minimum_sheet_side-1e-7:continue
                         sheet=trimesh.creation.box([right-x-.002,back-y-.002,2*padding+gap-.002])
                         sheet.apply_translation([(x+right)/2,(y+back)/2,plane+padding+gap/2])
                         if manager.in_collision_single(sheet):continue

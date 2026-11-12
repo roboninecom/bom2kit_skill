@@ -119,13 +119,23 @@ annotations guide grouping only; they never authorize reduced protection or load
 python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts --cache packaging-results/pose-cache --grouping type --motifs hybrid --placement-style cohesive --time-limit 180 --wall-limit 900 --max-replays 4 --refinement-budget 45 --surface-budget 60 --repair-budget 90
 ```
 
-Compare `assembly`, `type`, `shape` and `adaptive` grouping when names are incomplete
+Compare `assembly`, `type`, `shape`, `adaptive_type` and `replicated` grouping when names are incomplete
 or height differences waste space. Keep original identities even for geometrically
 similar parts. An annotation file may supply evidence-tagged type/assembly/material/
 fragility labels; it cannot replace geometry. Same-SKU rows, explicit protected
 stacks, alternating floor pairs and supported nesting remain individually handled.
 Existing protective packets retain their source contents; a newly proposed bag
 does not certify a rigid group, protection or restraint.
+`replicated` proposes balanced repetitions of groups with repeated units and permits
+later reunion, preserving original unit IDs. Pair/stack neighbors may share a type
+or assembly; hard material-family restrictions still apply. The default
+`--minimum-sheet-side 10` rejects contact cuts too small for the declared manual
+handling assumption. Report that assumption; it is not transport qualification.
+Optional `--irregular-solver PATH --irregular-budget 150` tests full concave source
+outlines inside the generated compatible cartons. It may alter same-type adjacency;
+compare organization and handling after original-source replay. Keep the earlier
+in-run proposal if contour placement or its repair is worse. A backend certificate
+alone is never an accepted packaging instruction.
 
 Try `--preserve-contact-faces` when equal-size opposite stable orientations have
 different nesting surfaces. It preserves source-derived alternatives; it does not

@@ -23,6 +23,16 @@ def fixture():
     return result,plan
 
 
+def test_manual_sheet_screen_is_recomputed_even_with_stored_pass_flag():
+    result={'concept':{'manual_material_screen':{'valid':True,'minimum_contact_sheet_side_mm':10.}},
+            'practical':{'protective_separators':[{'lower_unit_id':'base#1','upper_unit_id':'child#1',
+                                                'dimensions_mm':[.7,1.6,2.]}]}}
+    with pytest.raises(ValueError,match='manual-material'):
+        guide.check_manual_materials(result)
+    result['practical']['protective_separators'][0]['dimensions_mm']=[20,25,2]
+    assert guide.check_manual_materials(result)['valid']
+
+
 def test_numbering_follows_plan_not_source_layer_array():
     result,plan=fixture();original=deepcopy(result)
     records=guide.carton_records(result,plan)

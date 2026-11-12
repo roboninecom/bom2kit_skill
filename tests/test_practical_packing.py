@@ -29,7 +29,7 @@ def policy():
 
 
 def candidate(tmp_path,gap=9,border=9):
-    item,_=source(tmp_path);options={'part':stable_pose_options(item)}
+    item,_=source(tmp_path);options={'part':stable_pose_options(item,include_projection=False)}
     patterns=floor_patterns([item],options,1,1.5,gap=gap,hand_border=border,seconds=.2)
     modules=[{'family':'print','items':[item],**patterns}]
     tile=tile_modules(modules,time_limit=.1,max_types=1)['candidate']
@@ -273,7 +273,8 @@ def test_balanced_final_tree_can_still_have_no_stable_individual_order():
     assert stable({'base'})
 
 
-def test_surface_queue_keeps_free_floor_extremes_after_many_placements(tmp_path):
+@pytest.mark.parametrize('compact',[False,True])
+def test_surface_queue_keeps_free_floor_extremes_after_many_placements(tmp_path,compact):
     from bom2kit.source_surfaces import propose
     mesh=trimesh.creation.box([10,10,10]);mesh.apply_translation(-mesh.bounds[0])
     path=tmp_path/'cube.json'
@@ -281,7 +282,7 @@ def test_surface_queue_keeps_free_floor_extremes_after_many_placements(tmp_path)
     item={'id':'cube','quantity':36,'mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}}
     options={'cube':[{'transform':np.eye(4).tolist(),'dimensions_mm':[10,10,10],
                       'contact':contact_certificate(mesh)}]}
-    proposal=propose([item],options,[90,90],1,1.5,border=0,seconds=10,max_height=12)
+    proposal=propose([item],options,[90,90],1,1.5,border=0,seconds=10,max_height=12,compact_voids=compact)
     assert proposal['status']=='complete_source_surface_proposal'
     assert proposal['placed']==36 and proposal['supported_units']==0
     assert len({p['unit_id'] for p in proposal['pattern']['placements']})==36

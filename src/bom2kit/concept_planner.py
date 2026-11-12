@@ -6,9 +6,9 @@ from time import perf_counter
 
 from .assembly_plan import build_assembly_plan
 from .carton_tiling import tile_modules
-from .concept_patterns import compose_zones, group_patterns, cohesive_carton_patterns, diverse_patterns
+from .concept_patterns import compose_zones, group_patterns, cohesive_carton_patterns, diverse_patterns, manual_pattern_screen
 from .packing_states import declared_state
-from .part_properties import describe_parts, semantic_groups, adaptive_groups, organization_metrics
+from .part_properties import describe_parts, semantic_groups, adaptive_groups, replicated_groups, coalesce_items, organization_metrics
 from .practical_design import build_candidate
 from .practical_geometry import stable_pose_options
 from .report import fingerprint
@@ -177,7 +177,7 @@ def repair_concept(proposal, failed, options, policy, *, hand_border, finger_rad
     for index in failed:
         if individual and blocked.get(index):
             from .regular_patterns import floor_patterns
-            labels={i['id']:g['id'] for g in modules[index]['semantic_groups'] for i in g['items']}
+            labels={i['id']:g.get('semantic_parent',g['id']) for g in modules[index]['semantic_groups'] for i in g['items']}
             modules[index]['patterns']=diverse_patterns([p for order in ('group','area') for p in
                 floor_patterns(modules[index]['items'],options,policy['item_padding_mm'],spec['inner_wall_mm'],
                     seconds=.5,hand_border=hand_border,gap=spec['gap_mm'],access_lane_mm=lane,
@@ -197,7 +197,7 @@ def repair_concept(proposal, failed, options, policy, *, hand_border, finger_rad
         'finger_radius_mm':finger_radius,'thresholds_relaxed':False}}
 
 
-def refine_concept(proposal, options, policy, *, seconds=15., hand_border=7.2,access_lane=6.4):
+def refine_concept(proposal, options, policy, *, seconds=15., hand_border=7.2,access_lane=6.4,minimum_sheet_side=10.):
     """Feed generated outer-block footprints back into the same semantic groups."""
     started=perf_counter();current=deepcopy(proposal);rounds=[];spec=policy['carton']
     for iteration in range(3):
@@ -213,7 +213,8 @@ def refine_concept(proposal, options, policy, *, seconds=15., hand_border=7.2,ac
                 new=cohesive_carton_patterns(module['semantic_groups'],options,policy,
                     seconds=min(.5,remaining),mode=proposal['motif_mode'],hand_border=hand_border,
                     access_lane=access_lane,
-                    target_footprints=[leaf['external_mm'][:2]])
+                    target_footprints=[leaf['external_mm'][:2]],minimum_sheet_side=minimum_sheet_side)
+                new=[p for p in new if manual_pattern_screen(p,minimum_sheet_side)['valid']]
                 module['patterns'].extend(new);changed+=len(new)
             except ValueError:
                 pass
@@ -228,10 +229,10 @@ def refine_concept(proposal, options, policy, *, seconds=15., hand_border=7.2,ac
     return current
 
 
-def refine_source_surfaces(proposal, options, policy, *, seconds=60., hand_border=7.2):
+def refine_source_surfaces(proposal, options, policy, *, seconds=60., hand_border=7.2,minimum_sheet_side=10.):
     """Try compact, source-supported 3D arrangements within generated concepts.
 
-    No external recipe is loaded. Same-group support and individual insertion
+    No external recipe is loaded. Compatible-family support and individual insertion
     remain required; a successful proposal still needs the full independent replay.
     """
     from .source_surfaces import propose
@@ -241,17 +242,27 @@ def refine_source_surfaces(proposal, options, policy, *, seconds=60., hand_borde
         module=modules[leaf['module']]
         selected=proposal['modules'][leaf['module']]['patterns'][leaf['pattern']]
         module['patterns']=[deepcopy(selected)]
-        labels={i['id']:g['id'] for g in module['semantic_groups'] for i in g['items']}
-        for factor in (.85,.7,1.):
+        labels={i['id']:g.get('semantic_parent',g['id']) for g in module['semantic_groups'] for i in g['items']}
+        # A height cap inherited from a low floor layout can accidentally remove
+        # the tall stable poses that make a smaller floor possible. Derive the
+        # alternate cap from the sources, and explicitly explore footprint-first
+        # placement rather than assuming a low first placement is globally best.
+        upright_height=max(min(options[i['id']],key=lambda p:math.prod(p['dimensions_mm'][:2]))['dimensions_mm'][2]
+                           for i in module['items'])+2*policy['item_padding_mm']
+        for factor,objective in ((.85,'volume'),(.7,'footprint'),(1.,'volume')):
             remaining=seconds-(perf_counter()-started)
             if remaining<=0:break
             footprint=[math.ceil(v*factor) for v in selected['external_mm'][:2]]
             generated=propose(module['items'],options,footprint,policy['item_padding_mm'],spec['inner_wall_mm'],
                 gap=spec['gap_mm'],border=hand_border,seconds=min(8.,remaining),
-                max_height=selected['external_mm'][2]*1.5,objective='volume',semantic_labels=labels)
+                max_height=max(selected['external_mm'][2]*1.5,upright_height),objective=objective,semantic_labels=labels,compact_voids=True,
+                minimum_sheet_side=minimum_sheet_side)
             diagnostics.append({'module':leaf['module'],**{k:v for k,v in generated.items() if k!='pattern'}})
             if generated['status']=='complete_source_surface_proposal':
                 pattern=generated['pattern']
+                material_check=manual_pattern_screen(pattern,minimum_sheet_side)
+                diagnostics[-1]['manual_material_screen']=material_check
+                if not material_check['valid']:continue
                 pattern['semantic_zones']=deepcopy(selected.get('semantic_zones',[]))
                 pattern['motif_operations']=[{'action':'place_on_verified_source_surface',
                     'materials':'Enumerated protective contact sheets; retain source packing states',
@@ -267,14 +278,52 @@ def refine_source_surfaces(proposal, options, policy, *, seconds=60., hand_borde
     return result
 
 
+def refine_irregular_floors(proposal,options,policy,*,executable,seconds=60.,hand_border=7.2,access_lane=6.4):
+    """Explore concave source outlines within generated compatible cartons."""
+    from .irregular_floor import propose
+    started=perf_counter();modules=deepcopy(proposal['modules']);spec=policy['carton'];diagnostics=[]
+    for leaf in sorted(proposal['tiled']['leaves'],key=lambda l:-math.prod(l['external_mm'])):
+        module=modules[leaf['module']];selected=module['patterns'][leaf['pattern']]
+        seeds=[p for p in module['patterns'] if p.get('stable_sku_orientations') and
+               not p.get('protective_separators') and not p.get('individual_floor_pairs') and not p.get('supported_pairs')]
+        module['patterns']=[deepcopy(selected)]
+        if not any(declared_state(i)['kind']=='source_part' for i in module['items']):continue
+        if not seeds:
+            seeds=cohesive_carton_patterns(module['semantic_groups'],options,policy,seconds=.2,mode='rows',hand_border=hand_border,access_lane=access_lane)
+        chosen=[]
+        for key in (lambda p:math.prod(p['external_mm']),lambda p:math.prod(p['external_mm'][:2])):
+            seed=min(seeds,key=key)
+            if seed not in chosen:chosen.append(seed)
+        for seed in chosen:
+            remaining=seconds-(perf_counter()-started)
+            if remaining<=0:break
+            generated=propose(module['items'],options,seed,policy['item_padding_mm'],spec['inner_wall_mm'],
+                executable=executable,time_limit=min(10.,remaining),gap=spec['gap_mm'],hand_border=hand_border,
+                increment=spec['dimension_increment_mm'],access_lane_mm=access_lane)
+            diagnostics.append({'module':leaf['module'],**{k:v for k,v in generated.items() if k!='pattern'}})
+            if generated['status']=='validated_planar_proposal':
+                pattern=generated['pattern'];pattern['semantic_zones']=deepcopy(selected.get('semantic_zones',[]))
+                pattern['motif_operations']=[{'action':'place_individual_contour_floor',
+                    'materials':'Retained source protection and floor liner',
+                    'instruction':'Place each original unit in the independently checked sequence; inspect type organization.'}]
+                module['patterns'].append(pattern)
+    candidate=tile_modules(modules,time_limit=.5,wall=spec['wall_mm'],foam=spec['protection_mm'],
+        reserve=spec['reserved_top_mm'],max_types=proposal['type_cap'],increment=spec['dimension_increment_mm'])['candidate']
+    result=deepcopy(proposal)
+    if candidate and candidate['volume_mm3']<proposal['tiled']['volume_mm3']-1e-6:result.update(modules=modules,tiled=candidate)
+    result['irregular_refinement']={'seconds':perf_counter()-started,'proposals':diagnostics,
+        'reference_used':False,'grouping_constraint':'Hard compatible families; type adjacency measured after placement'}
+    return result
+
+
 def design_concepts(library, policy, bom, *, cache=None, annotations=None, seconds=180.,
                     beam_width=12, carton_counts=(3, 4, 5, 6, 7), type_caps=(3, 4, 7),
                     motif_modes=("rows", "stacks"), grouping_modes=("assembly",),
                     max_replays=6, hand_border=7.2, finger_radius=4., progress=None, callback=None,
-                    placement_style="zones",repair_budget=60.,proposal_callback=None,refinement_budget=45.,surface_budget=0.,access_lane=6.4,preserve_contact_faces=False):
+                    placement_style="zones",repair_budget=60.,proposal_callback=None,refinement_budget=45.,surface_budget=0.,access_lane=6.4,preserve_contact_faces=False,minimum_sheet_side=10.,irregular_executable=None,irregular_budget=0.):
     started = perf_counter()
     if (not math.isfinite(seconds) or seconds <= 0 or beam_width < 1 or max_replays < 1
-        or any(not math.isfinite(v) or v<0 for v in (repair_budget,refinement_budget,surface_budget,hand_border,access_lane))):
+        or any(not math.isfinite(v) or v<0 for v in (repair_budget,refinement_budget,surface_budget,irregular_budget,hand_border,access_lane,minimum_sheet_side))):
         raise ValueError("Positive finite budgets required")
     if not carton_counts or min(carton_counts) < 1 or max(carton_counts) > 7 or not type_caps or min(type_caps) < 1:
         raise ValueError("Invalid carton/type limits")
@@ -300,12 +349,17 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
     proposals = []; generation = []; patterns_cache = {}; motif_cache = {}; signatures = set()
     search_start = perf_counter()
     for grouping_mode in grouping_modes:
-        groups = (adaptive_groups(library,cards,options,policy,base_mode='type' if grouping_mode=='adaptive_type' else 'assembly')
+        groups = (replicated_groups(library,cards,options,policy) if grouping_mode=='replicated' else
+                  adaptive_groups(library,cards,options,policy,base_mode='type' if grouping_mode=='adaptive_type' else 'assembly')
                   if grouping_mode in ('adaptive','adaptive_type') else semantic_groups(library,cards,grouping_mode))
+        for group in groups:
+            group['nesting_affinities']={i['id']:[f'{field}:{cards[i["id"]][field]["value"]}'
+                for field in ('part_type','assembly') if cards[i['id']][field]['value'] not in ('unknown','unclassified')]
+                for i in group['items']}
         for mode in motif_modes:
             group_sets = []
             for group in groups:
-                generated = group_patterns(group, options, policy, seconds=1.5, mode=mode, cache=motif_cache)
+                generated = group_patterns(group, options, policy, seconds=1.5, mode=mode, cache=motif_cache,minimum_sheet_side=minimum_sheet_side)
                 if not generated["patterns"]:
                     raise ValueError("No complete source-derived semantic group pattern")
                 group_sets.append(generated["patterns"])
@@ -333,10 +387,14 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                                                               increment=spec["dimension_increment_mm"], seconds=.5))
                             if placement_style in ('cohesive','portfolio'):
                                 patterns.extend(cohesive_carton_patterns([groups[i] for i in members],options,policy,
-                                                                        seconds=.7,mode=mode,hand_border=hand_border,access_lane=access_lane))
+                                                                        seconds=.7,mode=mode,hand_border=hand_border,access_lane=access_lane,minimum_sheet_side=minimum_sheet_side))
+                            patterns=[p for p in patterns if manual_pattern_screen(p,minimum_sheet_side)['valid']]
+                            if not patterns:
+                                patterns=cohesive_carton_patterns([groups[i] for i in members],options,policy,
+                                    seconds=.5,mode='rows',hand_border=hand_border,access_lane=access_lane)
                             patterns_cache[key]=diverse_patterns(patterns,16)
                         modules.append({"family": groups[members[0]]["family"],
-                                        "items": [deepcopy(item) for i in members for item in groups[i]["items"]],
+                                        "items": coalesce_items([item for i in members for item in groups[i]["items"]]),
                                         "semantic_groups":[deepcopy(groups[i]) for i in members],
                                         "patterns": patterns_cache[key], "semantic_members": [groups[i]["id"] for i in members]})
                     if any(not m["patterns"] for m in modules):
@@ -373,13 +431,18 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
             if choices and choices[0] not in queue:
                 queue.append(choices[0])
         queue.extend(p for p in ranked if p not in queue)
-    results = []; plans = {}; trials = []; replay_start = perf_counter();repair_used=0.;refinement_used=0.;surface_used=0.
+    results = []; plans = {}; trials = []; replay_start = perf_counter();repair_used=0.;refinement_used=0.;surface_used=0.;irregular_used=0.
     for proposal in queue[:max_replays]:
         if refinement_used<refinement_budget:
-            proposal=refine_concept(proposal,options,policy,seconds=min(15.,refinement_budget-refinement_used),hand_border=hand_border,access_lane=access_lane)
+            proposal=refine_concept(proposal,options,policy,seconds=min(15.,refinement_budget-refinement_used),hand_border=hand_border,access_lane=access_lane,minimum_sheet_side=minimum_sheet_side)
             refinement_used+=proposal['joint_refinement']['seconds']
+        fallback_proposal=deepcopy(proposal)
+        if irregular_executable and irregular_used<irregular_budget:
+            proposal=refine_irregular_floors(proposal,options,policy,executable=irregular_executable,
+                seconds=min(60.,irregular_budget-irregular_used),hand_border=hand_border,access_lane=access_lane)
+            irregular_used+=proposal['irregular_refinement']['seconds']
         if surface_used<surface_budget:
-            proposal=refine_source_surfaces(proposal,options,policy,seconds=min(60.,surface_budget-surface_used),hand_border=hand_border)
+            proposal=refine_source_surfaces(proposal,options,policy,seconds=min(60.,surface_budget-surface_used),hand_border=hand_border,minimum_sheet_side=minimum_sheet_side)
             surface_used+=proposal['surface_refinement']['seconds']
         if proposal_callback:
             proposal_callback(proposal)
@@ -388,6 +451,7 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                   "estimated_mixed_group_pairs": proposal["mixing"]}
         if 'joint_refinement' in proposal:record['joint_refinement']=proposal['joint_refinement']
         if 'surface_refinement' in proposal:record['surface_refinement']=proposal['surface_refinement']
+        if 'irregular_refinement' in proposal:record['irregular_refinement']=proposal['irregular_refinement']
         local_policy = deepcopy(policy); local_policy["max_inner_cartons"] = max(carton_counts); local_policy["max_carton_types"] = proposal["type_cap"]
         try:
             result=None;failure=None
@@ -424,6 +488,22 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                                 if result is None:failure=error
                     finally:
                         elapsed=perf_counter()-repair_start;repair_used+=elapsed;record['repair_seconds']=elapsed
+            # A speculative 3D improvement must not lose its simpler in-run
+            # incumbent when source/access replay or a larger repair rejects it.
+            if (any(k in record for k in ('surface_refinement','irregular_refinement')) and
+                (failure or result is None or not result['practical']['valid'] or
+                 proposal['tiled']['volume_mm3']>fallback_proposal['tiled']['volume_mm3']+1e-6)):
+                fallback_started=perf_counter()
+                try:
+                    fallback=build_candidate(library,local_policy,fallback_proposal['modules'],fallback_proposal['tiled'],finger_radius=finger_radius)
+                    record['surface_fallback']={'status':'verified' if fallback['practical']['valid'] else 'rejected',
+                        'volume_l':fallback_proposal['tiled']['volume_mm3']/1e6}
+                    if fallback['practical']['valid']:
+                        result=fallback;proposal=fallback_proposal;failure=None
+                        record['volume_l']=fallback_proposal['tiled']['volume_mm3']/1e6
+                except ValueError as error:
+                    record['surface_fallback']={'status':'rejected','error':str(error)}
+                record['surface_fallback']['seconds']=perf_counter()-fallback_started
             if failure:raise failure
             if not result["practical"]["valid"]:
                 record.update({"status": "rejected", "support": result["practical"]["support"], "access": result["practical"]["hand_access"]})
@@ -433,7 +513,11 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                                      "grouping_mode": proposal["grouping_mode"], "motif_mode": proposal["motif_mode"],
                                      "organization": organization_metrics(result, cards),
                                      "assembly_organization": organization_metrics(result, cards,mode='assembly'),
+                                     "manual_material_screen":manual_pattern_screen(
+                                         {'protective_separators':result['practical']['protective_separators']},minimum_sheet_side),
                                      "retention_screen":screen_retention(result),"zones": []}
+                if not result['concept']['manual_material_screen']['valid']:
+                    raise ValueError('Manual contact-sheet dimensions failed independent final screening')
                 for index, leaf in enumerate(sorted(proposal["tiled"]["leaves"], key=lambda l: (l["position_mm"][2], l["position_mm"][0])), 1):
                     pattern = proposal["modules"][leaf["module"]]["patterns"][leaf["pattern"]]
                     result["concept"]["zones"].append({"carton_id": f"module-{index}", "groups": deepcopy(pattern.get("semantic_zones", [])),
@@ -456,5 +540,6 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
             "repair_seconds":repair_used,
             "refinement_seconds":refinement_used,
             "surface_seconds":surface_used,
+            "irregular_seconds":irregular_used,
             "search_seconds": search_seconds, "replay_seconds": perf_counter()-replay_start,
             "seconds": perf_counter()-started, "reference_used": False}

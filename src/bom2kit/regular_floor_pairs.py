@@ -3,6 +3,7 @@ from copy import deepcopy
 import math
 from time import perf_counter
 from functools import lru_cache
+from .part_properties import motif_neighbors
 
 
 @lru_cache(maxsize=512)
@@ -15,6 +16,26 @@ def _source_pose(path,digest,transform):
 
 
 _pair_recipes = {}
+_pair_attempts = {}
+
+
+def _recipe_key(first,second,padding,gap):
+    # Identical raw mesh hashes and frames can share proposals across file paths.
+    return (first[1:],second[1:],padding,gap)
+
+
+def _feature_offsets(a,b,axis,clearance,low,high,limit=24):
+    """Align frequently occurring CAD feature planes; exact CAD still gates fit."""
+    import numpy as np
+    def planes(mesh):
+        values,counts=np.unique(np.round(mesh.vertices[:,axis],2),return_counts=True)
+        indices=np.argsort(counts)[-12:]
+        return np.unique(np.r_[values[indices],mesh.bounds[:,axis]])
+    differences=(planes(a)[:,None]-planes(b)[None,:]).ravel()
+    values=np.unique(np.round(np.r_[differences-clearance,differences+clearance,0.],3))
+    values=values[(values>=low-1e-7)&(values<=high+1e-7)]
+    if len(values)>limit:values=values[np.unique(np.linspace(0,len(values)-1,limit).astype(int))]
+    return sorted(values,key=abs)
 
 
 def _pair_recipe(first_key, second_key, padding, gap, seconds):
@@ -26,9 +47,13 @@ def _pair_recipe(first_key, second_key, padding, gap, seconds):
     """
     import numpy as np
     import trimesh
-    key = (first_key, second_key, padding, gap)
+    key = _recipe_key(first_key,second_key,padding,gap)
     if key in _pair_recipes:
         return deepcopy(_pair_recipes[key])
+    if seconds>0 and _pair_attempts.get(key,0.)>=seconds*.95:
+        # Defer an already explored bounded probe; this is not an infeasibility
+        # certificate. A larger budget can revisit it, and other partners remain.
+        return None
     started = perf_counter()
     a = _source_pose(*first_key); original_b = _source_pose(*second_key)
     area = math.prod(a.extents[:2]+2*padding)+math.prod(original_b.extents[:2]+2*padding)
@@ -40,11 +65,15 @@ def _pair_recipe(first_key, second_key, padding, gap, seconds):
         b = original_b.copy(); b.apply_transform(yaw)
         yaw[:3, 3] -= b.bounds[0]; b.apply_translation(-b.bounds[0])
         moving = trimesh.collision.CollisionManager(); moving.add_object('other', b)
-        for dy in (0., .25, -.25, .5, -.5, .75, -.75):
+        span=max(a.extents[1],b.extents[1]);clearance=2*padding+gap
+        ys=list(dict.fromkeys([0.,*_feature_offsets(a,b,1,clearance,-span,span),
+                               *(f*span for f in (.25,-.25,.5,-.5,.75,-.75))]))
+        pitch=max(2.,min(a.extents[0],b.extents[0])/16)
+        xs=list(dict.fromkeys([*_feature_offsets(a,b,0,clearance,0.,a.extents[0]+clearance),
+                               *np.arange(0.,a.extents[0]+clearance+pitch,pitch)]))
+        for y in ys:
             if perf_counter()-started >= seconds: break
-            y = dy*max(a.extents[1], b.extents[1])
-            pitch = max(2., min(a.extents[0], b.extents[0])/16)
-            for x in np.arange(0., a.extents[0]+2*padding+gap+pitch, pitch):
+            for x in xs:
                 if perf_counter()-started >= seconds: break
                 low = np.minimum([0., 0., 0.], [x, y, 0.])
                 high = np.maximum(a.bounds[1], b.bounds[1]+[x, y, 0.])
@@ -58,6 +87,8 @@ def _pair_recipe(first_key, second_key, padding, gap, seconds):
     if best is not None:
         if len(_pair_recipes) >= 512: _pair_recipes.pop(next(iter(_pair_recipes)))
         _pair_recipes[key] = deepcopy(best)
+    if len(_pair_attempts)>=2048:_pair_attempts.pop(next(iter(_pair_attempts)))
+    _pair_attempts[key]=max(_pair_attempts.get(key,0.),seconds)
     return best
 
 
@@ -76,7 +107,7 @@ def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3,all_opti
     while pending:
         first=pending.pop(0);members=[{'unit':first,'offset_mm':[0.,0.,0.]}];size=first['dimensions'].copy()
         if has_void[first['item_id']]:
-            candidates=[(i,u) for i,u in enumerate(pending) if u.get('cohesion_group')==first.get('cohesion_group')]
+            candidates=[(i,u) for i,u in enumerate(pending) if motif_neighbors(u,first)]
             candidates.sort(key=lambda iu:(iu[1]['item_id']!=first['item_id'],-math.prod(iu[1]['dimensions'][:2])))
             best=None
             for index,other in candidates[:4]:
@@ -90,7 +121,7 @@ def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3,all_opti
                     alternatives=[*opposite[:1],*alternatives]
                 for number,(option_index,option) in enumerate(alternatives):
                     ref=source_items[iid]['mesh'];other_key=(ref['path'],ref['sha256'],tuple(np.asarray(option['transform']).ravel()))
-                    cache_key=(keys[first['item_id']],other_key,padding,gap)
+                    cache_key=_recipe_key(keys[first['item_id']],other_key,padding,gap)
                     if perf_counter()-started>=seconds and cache_key not in _pair_recipes:continue
                     recipe=_pair_recipe(keys[first['item_id']],other_key,padding,gap,
                         max(0.,seconds-(perf_counter()-started))/(len(alternatives)-number))

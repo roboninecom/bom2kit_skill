@@ -25,13 +25,13 @@ def _prepared_variant(path,digest,transform,angle):
     return {'frame':yaw@base_frame,'mesh':mesh,'faces':faces,'bottom':bottom,'collision':collision}
 
 
-def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,max_height=None,objective='height',priority_units=(),semantic_labels=None):
+def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,max_height=None,objective='height',priority_units=(),semantic_labels=None,compact_voids=False,minimum_sheet_side=0.):
     import numpy as np
     import trimesh
     from shapely.affinity import translate
     from shapely.geometry import Point
     from .packing_states import declared_state
-    if objective not in ('height','volume'):raise ValueError('Unknown source surface objective')
+    if objective not in ('height','volume','footprint'):raise ValueError('Unknown source surface objective')
     started=perf_counter()
     width,depth=[v-2*wall for v in footprint]
     maximum=max_height or 2*max(min(p['dimensions_mm'][2] for p in options[i['id']]) for i in items)
@@ -50,7 +50,11 @@ def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,m
         seeds=[min(available,key=lambda ip:ip[1]['dimensions_mm'][2]),
                min(available,key=lambda ip:math.prod(ip[1]['dimensions_mm'][:2])),
                min(available,key=lambda ip:math.prod(ip[1]['dimensions_mm']))]
-        if any('contact_frame_signature' in p for _,p in available):seeds=available
+        if any('contact_frame_signature' in p for _,p in available):
+            for _,seed in list(seeds):
+                normal=np.asarray(seed['transform'])[2,:3]
+                opposite=[(j,p) for j,p in available if np.dot(normal,np.asarray(p['transform'])[2,:3])<-.999]
+                if opposite:seeds.append(max(opposite,key=lambda jp:jp[1]['contact']['center_margin_mm']))
         selected=[]
         for index,option in seeds:
             if index in [p['index'] for p in selected]:continue
@@ -80,7 +84,7 @@ def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,m
             surfaces=[(None,padding,None)]
             for parent in placed:
                 if parent['depth']>=2 or declared_state(source_items[parent['item_id']])['kind'] not in ('source_part','factory_carton'):continue
-                if semantic_labels and semantic_labels[parent['item_id']]!=semantic_labels[iid]:continue
+                if semantic_labels and not compact_voids and semantic_labels[parent['item_id']]!=semantic_labels[iid]:continue
                 for z,polygon in parent['faces']:
                     surfaces.append((parent,z+2*padding+gap,polygon))
             for parent,z,polygon in surfaces:
@@ -107,16 +111,36 @@ def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,m
                 # can consume the whole queue and hide an empty floor corner.
                 ranked_xy=[(not separated_bounds(mesh_bounds+[x,y,z]),x,y) for x,y in xy]
                 ranked_xy.sort(key=lambda p:(p[0],max(p[1]+sx,used_x)*max(p[2]+sy,used_y),p[2],p[1]))
+                if compact_voids:
+                    compact=sorted(ranked_xy,key=lambda p:(max(p[1]+sx,used_x)*max(p[2]+sy,used_y),p[0],p[2],p[1]))
+                    ranked_xy=list(dict.fromkeys([*compact[:48],*ranked_xy[:16]]))
                 for overlap,x,y in ranked_xy[:64]:
                     if perf_counter()>deadline:break
                     # Prefer low total height, then compact used footprint.
                     occupied_height=max(current_top,z+sz)
                     occupied_area=max(x+sx,used_x)*max(y+sy,used_y)
-                    score=(overlap,(occupied_height if objective=='height' else occupied_height*occupied_area),
-                           occupied_area,z,y,x)
+                    cost=(occupied_height if objective=='height' else occupied_area if objective=='footprint'
+                          else occupied_height*occupied_area)
+                    if compact_voids:
+                        neighbors=[p['mesh'].bounds for p in placed if semantic_labels and semantic_labels[p['item_id']]==semantic_labels[iid]]
+                        if neighbors:
+                            low=np.min([b[0,:2] for b in neighbors],axis=0);high=np.max([b[1,:2] for b in neighbors],axis=0)
+                            growth=np.prod(np.maximum(high,[x+sx,y+sy])-np.minimum(low,[x,y]))-np.prod(high-low)
+                            cost+=.1*growth*(occupied_height if objective=='volume' else 1. if objective=='footprint' else 1/max(width,depth))
+                        score=(cost,occupied_area,z,overlap,y,x)
+                    else:score=(overlap,cost,occupied_area,z,y,x)
                     candidates.append((score,variant,[x,y,z],parent,polygon))
         accepted=None
-        for _,variant,position,parent,polygon in sorted(candidates,key=lambda row:row[0])[:256]:
+        ranked_candidates=sorted(candidates,key=lambda row:row[0])
+        shortlisted=ranked_candidates[:256]
+        # A compact queue can contain hundreds of colliding cavity proposals.
+        # Preserve a separately ranked, broad-phase-clear floor fallback so the
+        # queue cap cannot hide an existing empty corner behind those proposals.
+        shortlist_ids={id(candidate) for candidate in shortlisted}
+        free_floor=[candidate for candidate in ranked_candidates[256:]
+                    if candidate[3] is None and separated_bounds(candidate[1]['mesh'].bounds+candidate[2])]
+        shortlisted.extend(candidate for candidate in free_floor[:32] if id(candidate) not in shortlist_ids)
+        for _,variant,position,parent,polygon in shortlisted:
             if perf_counter()>deadline:break
             transform=np.eye(4);transform[:3,3]=position;mesh=variant['mesh'];checks+=1
             bounds=mesh.bounds+position;required=2*padding+gap
@@ -130,6 +154,7 @@ def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,m
                 center=Point(mesh.center_mass[0]+position[0],mesh.center_mass[1]+position[1])
                 if contact.area<1e-6 or not contact.convex_hull.covers(center) or contact.convex_hull.boundary.distance(center)<.05:continue
                 x,y,right,back=contact.bounds;plane=position[2]-2*padding-gap
+                if min(right-x,back-y)<minimum_sheet_side-1e-7:continue
                 panel=trimesh.creation.box([right-x-.002,back-y-.002,2*padding+gap-.002])
                 panel.apply_translation([(x+right)/2,(y+back)/2,plane+padding+gap/2])
                 if manager.in_collision_single(panel):continue
@@ -151,7 +176,7 @@ def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,m
     diagnostic={'seconds':perf_counter()-started,'placed':len(placed),'required':len(units),'exact_tests':checks,
                 'supported_units':len(sheets),'footprint_mm':list(footprint),
                 'preparation_seconds':preparation,'narrow_phase_checks':narrow,'objective':objective,
-                'maximum_height_mm':maximum,'priority_units':list(priority_units),
+                'maximum_height_mm':maximum,'priority_units':list(priority_units),'compact_voids':compact_voids,
                 'used_source_bounds_mm':None if not placed else [max(p['mesh'].bounds[1,k] for p in placed) for k in range(3)],
                 'first_unplaced_unit':None if len(placed)==len(units) else units[len(placed)][1]}
     if len(placed)!=len(units):return {'status':'incomplete_source_surface_proposal',

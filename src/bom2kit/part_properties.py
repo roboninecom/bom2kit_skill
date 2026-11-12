@@ -6,6 +6,7 @@ protection, establish material strength or change a source packing state.
 from collections import Counter, defaultdict
 from copy import deepcopy
 import re
+import math
 
 from .packing_states import declared_state
 from .report import fingerprint
@@ -185,6 +186,52 @@ def adaptive_groups(library, cards, options, policy,base_mode='assembly'):
                             'revision':{'method':best[2],'source_group_estimate_mm3':original,
                                         'adjusted_split_estimate_mm3':best[0],'reference_used':False}})
     return revised
+
+
+def replicated_groups(library,cards,options,policy):
+    """Propose two balanced repetitions of a type group, with original unit IDs.
+
+    A later concept may reunite the repetitions. This is a carton-pattern
+    hypothesis, not a bag, preassembly or permission to split packet contents.
+    """
+    groups=adaptive_groups(library,cards,options,policy,base_mode='type');result=[]
+    for group in groups:
+        if max(i['quantity'] for i in group['items'])<2 or sum(i['quantity'] for i in group['items'])<4:
+            result.append(group);continue
+        halves=[[],[]];weights=[0.,0.]
+        for item in sorted(group['items'],key=lambda i:-min(math.prod(p['dimensions_mm']) for p in options[i['id']])):
+            quantity=item['quantity'];ids=item.get('packing_unit_ids',[f"{item['id']}#{n+1}" for n in range(quantity)])
+            assignments=[[],[]];volume=min(math.prod(p['dimensions_mm']) for p in options[item['id']])
+            for uid in ids:
+                target=min(range(2),key=lambda n:weights[n]);assignments[target].append(uid);weights[target]+=volume
+            for index,units in enumerate(assignments):
+                if units:halves[index].append({**deepcopy(item),'quantity':len(units),'packing_unit_ids':units})
+        for index,items in enumerate(halves,1):
+            if items:result.append({**group,'id':group['id']+f'/repeat-{index}','items':items,
+                'semantic_parent':group.get('semantic_parent',group['id']),'semantic_mode':'replicated',
+                'revision':{'method':'balanced_source_copy_repetitions','reference_used':False}})
+    return result
+
+
+def coalesce_items(items):
+    """Reunite source copies without losing counts or duplicating unit identities."""
+    merged={}
+    for item in items:
+        iid=item['id'];units=item.get('packing_unit_ids',[f'{iid}#{n+1}' for n in range(item['quantity'])])
+        if len(units)!=item['quantity'] or len(set(units))!=len(units):raise ValueError('Invalid source copy identities')
+        if iid not in merged:merged[iid]={**deepcopy(item),'packing_unit_ids':list(units)}
+        else:
+            previous=merged[iid]
+            if previous['mesh']!=item['mesh'] or set(previous['packing_unit_ids']).intersection(units):
+                raise ValueError('Cannot reunite changed or duplicate source units')
+            previous['quantity']+=item['quantity'];previous['packing_unit_ids'].extend(units)
+    return list(merged.values())
+
+
+def motif_neighbors(first,second):
+    """Prefer same-type or same-assembly motifs inside an already compatible family."""
+    return (first.get('cohesion_group')==second.get('cohesion_group') or
+            bool(set(first.get('nesting_affinities',())).intersection(second.get('nesting_affinities',()))))
 
 
 def organization_metrics(result, cards, mode='type'):

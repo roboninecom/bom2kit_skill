@@ -36,7 +36,7 @@ def compact_access_rows(placements, units, gap, access_lane, *, reach_depth=8.1)
 def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., seconds=10,
                    hand_border=0., target_footprints=(), stack_height_factor=0.,rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,supported_nesting=False,
                    access_units=(),unit_access_margin=0.,semantic_labels=None,stack_overhang_fraction=.25,
-                   semantic_order='group'):
+                   semantic_order='group',semantic_affinities=None,minimum_sheet_side=0.):
     """Keep identical source SKUs in one stable orientation per pattern.
 
     Every original unit is placed independently on a specified floor liner.
@@ -95,6 +95,7 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                               "dimensions": dims, "orientations": [((0, 1, 2), tuple(dims)), ((1, 0, 2), (dims[1], dims[0], dims[2]))]})
                 if semantic_labels:
                     units[-1]['cohesion_group']=semantic_labels[item['id']]
+                if semantic_affinities:units[-1]['nesting_affinities']=semantic_affinities.get(item['id'],[])
         area = sum(math.prod(u["dimensions"][:2]) for u in units)
         height = max(u["dimensions"][2] for u in units)
         expansions={u['unit_id']:{'members':[{'unit':u,'offset_mm':[0.,0.,0.]}],'separators':[]} for u in units}
@@ -102,13 +103,13 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
         if supported_nesting:
             from .regular_cavity_pairs import make_supported_pairs
             units,expansions,supported_pairs,diagnostic=make_supported_pairs(units,choices,{i['id']:i for i in items},padding,gap,
-                height*(stack_height_factor or 1.5),seconds=max(.5,min(3,seconds)))
+                height*(stack_height_factor or 1.5),seconds=max(.5,min(3,seconds)),minimum_sheet_side=minimum_sheet_side)
             supported_diagnostics.append(diagnostic)
             height=max(u['dimensions'][2] for u in units);area=sum(math.prod(u['dimensions'][:2]) for u in units)
         elif stack_height_factor:
             from .regular_stacks import make_flat_columns
             units,expansions=make_flat_columns(units,choices,{i['id']:i for i in items},padding,height*stack_height_factor,
-                                               max_overhang_fraction=stack_overhang_fraction)
+                                               max_overhang_fraction=stack_overhang_fraction,minimum_sheet_side=minimum_sheet_side)
             height=max(u['dimensions'][2] for u in units)
             area=sum(math.prod(u['dimensions'][:2]) for u in units)
         if floor_pair_budget>pair_used:
