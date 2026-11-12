@@ -6,9 +6,15 @@ or has qualified transport restraint. This is a computational prototype.
 
 ## Same-input comparison
 
+"Before" is the immediately preceding practical planner, not the older 20.407 L
+101 experiment. That earlier compound layout did not establish individual source
+support or handling; it remains documented in the
+[previous report](practical-packing-four-hour-report.md). This round does not
+claim an improvement over that earlier shipping volume.
+
 | Kit / result | Exterior, mm | Volume, L | Cartons / sizes | Decision |
 | --- | --- | ---: | ---: | --- |
-| 101 before | 565 x 291 x 181 | 29.759115 | 3 / 3 | Retain as procurement alternative |
+| 101 before | 565 x 291 x 181 | 29.759115 | 3 / 3 | Original baseline retained |
 | 101 new | 290 x 341 x 293 | 28.974770 | 4 / 4 | Selected for the new guide |
 | 101 Alan | 364 x 290 x 184 | 19.423040 | 7 / not audited | Nominal reference |
 | 102 before | 346 x 452 x 231 | 36.126552 | 4 / 4 | Retained for the guide |
@@ -19,6 +25,9 @@ or has qualified transport restraint. This is a computational prototype.
 to Alan is **49.18%**. The retained 102 gap is **80.06%**. The lowest-volume new
 102 candidate is **3.93% larger** than its incumbent, despite better grouping.
 No global optimum or impossibility claim follows from these bounded searches.
+For 101, a checked three-carton/three-size alternative reaches 29.546440 L;
+a six-carton/five-size alternative reaches 29.117088 L with fewer shared-type
+pairs. These remain explicit tradeoffs, not replacements selected by volume alone.
 
 Using identical semantic cards for both layouts, type cohabitation pairs / spatial
 fragments change from **89 / 11 to 49 / 4** for 101 and **173 / 18 to 112 / 6**
@@ -79,7 +88,7 @@ Alan's complete matching source poses/BOM/protection cannot be replayed from the
 supplied illustrations; his dimensions are used only after search.
 
 The synthetic changed-BOM case increases `hardware-line-52` from six to seven:
-109 packing units are reconciled and replayed by the current default typed-row
+109 packing units are reconciled and replayed by the default typed-row
 workflow, yielding 37.990500 L in 244.0 s.
 This is a regression case, not the actual 102 BOM. The selected 101 run took
 282.4 s including preparation/search/replay; the illustrated new 102 run took
@@ -87,7 +96,8 @@ This is a regression case, not the actual 102 BOM. The selected 101 run took
 warm caches and concurrent execution; source import and manual preparation were
 not timed. Selected-run times exclude the other unsuccessful experiments.
 
-The shared skill and [design document](concept-packing-design.md) contain the CLI
+The shared skill, [design document](concept-packing-design.md) and
+[copyable reproduction commands](concept-packing-reproduction.md) describe the CLI
 workflow. Frozen runs retain parameters, source/engine hashes, proposal history,
 rejected trials and assembly fingerprints under ignored
 `packaging-results/concept-round4/`. Selected 101 is
@@ -100,6 +110,14 @@ Local deliverables are `final/101/guide/packing-guide.pdf`,
 `final/102/guide/packing-guide.pdf` and `final/comparison/comparison.pdf` below
 the round directory. The comparison JSON preserves fresh replay and metric
 evidence. Raw CAD and generated artifacts stay ignored.
+
+The completed experiment audit contains 55 runs and 161 frozen frontier layouts.
+All stored assembly fingerprints match; current screens reject 11 layouts for
+tiny contact sheets and 60 for split accessory sets (these counts may overlap).
+Only the delivered selected/comparison layouts receive the final fresh replay;
+the historical audit is not a new geometry certificate for every experiment.
+First complete real-case runs finished at 20:26 UTC (101) and 20:27 UTC (102),
+within the first two-hour checkpoint. No new searches started after 23:46 UTC.
 
 Validation: **264 tests pass**, including enabled real PackingSolver and OR-Tools
 integrations, source geometry/support regressions, relative cavity rotation,
