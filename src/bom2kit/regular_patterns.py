@@ -22,7 +22,9 @@ def compact_access_rows(placements, units, gap, access_lane, *, reach_depth=8.1)
         y=0.;x=current['position_mm'][0]
         for previous,previous_size in compacted:
             px,py,_=previous['position_mm']
-            if min(x+size[0],px+previous_size[0])-max(x,px)<=1e-8:
+            # Near-disjoint X intervals still need Y separation when their
+            # horizontal gap is smaller than the unchanged required clearance.
+            if x+size[0]+gap<=px+1e-8 or px+previous_size[0]+gap<=x+1e-8:
                 continue
             separation=gap if abs(size[2]-previous_size[2])>=reach_depth else max(gap,access_lane)
             y=max(y,py+previous_size[1]+separation)
@@ -33,7 +35,8 @@ def compact_access_rows(placements, units, gap, access_lane, *, reach_depth=8.1)
 
 def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., seconds=10,
                    hand_border=0., target_footprints=(), stack_height_factor=0.,rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,supported_nesting=False,
-                   access_units=(),unit_access_margin=0.,semantic_labels=None,stack_overhang_fraction=.25):
+                   access_units=(),unit_access_margin=0.,semantic_labels=None,stack_overhang_fraction=.25,
+                   semantic_order='group'):
     """Keep identical source SKUs in one stable orientation per pattern.
 
     Every original unit is placed independently on a specified floor liner.
@@ -41,6 +44,7 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
     """
     import numpy as np
     access_units=set(access_units)
+    if semantic_order not in ('group','area'):raise ValueError('Unknown semantic placement order')
     if access_units and (stack_height_factor or floor_pair_budget or supported_nesting):
         raise ValueError('Individual access margins require regular individual floor units')
     if not math.isfinite(unit_access_margin) or unit_access_margin<0:raise ValueError('Invalid individual access margin')
@@ -111,7 +115,7 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
             from .regular_floor_pairs import make_floor_pairs
             pair_start=perf_counter()
             units,expansions,floor_pairs=make_floor_pairs(units,choices,{i['id']:i for i in items},padding,gap,
-                                                        seconds=floor_pair_budget-pair_used)
+                                                        seconds=floor_pair_budget-pair_used,all_options=options)
             pair_used+=perf_counter()-pair_start
             height=max(u['dimensions'][2] for u in units);area=sum(math.prod(u['dimensions'][:2]) for u in units)
         by_unit={u['unit_id']:u for u in units}
@@ -136,7 +140,7 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                 continue
             for mode in (("cohesive",) if semantic_labels else ("short_side", "area", "bottom_left")):
                 p = pack_strip(packing_units, width, height, gap, depth=None if depth is None else depth+lane_extra,
-                               placement_score=mode, item_order="input" if semantic_labels else "area")
+                               placement_score=mode, item_order="input" if semantic_labels and semantic_order=='group' else "area")
                 if p is None:
                     continue
                 if rectangle_executable and mode=='short_side' and rectangle_used<rectangle_budget:
@@ -169,7 +173,7 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                         transform=yaw@local;transform[:3,3]+=shift
                         envelope_position,envelope_size=box_pose(member['offset_mm'],unit['dimensions'])
                         placements.append({'item_id':unit['item_id'],'unit_id':unit['unit_id'],
-                                           'transform':transform.tolist(),'stable_option':option_index,
+                                           'transform':transform.tolist(),'stable_option':member.get('stable_option_override',option_index),
                                            'envelope_position_mm':envelope_position,'envelope_dimensions_mm':envelope_size})
                     for sheet in expansions[q['unit_id']]['separators']:
                         origin,size=box_pose(sheet['origin_mm'],sheet['dimensions_mm'])

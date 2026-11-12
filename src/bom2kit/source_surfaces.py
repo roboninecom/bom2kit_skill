@@ -1,17 +1,38 @@
 """Bounded 3D extreme-point proposals with real source surfaces and load trees."""
 import math
 from time import perf_counter
+from functools import lru_cache
+
+
+@lru_cache(maxsize=512)
+def _prepared_variant(path,digest,transform,angle):
+    """Source-bound collision BVH and support faces reused across concepts."""
+    import numpy as np
+    import trimesh
+    from shapely.affinity import affine_transform
+    from .regular_cavity_pairs import _surfaces
+    base_frame=np.asarray(transform).reshape(4,4)
+    base_mesh,base_faces,base_bottom=_surfaces(path,digest,transform)
+    yaw=trimesh.transformations.rotation_matrix(math.radians(angle),[0,0,1])
+    if angle==90:yaw[0,3]=base_mesh.extents[1]
+    if angle==0:mesh,faces,bottom=base_mesh,base_faces,base_bottom
+    else:
+        mesh=base_mesh.copy();mesh.apply_transform(yaw)
+        planar=[0,-1,1,0,base_mesh.extents[1],0]
+        faces=[(z,affine_transform(p,planar)) for z,p in base_faces]
+        bottom=affine_transform(base_bottom,planar)
+    collision=trimesh.collision.CollisionManager();collision.add_object('moving',mesh)
+    return {'frame':yaw@base_frame,'mesh':mesh,'faces':faces,'bottom':bottom,'collision':collision}
 
 
 def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,max_height=None,objective='height',priority_units=(),semantic_labels=None):
     import numpy as np
     import trimesh
-    from shapely.affinity import translate,affine_transform
+    from shapely.affinity import translate
     from shapely.geometry import Point
     from .packing_states import declared_state
-    from .regular_cavity_pairs import _surfaces
     if objective not in ('height','volume'):raise ValueError('Unknown source surface objective')
-    started=perf_counter();deadline=started+seconds
+    started=perf_counter()
     width,depth=[v-2*wall for v in footprint]
     maximum=max_height or 2*max(min(p['dimensions_mm'][2] for p in options[i['id']]) for i in items)
     source_items={i['id']:i for i in items}
@@ -29,26 +50,20 @@ def propose(items,options,footprint,padding,wall,*,gap=.2,border=7.2,seconds=8,m
         seeds=[min(available,key=lambda ip:ip[1]['dimensions_mm'][2]),
                min(available,key=lambda ip:math.prod(ip[1]['dimensions_mm'][:2])),
                min(available,key=lambda ip:math.prod(ip[1]['dimensions_mm']))]
+        if any('contact_frame_signature' in p for _,p in available):seeds=available
         selected=[]
         for index,option in seeds:
             if index in [p['index'] for p in selected]:continue
-            base_frame=np.asarray(option['transform'])
-            base_mesh,base_faces,base_bottom=_surfaces(source['mesh']['path'],source['mesh']['sha256'],tuple(base_frame.ravel()))
             for angle in (0,90):
-                yaw=trimesh.transformations.rotation_matrix(math.radians(angle),[0,0,1])
-                if angle==90:yaw[0,3]=option['dimensions_mm'][1]
-                frame=yaw@base_frame
-                if angle==0:
-                    mesh,faces,bottom=base_mesh,base_faces,base_bottom
-                else:
-                    mesh=base_mesh.copy();mesh.apply_transform(yaw)
-                    planar=[0,-1,1,0,option['dimensions_mm'][1],0]
-                    faces=[(z,affine_transform(p,planar)) for z,p in base_faces]
-                    bottom=affine_transform(base_bottom,planar)
-                collision=trimesh.collision.CollisionManager();collision.add_object('moving',mesh)
-                selected.append({'index':index,'frame':frame,'mesh':mesh,'faces':faces,'bottom':bottom,'collision':collision})
+                variant=_prepared_variant(source['mesh']['path'],source['mesh']['sha256'],
+                    tuple(np.asarray(option['transform']).ravel()),angle)
+                selected.append({'index':index,**variant})
         preparation+=perf_counter()-prepare_start
         variants[iid]=selected;return selected
+    # Source preparation is charged to elapsed time, but cannot consume the
+    # entire placement budget before the first large CAD group is considered.
+    for iid in source_items:poses(iid)
+    deadline=perf_counter()+seconds
     for iid,uid in units:
         if perf_counter()>deadline:break
         candidates=[];current_top=max((p['mesh'].bounds[1,2] for p in placed),default=padding)

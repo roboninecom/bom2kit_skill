@@ -56,17 +56,22 @@ def projected_polygon(mesh, padding_mm=0.):
     return shape.buffer(padding_mm, join_style="round") if padding_mm else shape
 
 
-def stable_pose_options(item, *, maximum=8, cache=None):
+def stable_pose_options(item, *, maximum=8, cache=None,preserve_faces=False,include_projection=True):
     """Derive poses from source CAD only, retaining support-checked alternatives."""
     import numpy as np
     import trimesh
     from shapely.geometry import mapping, MultiPoint
     mesh = load_mesh(item)
-    key = sha256(json.dumps({"mesh": item["mesh"]["sha256"], "maximum": maximum,
-                            "algorithm": "floor-poses-v2"}, sort_keys=True).encode()).hexdigest()
+    identity={"mesh":item['mesh']['sha256'],"maximum":maximum,
+              "algorithm":"floor-poses-v3-faces" if preserve_faces else "floor-poses-v2"}
+    legacy_key=sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
+    if not include_projection:identity['include_projection']=False
+    key=sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     path = Path(cache)/f"{key}.json" if cache else None
     if path and path.exists():
         return json.loads(path.read_text())
+    if cache and not include_projection and (Path(cache)/f'{legacy_key}.json').exists():
+        return json.loads((Path(cache)/f'{legacy_key}.json').read_text())
     transforms, probabilities = trimesh.poses.compute_stable_poses(mesh, n_samples=1, sigma=0, threshold=0)
     proposals = []
     ranked = sorted(zip(transforms, probabilities), key=lambda pair: -pair[1])
@@ -96,17 +101,32 @@ def stable_pose_options(item, *, maximum=8, cache=None):
     selected = []
     for proposal in proposals:
         dims = proposal["dimensions_mm"]
-        if any(np.allclose(sorted(dims[:2])+dims[2:], sorted(p["dimensions_mm"][:2])+p["dimensions_mm"][2:], atol=.05) for p in selected):
+        if any(np.allclose(sorted(dims[:2])+dims[2:], sorted(p["dimensions_mm"][:2])+p["dimensions_mm"][2:], atol=.05)
+               and (not preserve_faces or np.allclose(np.asarray(proposal['transform'])[2,:3],np.asarray(p['transform'])[2,:3],atol=1e-4))
+               for p in selected):
             continue
         selected.append(proposal)
     if len(selected) > maximum:
         # Keep height and volume/aspect alternatives rather than tiny-probability poses only.
-        selected = sorted(selected, key=lambda p: (np.prod(p["dimensions_mm"]), p["dimensions_mm"][2]))[:maximum]
+        ordered=sorted(selected,key=lambda p:(np.prod(p['dimensions_mm']),p['dimensions_mm'][2]))
+        if preserve_faces:
+            seeds=[min(selected,key=lambda p:p['dimensions_mm'][2]),
+                   min(selected,key=lambda p:np.prod(p['dimensions_mm'][:2])),
+                   max(selected,key=lambda p:p['probability'])]
+            diverse=[]
+            for seed in seeds:
+                opposites=[p for p in selected if np.dot(np.asarray(seed['transform'])[2,:3],np.asarray(p['transform'])[2,:3])<-.999]
+                for p in [seed,*sorted(opposites,key=lambda p:-p['contact']['center_margin_mm'])[:1]]:
+                    if p not in diverse:diverse.append(p)
+            selected=(diverse+[p for p in ordered if p not in diverse])[:maximum]
+        else:selected=ordered[:maximum]
     if not selected:
         raise ValueError(f"No stable supported floor pose: {item['id']}")
     for proposal in selected:
-        placed = mesh.copy(); placed.apply_transform(proposal["transform"])
-        proposal["footprint"] = mapping(projected_polygon(placed))
+        if preserve_faces:proposal['contact_frame_signature']=np.asarray(proposal['transform'])[2,:3].tolist()
+        if include_projection:
+            placed = mesh.copy(); placed.apply_transform(proposal["transform"])
+            proposal["footprint"] = mapping(projected_polygon(placed))
     if path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(selected), encoding="utf8")

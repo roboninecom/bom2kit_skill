@@ -12,10 +12,23 @@ from bom2kit.assembly_plan import build_assembly_plan
 from bom2kit.transport_validation import validate_transport
 from bom2kit.packing_illustrations import render_scene,carton_shell,cuboid,exploded_scene,PART,CARTON,FOAM,state_color
 from bom2kit.packing_states import declared_state
+from bom2kit.report import fingerprint
 
 
 def name(item):
     return str(item.get('name') or item.get('source_name') or item.get('source_evidence',{}).get('source_item') or item['id'])
+
+
+def bound_property_cards(result,properties_path=None):
+    if properties_path is None:return {}
+    properties=json.loads(Path(properties_path).read_bytes())
+    if properties.get('source_library_fingerprint')!=result.get('source_library_sha256'):
+        raise ValueError('Property cards do not match the frozen source library')
+    if fingerprint(properties)!=result.get('concept',{}).get('properties_fingerprint'):
+        raise ValueError('Property cards do not match the selected concept')
+    if set(properties['cards'])!={i['id'] for i in result['input']['items']}:
+        raise ValueError('Property cards must cover every source SKU')
+    return properties['cards']
 
 
 def load_geometry(result):
@@ -52,7 +65,7 @@ def carton_records(result,plan):
     return records
 
 
-def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
+def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_path=None):
     import numpy as np
     from reportlab.pdfgen import canvas
     from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Image,Table,TableStyle,PageBreak,KeepTogether
@@ -66,6 +79,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     raw=Path(result_path).read_bytes();bom_raw=Path(bom_path).read_bytes()
     result=json.loads(raw);bom=json.loads(bom_raw)
+    property_cards=bound_property_cards(result,properties_path)
     checks=validate_transport(result,result['logistics']['policy'])
     if not checks['valid']:raise ValueError(checks['errors'])
     plan=build_assembly_plan(result,bom)
@@ -173,8 +187,12 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
         note.keepWithNext=True
         flow.extend([note,Spacer(1,4)])
         rows=[[P('<b>Part</b>','CellGuide'),P(f'<b>BOX {n} - source / packing state</b>','CellGuide'),P('<b>Qty</b>','CellGuide'),P('<b>Slots</b>','CellGuide')]]
-        for iid,count in r['counts'].items():
+        entries=sorted(r['counts'].items(),key=lambda entry:(property_cards.get(entry[0],{}).get('part_type',{}).get('value',''),entry[0])) if property_cards else r['counts'].items()
+        for iid,count in entries:
             item=items[iid];description=f'<b>{escape(name(item))}</b><br/>{escape(iid)}'
+            category=property_cards.get(iid,{}).get('part_type',{}).get('value')
+            if category and category!='unclassified':
+                description+='<br/>Group: '+escape(str(category).replace('_',' '))
             state=declared_state(item)
             description+='<br/>'+escape(state['kind'].replace('_',' '))+' | '+escape(state['measurement_status'].replace('_',' '))
             if item.get('packing_state'):description+='<br/>'+escape(str(item['packing_state']))
@@ -229,6 +247,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
               'kit':kit,'revision':revision,'source_units':len(meshes),'carton_numbering':[{ 'number':r['number'],'id':r['module']['id'],'unit_ids':r['module']['unit_ids']} for r in records],
               'display_offsets':offsets,'source_geometry_modified':False,'explosion_is_display_only':True,
               'physical_qualification':False,'transport_checks':checks,
+              'properties_sha256':sha256(Path(properties_path).read_bytes()).hexdigest() if properties_path else None,
               'illustrations_sha256':{p.name:sha256(p.read_bytes()).hexdigest() for p in assets.glob('*.png')}}
     (output/'guide-manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf8')
     return {'pdf':str(pdf),'cartons':len(records),'source_units':len(meshes)}
@@ -238,4 +257,5 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('result',type=Path);parser.add_argument('bom',type=Path);parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--kit',default='Kit');parser.add_argument('--revision',default='Draft 1')
-    args=parser.parse_args();print(json.dumps(build(args.result,args.bom,args.output,kit=args.kit,revision=args.revision)))
+    parser.add_argument('--properties',type=Path,help='Property cards bound to the selected concept; groups the contents index')
+    args=parser.parse_args();print(json.dumps(build(args.result,args.bom,args.output,kit=args.kit,revision=args.revision,properties_path=args.properties)))

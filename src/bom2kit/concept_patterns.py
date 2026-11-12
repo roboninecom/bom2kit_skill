@@ -207,13 +207,18 @@ def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=Non
 
 
 def cohesive_carton_patterns(groups, options, policy, *, seconds=2., mode="rows", hand_border=7.2,
-                             access_lane=6.4, packing_gap=None,target_footprints=()):
+                             access_lane=6.4, packing_gap=None,target_footprints=(),semantic_order='portfolio'):
     """Keep meaningful neighbors without assigning rectangular private zones."""
     if mode=='hybrid':
         return diverse_patterns([p for m in ('rows','stacks','alternating')
             for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/3,mode=m,
                 hand_border=hand_border,access_lane=access_lane,packing_gap=packing_gap,
-                target_footprints=target_footprints)],24)
+                target_footprints=target_footprints,semantic_order=semantic_order)],24)
+    if semantic_order=='portfolio':
+        return diverse_patterns([p for order in ('group','area')
+            for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/2,mode=mode,
+                hand_border=hand_border,access_lane=access_lane,packing_gap=packing_gap,
+                target_footprints=target_footprints,semantic_order=order)],24)
     ordered = sorted(groups, key=lambda g: (-max(min(max(o['dimensions_mm']) for o in options[i['id']]) for i in g['items']), g['id']))
     items = [i for g in ordered for i in g['items']]
     labels = {i['id']: g['id'] for g in ordered for i in g['items']}
@@ -221,6 +226,7 @@ def cohesive_carton_patterns(groups, options, policy, *, seconds=2., mode="rows"
     generated = floor_patterns(items, options, policy['item_padding_mm'], spec['inner_wall_mm'],
         gap=max(spec['gap_mm'],packing_gap or 0.), seconds=seconds, hand_border=hand_border, access_lane_mm=access_lane,
         target_footprints=target_footprints,
+        semantic_order=semantic_order,
         semantic_labels=labels, stack_height_factor=2.5 if mode=='stacks' else 1.5 if mode=='nesting' else 0.,
         stack_overhang_fraction=0.,
         supported_nesting=mode=='nesting', floor_pair_budget=seconds if mode=='alternating' else 0.)

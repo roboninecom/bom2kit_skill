@@ -46,6 +46,10 @@ def describe_parts(library, policy, options=None, annotations=None):
                                         ("washer", "washers"), ("ring", "rings"),
                                         ("clamp", "clamps"), ("rack", "racks"),
                                         ("gear", "gears"), ("nail", "pins"),
+                                        ("frame", "frames"), ("handle", "handles"),
+                                        ("trigger", "levers"), ("spacer", "spacers"),
+                                        ("cap", "covers"), ("snap", "clips"),
+                                        ("wrist", "joint_parts"),
                                         ("arm", "arm_parts"), ("base", "base_parts")):
                     if token in text:
                         kind = category
@@ -60,6 +64,10 @@ def describe_parts(library, policy, options=None, annotations=None):
                     assembly = "arm_structure"
                 elif "board" in text or "cable snap" in text:
                     assembly = "electronics_mounting"
+                elif "camera" in text:
+                    assembly = "camera_mounting"
+                elif "handle" in text or "trigger" in text:
+                    assembly = "manual_control"
         else:
             rules = [(r"clamp", "clamps"), (r"bearing", "bearings"),
                      (r"\brod\b", "rods"), (r"power supply", "power_supplies"),
@@ -141,14 +149,14 @@ def semantic_groups(library, cards, mode="assembly"):
              "items": deepcopy(items), "semantic_mode": mode} for key, items in sorted(groups.items())]
 
 
-def adaptive_groups(library, cards, options, policy):
+def adaptive_groups(library, cards, options, policy,base_mode='assembly'):
     """Split height-incompatible semantic groups; whole SKUs remain indivisible.
 
     This is a reversible concept proposal. The final beam may reunite subgroups
     or place them with other compatible groups. Gains are heuristic estimates.
     """
     from .regular_patterns import partition_by_height
-    padding=policy['item_padding_mm'];groups=semantic_groups(library,cards)
+    padding=policy['item_padding_mm'];groups=semantic_groups(library,cards,base_mode)
     def estimate(items):
         heights=sorted({p['dimensions_mm'][2] for i in items for p in options[i['id']]})
         scores=[]
@@ -179,7 +187,7 @@ def adaptive_groups(library, cards, options, policy):
     return revised
 
 
-def organization_metrics(result, cards):
+def organization_metrics(result, cards, mode='type'):
     """Evaluate every method with the same labels and geometric separation rule.
 
     Connected components use protected AABB surface distance <= 10 mm. This is
@@ -199,7 +207,7 @@ def organization_metrics(result, cards):
     for module in result["logistics"]["modules"]:
         groups = defaultdict(list)
         for uid in module["unit_ids"]:
-            iid = by_unit[uid]; key = semantic_key(cards[iid])
+            iid = by_unit[uid]; key = semantic_key(cards[iid],mode)
             groups[key].append(uid); locations[key].add(module["id"]); split_skus[iid].add(module["id"])
         components = {}
         for key, units in groups.items():
@@ -214,9 +222,9 @@ def organization_metrics(result, cards):
                         if np.linalg.norm(separation) <= 10.+1e-7:
                             unseen.remove(uid); frontier.append(uid)
             components[key] = count; fragments += max(0, count-1)
-        records.append({"carton_id": module["id"], "semantic_groups": dict(Counter(semantic_key(cards[by_unit[u]]) for u in module["unit_ids"])),
+        records.append({"carton_id": module["id"], "semantic_groups": dict(Counter(semantic_key(cards[by_unit[u]],mode) for u in module["unit_ids"])),
                         "group_connected_components": components})
-    return {"semantic_groups_per_carton": records,
+    return {"semantic_groups_per_carton": records,"grouping_basis":mode,
             "mixed_group_pairs": sum(len(r["semantic_groups"])*(len(r["semantic_groups"])-1)//2 for r in records),
             "split_semantic_groups": sum(max(0, len(v)-1) for v in locations.values()),
             "split_source_skus": sum(max(0, len(v)-1) for v in split_skus.values()),

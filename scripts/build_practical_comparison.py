@@ -14,6 +14,8 @@ from bom2kit.mesh_validation import validate_mesh_layout
 from bom2kit.practical_validation import complexity_metrics
 from bom2kit.transport_validation import validate_transport
 from bom2kit.packing_illustrations import exploded_scene,render_scene
+from bom2kit.part_properties import describe_parts,organization_metrics
+from bom2kit.retention_screen import screen_retention
 from build_visual_packing_guide import load_geometry
 
 
@@ -44,13 +46,18 @@ def render(config_path,output):
         protection=lambda r:{k:v for k,v in r['logistics']['policy'].items() if k in ('carton','item_padding_mm','clearance_mm','families')}
         if protection(before)!=protection(after):raise ValueError('Before/after protection or family policy differs')
         if 'practical' not in after:raise ValueError('A practical candidate is required')
-        images=[];metrics=[];plans=[];checks=[]
+        annotations=json.loads(Path(case['annotations']).read_bytes()) if case.get('annotations') else None
+        cards=describe_parts(after['input'],after['logistics']['policy'],annotations=annotations)['cards']
+        images=[];metrics=[];plans=[];checks=[];organizations=[];retention=[]
         for label,result in (('before',before),('after',after)):
             geometry=validate_mesh_layout(result['input'],result['layout'])
             transport=validate_transport(result,result['logistics']['policy'])
             if not geometry['valid'] or not transport['valid']:raise ValueError(f'{label} geometry/transport failed')
             plan=build_assembly_plan(result,expected);plans.append(plan)
             metrics.append(complexity_metrics(result))
+            organizations.append({'type':organization_metrics(result,cards,'type'),
+                                  'assembly':organization_metrics(result,cards,'assembly')})
+            retention.append(screen_retention(result))
             (directory/(label+'-assembly-plan.json')).write_text(json.dumps(plan,indent=2),encoding='utf8')
             _,meshes=load_geometry(result)
             modules=[next(m for m in result['logistics']['modules'] if m['id']==entry['id']) for entry in plan['cartons_in_outer_insertion_order']]
@@ -74,8 +81,11 @@ def render(config_path,output):
               ['Contact sheets / floor liners',
                f"{metrics[0]['protective_sheet_placements']} / {metrics[0]['floor_liner_placements']}" if 'practical' in before else 'Not specified',
                f"{metrics[1]['protective_sheet_placements']} / {metrics[1]['floor_liner_placements']}",'Not counted'],
-              ['Compound copies / templates',*[f"{m['compound_preassemblies']} / {m['compound_templates']}" for m in metrics],'Not audited'],
-              ['Actual support / finger replay','Not checked by old engine','Pass / pass','Not replayed'],
+              ['Factory cartons / packets',*[f"{m['packing_states'].get('factory_carton',0)} / {m['packing_states'].get('protective_packet',0)}" for m in metrics],'Not audited'],
+              ['Extra orientations / SKU splits',*[f"{m['additional_sku_orientations']} / {m['split_source_skus']}" for m in metrics],'Not counted'],
+              ['Type cohabitation pairs / fragments',*[f"{o['type']['mixed_group_pairs']} / {o['type']['additional_spatial_fragments']}" for o in organizations],'Not measurable from illustration'],
+              ['Units with free travel > 5 mm',*[str(r['units_with_demonstrated_movement']) for r in retention],'Not replayed'],
+              ['Actual support / finger replay','Pass / pass' if 'practical' in before else 'Not checked by old engine','Pass / pass','Not replayed'],
               ['Recorded run, seconds',str(case.get('before_seconds','Not recorded')),f'{after_seconds:.1f}' if after_seconds is not None else 'Partial run; see audit','Not measured']]
         pdf.setFillColor(colors.HexColor('#0f172a'));pdf.setFont('Helvetica-Bold',18)
         pdf.drawString(margin,height-32,case['kit']+' | Practical packing comparison')
@@ -87,23 +97,24 @@ def render(config_path,output):
             x=margin+index*column
             pdf.setFillColor(colors.HexColor('#334155'));pdf.setFont('Helvetica-Bold',9)
             pdf.drawString(x+4,height-69,caption)
-            pdf.drawImage(ImageReader(str(image)),x+4,282,width=column-8,height=height-362,preserveAspectRatio=True,anchor='c',mask='auto')
+            pdf.drawImage(ImageReader(str(image)),x+4,310,width=column-8,height=height-390,preserveAspectRatio=True,anchor='c',mask='auto')
         table=Table(rows,colWidths=[160]+[(available-160)/3]*3,rowHeights=16)
         table.setStyle(TableStyle([('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8),
                                    ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e2e8f0')),
                                    ('LINEBELOW',(0,0),(-1,-1),.3,colors.HexColor('#cbd5e1')),
                                    ('TEXTCOLOR',(0,0),(-1,-1),colors.HexColor('#0f172a')),
                                    ('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
-        _,table_height=table.wrap(available,200);table.drawOn(pdf,margin,278-table_height)
+        _,table_height=table.wrap(available,220);table.drawOn(pdf,margin,306-table_height)
         spec=after['logistics']['policy']['carton'];grip=after['practical']['hand_access']['parameters']
         notes=[
             'Gray = source CAD; tan = declared factory carton; blue = packet; purple = declared envelope, not an extra box. Views use independent camera scales.',
             f"Before/after keep the same sources, {spec['protection_mm']:g} mm six-face foam, {spec['wall_mm']:g} mm outer wall, {spec['inner_wall_mm']:g} mm inner walls and declared part protection. Finger model: {grip['radius_mm']:g} mm radius, up to {grip['insertion_depth_mm']:g} mm engagement, vertical paths.",
-            'Placements are counted operations, not measured labor. Carton forming, closure, outer insertion and protective material handling add work. Purchased dimensions, strength and shipping restraint remain unqualified.',
-            'Run times use prepared source meshes; practical runs reuse the stable-pose cache and may share CPU time. They are not a controlled speed comparison.',
+            'Cohabitation counts shared-carton type pairs; fragments use 10 mm AABB adjacency. Same cards score both layouts. These are organization proxies.',
+            'Free travel is a conservative geometric diagnostic, not a transport standard. Blocked/overlapping bounds do not prove restraint. Strength and shipping performance remain unqualified.',
+            'Placements are not measured labor. Forming/closure add work. Timings use prepared meshes and warm pose caches; concurrent runs are not a controlled speed comparison.',
             case.get('note','')]
         paragraph=Paragraph('<br/>'.join(escape(n) for n in notes if n),style)
-        _,ph=paragraph.wrap(available,100);paragraph.drawOn(pdf,margin,278-table_height-8-ph)
+        _,ph=paragraph.wrap(available,110);paragraph.drawOn(pdf,margin,306-table_height-8-ph)
         pdf.setFont('Helvetica',7);pdf.drawString(margin,14,'Computational draft. No physical transport qualification. Evidence and hashes: comparison.json.')
         pdf.showPage()
         hashes={label:sha256(Path(case[key]).read_bytes()).hexdigest() for label,key in [('before','before_result'),('after','after_result'),('bom','bom')]}
@@ -113,6 +124,9 @@ def render(config_path,output):
                 'reference_image_sha256':sha256(reference_image.read_bytes()).hexdigest(),
                 'illustration_sha256':{label:sha256(path.read_bytes()).hexdigest() for label,path in zip(('before','after','reference'),images)},
                 'after_seconds':after_seconds,'note':case.get('note'),'physical_qualification':False}
+        record['organization']=dict(zip(('before','after'),organizations))
+        record['retention_screen']=dict(zip(('before','after'),retention))
+        record['evaluation_cards']=cards
         records.append(record)
         def picture(path):return 'data:image/png;base64,'+base64.b64encode(path.read_bytes()).decode()
         figures=''.join(f'<figure><img src="{picture(p)}" alt="{escape(c)}"><figcaption>{escape(c)}</figcaption></figure>' for p,c in zip(images,captions))

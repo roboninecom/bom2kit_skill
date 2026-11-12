@@ -61,7 +61,7 @@ def _pair_recipe(first_key, second_key, padding, gap, seconds):
     return best
 
 
-def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3):
+def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3,all_options=None):
     import numpy as np
     started=perf_counter();pending=sorted(units,key=lambda u:-math.prod(u['dimensions'][:2]))
     shapes={};keys={};pairs=[];expansions={};certificates=[];has_void={}
@@ -80,21 +80,32 @@ def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3):
             candidates.sort(key=lambda iu:(iu[1]['item_id']!=first['item_id'],-math.prod(iu[1]['dimensions'][:2])))
             best=None
             for index,other in candidates[:4]:
-                cache_key=(keys[first['item_id']],keys[other['item_id']],padding,gap)
-                if perf_counter()-started>=seconds and cache_key not in _pair_recipes:continue
-                recipe=_pair_recipe(keys[first['item_id']],keys[other['item_id']],padding,gap,
-                                    max(0.,seconds-(perf_counter()-started)))
-                if recipe and (best is None or recipe['score']<best[0]):
-                    best=(recipe['score'],index,other,np.asarray(recipe['yaw']),recipe['offset'],
-                          np.asarray(recipe['low']),recipe['size'])
+                iid=other['item_id'];selected_index,selected=choices[iid]
+                alternatives=[(selected_index,selected)]
+                if all_options and any('contact_frame_signature' in p for p in all_options[iid]):
+                    normal=np.asarray(selected['transform'])[2,:3]
+                    opposite=[(j,p) for j,p in enumerate(all_options[iid]) if j!=selected_index
+                        and np.dot(normal,np.asarray(p['transform'])[2,:3])<-.999
+                        and abs(p['dimensions_mm'][2]-selected['dimensions_mm'][2])<.05]
+                    alternatives=[*opposite[:1],*alternatives]
+                for number,(option_index,option) in enumerate(alternatives):
+                    ref=source_items[iid]['mesh'];other_key=(ref['path'],ref['sha256'],tuple(np.asarray(option['transform']).ravel()))
+                    cache_key=(keys[first['item_id']],other_key,padding,gap)
+                    if perf_counter()-started>=seconds and cache_key not in _pair_recipes:continue
+                    recipe=_pair_recipe(keys[first['item_id']],other_key,padding,gap,
+                        max(0.,seconds-(perf_counter()-started))/(len(alternatives)-number))
+                    if recipe and (best is None or recipe['score']<best[0]):
+                        best=(recipe['score'],index,other,np.asarray(recipe['yaw']),recipe['offset'],
+                              np.asarray(recipe['low']),recipe['size'],other_key,option_index)
             if best:
-                _,index,other,yaw,offset,low,size=best;pending.pop(index)
+                _,index,other,yaw,offset,low,size,other_key,option_index=best;pending.pop(index)
                 first_offset=(-low).tolist();second_offset=(np.asarray(offset)-low).tolist()
-                transformed=yaw@np.asarray(choices[other['item_id']][1]['transform'])
-                mesh=shapes[other['item_id']].copy();mesh.apply_transform(yaw)
+                transformed=yaw@np.asarray(other_key[2]).reshape(4,4)
+                mesh=_source_pose(*other_key).copy();mesh.apply_transform(yaw)
                 second=deepcopy(other);second['dimensions']=(mesh.extents+2*padding).tolist()
                 members=[{'unit':first,'offset_mm':first_offset},
-                         {'unit':second,'offset_mm':second_offset,'transform_override':transformed.tolist()}]
+                         {'unit':second,'offset_mm':second_offset,'transform_override':transformed.tolist(),
+                          'stable_option_override':option_index}]
                 certificates.append({'unit_ids':[first['unit_id'],other['unit_id']],
                                      'method':'adjacent_individually_supported_floor_pair','bounding_floor_mm':size[:2]})
         cid=f'floor-pattern-{len(pairs)+1}'

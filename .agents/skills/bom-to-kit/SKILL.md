@@ -127,6 +127,12 @@ stacks, alternating floor pairs and supported nesting remain individually handle
 Existing protective packets retain their source contents; a newly proposed bag
 does not certify a rigid group, protection or restraint.
 
+Try `--preserve-contact-faces` when equal-size opposite stable orientations have
+different nesting surfaces. It preserves source-derived alternatives; it does not
+authorize unstable poses. Account for cold pose preparation separately. Smaller
+`--hand-border` or `--access-lane` values only propose tighter geometry: unchanged
+finger replay must pass, followed by local repair if necessary.
+
 The planner records alternatives and rejected trials. Joint refinement uses only
 its own generated carton footprints; source-surface refinement and local repair
 must pass unchanged support, source clearance, BOM and finger checks. Do not use
@@ -134,13 +140,16 @@ Alan's dimensions, grouping or target volume as search inputs. Report every stag
 including preparation, failed replay and repair, and distinguish warm caches from
 cold runs. A timeout is not an infeasibility result.
 
-Evaluate before/after with the same property cards. Count cartons, factory boxes,
+Evaluate before/after with the same property cards, reporting type and assembly
+grouping separately. Count cartons, factory boxes,
 packets, liners and contact sheets separately. Group cohabitation and 10 mm spatial
 connectivity are organization proxies; inspect the actual CAD guide. Report the
 free-translation retention screen separately: an empty path proves potential
 movement, while overlapping/blocked bounding boxes do not prove restraint. Its
 5 mm threshold is diagnostic, not a shipping standard. Exercise a modified BOM.
 Use the rendering workflow below only for an independently replayed selected result.
+For a concept result, pass its bound `part-properties.json` to the guide renderer
+with `--properties` to group the contents index without changing checked poses.
 
 ### Practical manual packing
 

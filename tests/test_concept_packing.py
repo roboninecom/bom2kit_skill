@@ -73,6 +73,39 @@ def test_concept_beam_never_merges_incompatible_families(tmp_path):
         assert all(len({groups[i]["family"] for i in members}) == 1 for members in state)
 
 
+def test_compact_concept_does_not_buy_extra_cartons_only_for_more_labels():
+    groups=[{'id':f'type-{i}','family':'compatible'} for i in range(12)]
+    patterns=[[{'external_mm':[10,10,10]}] for _ in groups]
+    beam=concept_partitions(groups,patterns,profile='compact',max_cartons=7)
+    # Equal-height groups have the same area/height volume estimate whether
+    # together or split. Increasing label count alone must not prefer 7 boxes.
+    assert len(beam['states'][0])==1
+
+
+def test_access_row_compaction_preserves_clearance_for_near_disjoint_x():
+    from bom2kit.regular_patterns import compact_access_rows
+    units=[{'unit_id':'a','dimensions':[10,10,10]}, {'unit_id':'b','dimensions':[10,10,25]}]
+    poses=[{'unit_id':'a','position_mm':[0,0,0],'rotation':[0,1,2]},
+           {'unit_id':'b','position_mm':[10.1,20,0],'rotation':[0,1,2]}]
+    packed=compact_access_rows(poses,units,.2,6.4)
+    assert packed[1]['position_mm'][1]>=10.2-1e-8
+
+
+def test_equal_bounding_boxes_do_not_erase_opposite_supported_faces(tmp_path):
+    bottom=trimesh.creation.cylinder(radius=25,height=5,sections=16);bottom.apply_translation([25,25,2.5])
+    rim=trimesh.creation.annulus(r_min=20,r_max=25,height=25,sections=16);rim.apply_translation([25,25,17.5])
+    mesh=trimesh.util.concatenate([bottom,rim]);path=tmp_path/'cup.json'
+    path.write_text(json.dumps({'units':'mm','vertices_mm':mesh.vertices.tolist(),'triangles':mesh.faces.tolist()}))
+    item={'id':'cup','quantity':2,'mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}}
+    options=stable_pose_options(item,maximum=12,preserve_faces=True,include_projection=False,cache=tmp_path/'poses')
+    assert all('footprint' not in p for p in options)
+    upright=[p for p in options if abs(p['dimensions_mm'][2]-30)<.05 and abs(p['contact_frame_signature'][2])>.999]
+    assert len(upright)>=2
+    assert np.allclose(sorted(upright[0]['dimensions_mm'][:2]),sorted(upright[1]['dimensions_mm'][:2]),atol=.05)
+    assert any(np.dot(a['contact_frame_signature'],b['contact_frame_signature'])<-.999 for a in upright for b in upright)
+    assert all(p['contact']['valid'] for p in options)
+
+
 def test_cached_pair_reuses_geometry_with_new_unit_ids_and_preserved_clearance(tmp_path):
     from bom2kit.regular_floor_pairs import make_floor_pairs, _pair_recipes
     from bom2kit.practical_geometry import contact_certificate

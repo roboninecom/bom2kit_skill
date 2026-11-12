@@ -28,10 +28,12 @@ def main():
     p.add_argument("--placement-style",choices=['zones','cohesive','portfolio'],default='zones')
     p.add_argument("--max-replays", type=int, default=6)
     p.add_argument("--hand-border", type=float, default=7.2)
+    p.add_argument("--access-lane", type=float, default=6.4)
     p.add_argument("--finger-radius", type=float, default=4.)
     p.add_argument("--repair-budget",type=float,default=60.)
     p.add_argument("--refinement-budget",type=float,default=45.)
     p.add_argument("--surface-budget",type=float,default=0.)
+    p.add_argument("--preserve-contact-faces",action='store_true',help='Keep different stable support faces even when bounding dimensions match')
     p.add_argument("--_supervised", action="store_true", help=argparse.SUPPRESS)
     a = p.parse_args()
     if not a._supervised:
@@ -74,7 +76,9 @@ def main():
             module['patterns']=[module['patterns'][leaf['pattern']]];leaf['pattern']=0
         (a.output/f'proposal-{proposal_counter:02}.json').write_text(json.dumps(compact,indent=2),encoding='utf8')
     def progress(record):
-        brief={k:v for k,v in record.items() if k not in ('access','support','organization','original_rejection')}
+        brief={k:v for k,v in record.items() if k not in ('access','support','organization','original_rejection','surface_refinement')}
+        if 'surface_refinement' in record:
+            brief['surface_refinement_seconds']=record['surface_refinement']['seconds']
         if 'support' in record:brief['support_errors']=record['support'].get('errors',[])
         if 'access' in record:brief['access_failures']=record['access'].get('failures',[])
         print(json.dumps(brief),flush=True)
@@ -88,10 +92,12 @@ def main():
                           seconds=a.time_limit, beam_width=a.beam_width, carton_counts=a.cartons, type_caps=a.types,
                           motif_modes=a.motifs, grouping_modes=a.grouping, max_replays=a.max_replays,
                           hand_border=a.hand_border, finger_radius=a.finger_radius,
+                          access_lane=a.access_lane,
                           placement_style=a.placement_style,
                           repair_budget=a.repair_budget,
                           refinement_budget=a.refinement_budget,
                           surface_budget=a.surface_budget,
+                          preserve_contact_faces=a.preserve_contact_faces,
                           progress=progress, callback=save_trial,proposal_callback=save_proposal)
     results = run.pop("results"); plans = run.pop("assembly_plans"); properties = run.pop("properties")
     (a.output/"part-properties.json").write_text(json.dumps(properties, indent=2), encoding="utf8")

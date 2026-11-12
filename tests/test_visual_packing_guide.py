@@ -44,3 +44,14 @@ def test_changed_source_is_rejected_before_rendering(tmp_path):
     result={'input':{'items':[{'id':'a','mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}}]}}
     path.write_text('{"changed":true}')
     with pytest.raises(ValueError,match='Source changed'):guide.load_geometry(result)
+
+
+def test_property_labels_are_bound_to_the_frozen_concept(tmp_path):
+    from bom2kit.report import fingerprint
+    properties={'source_library_fingerprint':'source-hash','cards':{'a':{'part_type':{'value':'clamps'}}}}
+    path=tmp_path/'properties.json';path.write_text(json.dumps(properties))
+    result={'source_library_sha256':'source-hash','input':{'items':[{'id':'a'}]},
+            'concept':{'properties_fingerprint':fingerprint(properties)}}
+    assert guide.bound_property_cards(result,path)==properties['cards']
+    properties['cards']['a']['part_type']['value']='electronics';path.write_text(json.dumps(properties))
+    with pytest.raises(ValueError,match='selected concept'):guide.bound_property_cards(result,path)

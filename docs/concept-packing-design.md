@@ -29,6 +29,8 @@ when height/footprint estimates justify the added group, and permits later reuni
 2. `concept_planner.py` uses a bounded beam, placing the largest constraining
    groups first. It compares compact, balanced and organized scoring profiles;
    incompatible families never share a carton. Multiple carton counts survive.
+   Cohabitation is normalized by compatible group-pair count so finer labels do
+   not overwhelm volume. Bounded whole-group moves/swaps reconsider early choices.
 3. The cohesive strip heuristic penalizes growth of a group's occupied region
    without assigning it an inflexible rectangular compartment. Same-SKU orientation
    reuse and group-aware pair/support selection reduce arbitrary interleaving.
@@ -41,13 +43,22 @@ when height/footprint estimates justify the added group, and permits later reuni
    proposal when no smaller complete arrangement is found. Independent replay can
    still reject either proposal.
 6. Validation failures identify affected cartons. Local repair keeps unaffected
-   patterns and repacks failed cartons with larger access margins, then retiles and
-   replays. It does not lower finger, support, clearance or protection thresholds.
+   patterns and first reserves access around blocked units. A whole-carton margin
+   is the fallback. Both repairs retile and replay; neither lowers finger, support,
+   clearance or protection thresholds. Row compaction preserves required clearance
+   even when neighboring X intervals are disjoint but closer than the required gap.
 
 Pair motifs cache source-relative transforms keyed by both source hashes, frames
 and protection. Reuse creates fresh unit identities. Cached proposal success never
 substitutes for original-mesh clearance or insertion replay. Timed failure is not
 cached as infeasibility. Stable-pose preparation is also reusable and separately timed.
+
+`--preserve-contact-faces` retains different stable support faces with equal
+bounding dimensions, including opposite orientations. Floor pairs may reuse the
+opposite face while keeping each original source independently supported; the 3D
+surface proposer also considers these alternatives. Bounding-box equality alone
+does not establish interchangeable nesting geometry. Source-only concept search
+skips unused projected-contour preparation; contour solvers retain full projections.
 
 ## Run and reproduce
 
@@ -74,8 +85,8 @@ the planner does not assume that a newly drawn bag makes loose parts rigid.
 
 Organization metrics use the **same cards for before and after**. Group cohabitation
 pairs measure shared cartons, not proven physical intermixing. Connected components
-use a declared 10 mm AABB-distance proxy; type and assembly classifications can
-disagree, so visual inspection remains necessary.
+use a declared 10 mm AABB-distance proxy. Type grouping is the primary measurement;
+assembly grouping is recorded separately. Visual inspection remains necessary.
 
 `retention_screen.py` can prove an empty rigid-translation path through conservative
 source bounding boxes. It reports movement over a diagnostic 5 mm threshold, not a
