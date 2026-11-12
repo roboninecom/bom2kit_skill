@@ -10,6 +10,9 @@ apply to Codex and Claude Code. Install `python -m pip install -e ".[mesh,cad,te
 as needed; `[report]` enables mesh visualization. Read
 `docs/independent-design-progress.md` for capabilities and remaining gaps.
 The complete no-worse 101/102 objective is still open.
+For shipping kits and manual kitting, default to the **Practical manual packing**
+workflow below. The older compound engines are research/baseline tools: their
+collision-free groups do not establish a practical way to carry loose parts.
 
 ## Prepare independent inputs
 
@@ -37,7 +40,8 @@ necessarily a physical component count.
 A neutral library has `units: "mm"`, `all_meshes_valid_volumes: true`, and
 items with `id`, `quantity`, and `mesh: {path, sha256}`. Mesh JSON contains
 `units`, `vertices_mm` and `triangles`. The engine rechecks source geometry;
-the flag alone certifies nothing. Supply an independent expected BOM with a
+the flag alone certifies nothing. Research-only alternative packing states are
+excluded from the primary practical comparison. Supply an independent expected BOM with a
 `components` list of SKU quantities and required revisions.
 
 ## Design from scratch
@@ -60,6 +64,9 @@ No heuristic dominates every kit; preserve protection while comparing them.
 `item_order` accepts `area` or `volume`; `unequal_columns: true` also searches
 adjacent stacks of different widths. Keep the best fully verified result across
 experiments. These settings do not relax walls, padding or part geometry.
+
+The following command is the older compound-search research path. Use the
+practical pipeline for a new operator-facing shipping design.
 
 ```powershell
 python scripts/design_grouped_meshes.py LIBRARY.json POLICY.json --bom EXPECTED.json --output packaging-results/design --pair-budget 120 --pair-seconds 8 --max-pairs 10 --nesting-rounds 1 --carton-budget 90 --group-configurations 6 --improvement-budget 120
@@ -96,6 +103,75 @@ Voxel emptiness alone never certifies a fit. This differs from the older
 `--cavity-proposals` bounds/occupancy ranking experiment.
 
 ## Validate, illustrate and compare
+
+### Practical manual packing
+
+For shipping kits, use the practical pipeline described in
+`docs/practical-packing-design.md`. Start with individual handling; do not infer
+that touching or nested loose parts can be carried as one rigid group.
+
+```powershell
+python scripts/design_practical_packaging.py LIBRARY.json TRANSPORT_POLICY.json EXPECTED.json --output packaging-results/practical --cache packaging-results/pose-cache --time-limit 180 --cartons 3 4 5 6 7 --types 2 3 4 --packing-gap 0.2 --access-lane 6.4 --hand-border 7.2 --refinement-budget 30 --max-replays 4 --wall-limit 600
+```
+
+The gap/border values above are an experimental access configuration, not measured
+requirements. The skill must preserve the actual declared protection. The default
+two-cylinder grip has 4 mm radius, up to 8 mm insertion depth and 24 mm length;
+its geometric clearance is not proof of real hand access or gripping force.
+Report timeouts separately from demonstrated collision/access failures.
+Optional `--access-repair-budget 90` repacks cartons rejected by the unchanged
+finger model, then retiles and independently replays the complete kit. Include
+repair and failed replay time; do not accept a failed smaller layout.
+The hard wall limit includes replay. Partial trial files need fresh replay before
+delivery. Respect the user's overall deadline, preserving results and reporting
+an unmet target when the window ends. Record explicitly authorized extensions.
+
+The engine distinguishes source CAD, factory cartons, protective packets and
+declared envelopes. A purple envelope in a guide is not an extra physical box.
+Do not invent a smaller alternate packing state: it needs unchanged contents,
+dimension evidence and a protection specification. Unmeasured alternatives are
+research-only and must not silently replace the accepted benchmark inputs.
+
+Evaluate the following modes separately before combining conclusions:
+
+- Default stable-floor rows with no compound preassemblies.
+- `--stack-height-factor 1`: bounded flat-interface stacks inside the tallest
+  selected floor height. Actual source faces and the entire upper load line are
+  checked. Explicit protective contact sheets occupy the original facing padding
+  allowances and must be counted in materials and operations. Their strength and
+  manual sheet handling remain unqualified.
+- `--floor-pair-budget 60`: adjacent pairs of independently floor-supported parts,
+  with original-mesh clearance rather than nonoverlapping bounding rectangles.
+  Each source part still requires its own checked insertion operation.
+- `--irregular-solver PATH --irregular-budget 40`: full projected contours with
+  quarter-turns, no mirroring and independent source/protection replay.
+- `--rectangle-solver PATH --rectangle-budget 20`: regular floor proposals from
+  PackingSolver rectangle. `--cp-sat-python PATH` selects exact coverage from the
+  generated finite carton pool. Neither backend certifies global optimality.
+- `--common-floor-budget 120 --common-floor-only`: footprint-first partial floors,
+  upward height quantization, cropped cartons and fresh no-spacer retiling.
+- `--supported-nesting`: individually inserted pairs supported by actual internal
+  horizontal faces. Evaluate separately from projected-contour/floor-pair modes.
+- `--source-surface-budget 120`: bounded 3D placement on actual surfaces; several
+  upper parts can share a lower source. Every intermediate removal/insertion load
+  state must remain geometrically stable. Multiple-parent bridges and compliant
+  wrapping are not certified by this model.
+
+Joint refinement uses only dimensions generated during this invocation. The
+frontier preserves volume/carton/type/handling tradeoffs. Include protective-sheet
+placements, floor liners and carton closures when discussing actual labor;
+source placements alone are not the full work count. Prices and manual times
+remain unknown unless supplied or measured.
+Retain the Pareto alternatives and explain the delivery choice. A slightly
+smaller layout with more cartons or protective sheets is not automatically the
+better procurement/kitting choice. Label declared hollow proxies as assumptions
+even when their original meshes pass geometric floor interlocking checks.
+
+Only independently passing trials may produce an operator guide. A failed trial
+or an exhausted budget is diagnostic evidence. Keep the best fully checked result
+across experiments and report the complete elapsed time, including failed attempts,
+preparation, solver startup and replay. The requested no-worse benchmark remains
+open until both complete matching kits actually meet it.
 
 ### Transport-compatible carton search
 

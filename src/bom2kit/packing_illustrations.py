@@ -4,6 +4,13 @@ from pathlib import Path
 CARTON=(.70,.49,.29)
 FOAM=(.79,.81,.81)
 PART=(.76,.78,.80)
+STATE_COLORS={'source_part':PART,'factory_carton':(.84,.68,.44),
+              'protective_packet':(.53,.72,.81),'declared_envelope':(.73,.66,.81)}
+
+
+def state_color(item):
+    from .packing_states import declared_state
+    return STATE_COLORS[declared_state(item)['kind']]
 
 
 def cuboid(origin,size):
@@ -15,14 +22,14 @@ def cuboid(origin,size):
 
 
 def carton_shell(origin,size,wall,*,cutaway=False):
-    """Floor and four walls; cutaway shortens display walls only."""
+    """Keep the rear walls full height; cut only the camera-facing display walls."""
     x,y,z=origin;w,d,h=size
     sides=max(wall+.01,min(18,h*.18)) if cutaway else h
     return [(cuboid([x,y,z],[w,d,wall]),CARTON),
-            (cuboid([x,y,z+wall],[wall,d,sides-wall]),CARTON),
+            (cuboid([x,y,z+wall],[wall,d,h-wall]),CARTON),
             (cuboid([x+w-wall,y,z+wall],[wall,d,sides-wall]),CARTON),
             (cuboid([x+wall,y,z+wall],[w-2*wall,wall,sides-wall]),CARTON),
-            (cuboid([x+wall,y+d-wall,z+wall],[w-2*wall,wall,sides-wall]),CARTON)]
+            (cuboid([x+wall,y+d-wall,z+wall],[w-2*wall,wall,h-wall]),CARTON)]
 
 
 def exploded_scene(result,ordered_modules,meshes):
@@ -42,12 +49,18 @@ def exploded_scene(result,ordered_modules,meshes):
     gap=max(info['block_mm'][:2])*.25
     offsets={z:inner[2]+gap+index*gap for index,z in enumerate(levels)}
     labels=[];display=[]
+    items={i['id']:i for i in result['input'].get('items',[])}
+    uid_items={p['unit_id']:items[p['item_id']] for p in result.get('layout',{}).get('placements',[]) if p['item_id'] in items}
     for number,module in enumerate(ordered_modules,1):
         offset=np.array([0.,0.,offsets[module['position_mm'][2]]])
         origin=np.asarray(module['position_mm'])+offset
         objects.extend(carton_shell(origin,module['external_mm'],t,cutaway=True))
         for uid in module['unit_ids']:
-            mesh=meshes[uid].copy();mesh.apply_translation(offset);objects.append((mesh,PART))
+            mesh=meshes[uid].copy();mesh.apply_translation(offset)
+            objects.append((mesh,state_color(uid_items[uid]) if uid in uid_items else PART))
+        for panel in [*result.get('practical',{}).get('floor_liners',[]),*result.get('practical',{}).get('protective_separators',[])]:
+            if panel['carton_id']==module['id']:
+                objects.append((cuboid(np.asarray(panel['origin_mm'])+offset,panel['dimensions_mm']),FOAM))
         labels.append((str(number),origin+np.array([module['external_mm'][0]/2,-1,8])))
         display.append({'carton_id':module['id'],'label':number,'translation_mm':offset.tolist(),
                         'unit_ids':module['unit_ids']})

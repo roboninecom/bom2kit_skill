@@ -10,7 +10,8 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from bom2kit.assembly_plan import build_assembly_plan
 from bom2kit.transport_validation import validate_transport
-from bom2kit.packing_illustrations import render_scene,carton_shell,cuboid,exploded_scene,PART,CARTON
+from bom2kit.packing_illustrations import render_scene,carton_shell,cuboid,exploded_scene,PART,CARTON,FOAM,state_color
+from bom2kit.packing_states import declared_state
 
 
 def name(item):
@@ -45,7 +46,8 @@ def carton_records(result,plan):
         counts=Counter(poses[uid]['item_id'] for slot in slots for uid in slot['members'])
         item_slots={iid:sorted({s['number'] for s in slots if any(poses[uid]['item_id']==iid for uid in s['members'])}) for iid in counts}
         order=[sorted({mapping[uid] for uid in step['unit_ids']}) for step in entry['packing_sequence']]
-        records.append({'number':index,'module':module,'layer':layer,'slots':slots,'counts':counts,'item_slots':item_slots,'order':order})
+        records.append({'number':index,'module':module,'layer':layer,'slots':slots,'counts':counts,'item_slots':item_slots,'order':order,
+                        'operator_steps':entry.get('operator_steps',[]),'unit_to_slot':mapping})
     if Counter(seen)!=Counter(poses.keys()):raise ValueError('Illustrated cartons must cover every original unit exactly once')
     return records
 
@@ -76,17 +78,21 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
     thumbnails={}
     for number,(iid,mesh) in enumerate(sources.items(),1):
         path=assets/f'part-{number}.png'
-        illustrate([(mesh,PART)],path,size=(360,260));thumbnails[iid]=path
+        illustrate([(mesh,state_color(items[iid]))],path,size=(360,260));thumbnails[iid]=path
+    uid_items={p['unit_id']:items[p['item_id']] for p in result['layout']['placements']}
     for record in records:
         n=record['number'];layer=record['layer'];origin=np.asarray(layer['position_mm'])+layer['wall_mm']
         parts=[];slot_labels=[]
         for slot in record['slots']:
             local=[]
             for uid in slot['members']:
-                mesh=meshes[uid].copy();mesh.apply_translation(-origin);parts.append((mesh,PART));local.append(mesh)
+                mesh=meshes[uid].copy();mesh.apply_translation(-origin);parts.append((mesh,state_color(uid_items[uid])));local.append(mesh)
             bounds=np.asarray([m.bounds for m in local]);center=(bounds[:,0].min(0)+bounds[:,1].max(0))/2
             center[2]=layer['inner_mm'][2]+2;slot_labels.append((str(slot['number']),center))
         shell=carton_shell([-layer['wall_mm']]*3,record['module']['external_mm'],layer['wall_mm'],cutaway=True)
+        for panel in [*result.get('practical',{}).get('floor_liners',[]),*result.get('practical',{}).get('protective_separators',[])]:
+            if panel['carton_id']==layer['id']:
+                parts.append((cuboid(np.asarray(panel['origin_mm'])-origin,panel['dimensions_mm']),FOAM))
         illustrate(parts+shell,assets/f'box-{n}-iso.png',size=(1400,800))
         illustrate(parts+shell,assets/f'box-{n}-top.png',view='top',labels=slot_labels,size=(1000,750))
         illustrate(parts,assets/f'box-{n}-side.png',view='side',size=(1000,750))
@@ -96,7 +102,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
         parts=[];labels=[]
         sequence=[uid for step in template['packing_sequence'] for uid in step['unit_ids']]
         for pose in template['workbench_layout']['placements']:
-            mesh=sources[pose['item_id']].copy();mesh.apply_transform(pose['transform']);parts.append((mesh,PART))
+            mesh=sources[pose['item_id']].copy();mesh.apply_transform(pose['transform']);parts.append((mesh,state_color(items[pose['item_id']])) )
             labels.append((str(sequence.index(pose['unit_id'])+1),mesh.bounds.mean(0)))
         path=assets/f'group-{index}.png';illustrate(parts,path,labels=labels,size=(700,450));template_images[template['id']]=path
     outer=result['envelope_design']['candidate']['external_mm']
@@ -118,12 +124,12 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
         iw,ih=PILImage.open(path).size;scale=min(w/iw,h/ih)
         return Image(str(path),width=iw*scale,height=ih*scale)
     def dims(values):return ' x '.join(f'{v:g}' for v in values)
-    def table(rows,widths):
+    def table(rows,widths,compact=False):
         t=Table(rows,colWidths=widths,repeatRows=1,hAlign='LEFT')
         t.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e7edf3')),
                               ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f7f9')]),
                               ('LINEBELOW',(0,0),(-1,-1),.3,colors.HexColor('#d7dfe6')),('LEFTPADDING',(0,0),(-1,-1),7),
-                              ('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+                              ('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),4 if compact else 6),('BOTTOMPADDING',(0,0),(-1,-1),4 if compact else 6)]))
         return t
     flow=[P('Where each box goes','TitleGuide'),P(f'{escape(kit)} | Visual packing guide | {escape(revision)}','SmallGuide'),Spacer(1,8)]
     levels=sorted({r['module']['position_mm'][2] for r in records})
@@ -134,8 +140,9 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
     steps.append('Fit the foam lid and close the outer carton.')
     for i,step in enumerate(steps,1):flow.append(P(f'<b>{i}.</b> {step}'))
     flow.extend([Spacer(1,5),P(f'Exterior: {dims(outer)} mm | {np.prod(outer)/1e6:.3f} L | {len(records)} inner boxes','SmallGuide'),
-                 pic(assets/'outer-exploded.png',width,540),
-                 P('Exploded display only: gaps are not packing clearances. Walls are cut down and lids hidden to reveal the original CAD. Close all inner boxes before insertion.','SmallGuide'),
+                 pic(assets/'outer-exploded.png',width,505),
+                 P('Colors: gray = source CAD; tan = factory carton; blue = protective packet; purple = declared envelope, not an extra box. Foam is pale gray. Shapes and dimensions are retained from the source evidence.','SmallGuide'),
+                 P('Exploded display only: gaps are not packing clearances. Front/right walls are cut down and lids hidden; rear walls retain their specified height. Close all inner boxes before insertion.','SmallGuide'),
                  Spacer(1,5),P('Geometric draft. Source quantities and geometry checked; physical restraint and transport release still require a prototype.','SmallGuide')])
     template_for_unit={uid:t['id'] for t in plan['templates'] for copy in t['copies'] for uid in copy['unit_mapping'].values()}
     for r in records:
@@ -143,23 +150,35 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
         label=label.replace('Factory-boxed servos, protected electronics and cables','Protected servos, electronics and cables')
         flow.extend([PageBreak(),P(f'Box {n}: how the parts sit','TitleGuide'),P(escape(label)),
                      P(f'Outside {dims(r["module"]["external_mm"])} mm | Cavity {dims(r["layer"]["inner_mm"])} mm','SmallGuide'),
-                     pic(assets/f'box-{n}-iso.png',width,245),P('Isometric - walls cut down; lid omitted','SmallGuide')])
+                     pic(assets/f'box-{n}-iso.png',width,245),P('Isometric - rear walls full height; front/right walls cut; lid omitted','SmallGuide')])
         views=Table([[pic(assets/f'box-{n}-top.png',width/2-8,180),pic(assets/f'box-{n}-side.png',width/2-8,180)],
                      [P('Top - numbered slots','SmallGuide'),P('Side - carton walls omitted','SmallGuide')]],colWidths=[width/2]*2)
         flow.extend([views,Spacer(1,8)])
         order=' / '.join(', '.join(map(str,s)) for s in r['order'])
         flow.append(P(f'<b>Insertion order (slots):</b> {order}.'))
+        sheets=[s for s in result.get('practical',{}).get('protective_separators',[]) if s['carton_id']==r['layer']['id']]
+        if sheets:
+            flow.append(P('Protective sheets: place each after its lower slot and before its upper slot. These are counted materials inside a box, not fillers between boxes. Sheet handling and material strength require a prototype.','SmallGuide'))
+            rows=[[P('<b>After slot</b>','CellGuide'),P('<b>Before slot</b>','CellGuide'),P('<b>Sheet W x D x T (mm)</b>','CellGuide')]]
+            for sheet in sheets:
+                rows.append([P(str(r['unit_to_slot'][sheet['lower_unit_id']]),'CellGuide'),
+                             P(str(r['unit_to_slot'][sheet['upper_unit_id']]),'CellGuide'),P(dims(sheet['dimensions_mm']),'CellGuide')])
+            flow.append(table(rows,[85,85,width-170]))
         used=sorted({template_for_unit[uid] for s in r['slots'] for uid in s['members'] if uid in template_for_unit})
         if used:flow.append(P('Preassemble nested groups using the group cards at the end, then orient each group as shown here.','SmallGuide'))
         flow.extend([Spacer(1,8),P(f'Box {n}: count before closing','SubGuide')])
+        note=P('Qty counts packing units; packet contents are stated separately. Purchased shapes are declared envelopes where detailed CAD is unavailable.','SmallGuide')
+        note.keepWithNext=True
+        flow.extend([note,Spacer(1,4)])
         rows=[[P('<b>Part</b>','CellGuide'),P(f'<b>BOX {n} - source / packing state</b>','CellGuide'),P('<b>Qty</b>','CellGuide'),P('<b>Slots</b>','CellGuide')]]
         for iid,count in r['counts'].items():
             item=items[iid];description=f'<b>{escape(name(item))}</b><br/>{escape(iid)}'
+            state=declared_state(item)
+            description+='<br/>'+escape(state['kind'].replace('_',' '))+' | '+escape(state['measurement_status'].replace('_',' '))
             if item.get('packing_state'):description+='<br/>'+escape(str(item['packing_state']))
             if item.get('contents'):description+='<br/>Per packet: '+escape('; '.join(f'{q} x {key}' for key,q in item['contents'].items()))
             rows.append([pic(thumbnails[iid],48,38),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
-        flow.append(table(rows,[62,width-62-36-90,36,90]))
-        flow.append(Spacer(1,6));flow.append(P('Qty counts packing units; packet contents are stated separately. Purchased shapes are declared envelopes where detailed CAD is unavailable.','SmallGuide'))
+        flow.append(table(rows,[62,width-62-36-90,36,90],compact=True))
     if plan['templates']:
         flow.extend([PageBreak(),P('Nested groups: workbench assembly','TitleGuide'),P('Build each group in numbered order, then rotate the completed group into its box slot. These are certified workbench frames, not extra packing boxes.','SmallGuide')])
         cards=[]

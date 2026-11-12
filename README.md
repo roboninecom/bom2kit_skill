@@ -45,15 +45,26 @@ to synchronize both agent copies.
 
 ## Current capabilities and limits
 
+The [practical packing redesign](docs/practical-packing-design.md) adds explicit
+packing states, source-based support checks, individual placement sequences,
+simplified fingertip clearance and operational tradeoffs. Its experimental
+regular rows, flat-interface stacks, adjacent floor pairs and actual-surface
+support trees target easier kitting. Shipping-kit requests use this pipeline by
+default; the older compound searches remain research/baseline tools.
+The [four-hour goal](docs/practical-packing-four-hour-goal.md) states acceptance
+conditions and the fixed reporting deadline. These additions do not establish
+production readiness or success against Alan's volume reference.
+
 The [transport packaging workflow](docs/transport-packaging.md) implements
 compatible-family cartons, a complete adjustable carton block without spacers,
 six-face foam geometry and checked CAD assembly reports. It includes an optional
 PackingSolver proposal adapter; the default engine does not require that binary.
 Physical restraint and transport performance remain unqualified.
 
-The [latest measured report](docs/transport-round-two-report.md) records the
-second window's 101/102 improvements, three-carton layouts, tested solver
-alternatives and the remaining gap to Alan. The
+The [practical packing report](docs/practical-packing-four-hour-report.md) records
+the stricter support/handling checks, current-source comparisons and the remaining
+volume gap. The [previous measured report](docs/transport-round-two-report.md)
+retains the second window's earlier geometry-only results. The
 [first-window report](docs/two-hour-transport-report.md) retains the earlier results.
 
 The [transport-packaging audit and redesign](docs/transport-packaging-research.md)

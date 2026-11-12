@@ -29,6 +29,19 @@ def build_assembly_plan(result, expected_bom):
     hierarchy = validate_layered(carton["input"], carton["layout"])
     if not coverage["complete"] or not hierarchy["valid"]:
         raise ValueError("Complete BOM and validated closed-carton hierarchy required")
+    practical_access = None
+    source_modes={'planar','source_floor','source_contact'}
+    needs_practical=(carton['input'].get('planar_footprints') or carton['input'].get('source_clearance_slots')
+                     or any(l.get('placement_check') in source_modes for l in carton['layout']['layers']))
+    if needs_practical and 'practical' not in result:
+        raise ValueError('Planar footprints require original-source projection and practical checks')
+    if "practical" in result:
+        from .practical_validation import check_floor_support, check_hand_access
+        support = check_floor_support(result)
+        parameters = result["practical"].get("hand_access", {}).get("parameters", {})
+        practical_access = check_hand_access(result, **parameters)
+        if not support["valid"] or not practical_access["valid"]:
+            raise ValueError("Practical floor support and fingertip access must independently pass")
     if result["input"]["container"] != carton["input"]["container"]:
         raise ValueError("Mesh and carton containers differ")
     external = normalize(carton["input"])["external"]
@@ -104,10 +117,26 @@ def build_assembly_plan(result, expected_bom):
                 raise ValueError("Original part is outside its assigned inner carton")
         member_set = set(members)
         sequence = [step for step in motion["packing_sequence"] if member_set.intersection(step["unit_ids"])]
+        if practical_access is not None:
+            checked = next(c for c in practical_access["cartons"] if c["carton_id"] == layer["id"])
+            sequence = [{"group_id": s["unit_id"], "unit_ids": [s["unit_id"]], "direction": "-Z",
+                         "finger_axis": s["axis"]} for s in checked["packing_sequence"]]
         if Counter(uid for step in sequence for uid in step["unit_ids"]) != Counter(members):
             raise ValueError("Insertion sequence crosses carton membership")
+        sheets=[s for s in result.get('practical',{}).get('protective_separators',[]) if s['carton_id']==layer['id']]
+        operator_steps=[];placed=set()
+        for step in sequence:
+            for sheet in sheets:
+                if sheet['upper_unit_id'] in step['unit_ids']:
+                    if sheet['lower_unit_id'] not in placed:raise ValueError('Contact sheet precedes its supporting part')
+                    operator_steps.append({'action':'place_protective_contact_sheet','packaging_id':sheet['id'],
+                                           'origin_mm':sheet['origin_mm'],'dimensions_mm':sheet['dimensions_mm'],
+                                           'manual_sheet_handling_verified':False})
+            operator_steps.append({'action':'place_source_unit',**step});placed.update(step['unit_ids'])
         cartons.append({**layer, "unit_ids": members, "packing_sequence": sequence,
-                        "instruction": "Preassemble listed groups, orient to final poses, lower through the open top, then close the carton."})
+                        "operator_steps":operator_steps,
+                        "instruction": ("Fit the specified floor liner. Place each original unit separately in the checked fingertip-access order; fit every listed protective sheet before the upper part. Close the carton."
+                                        if practical_access is not None else "Preassemble listed groups, orient to final poses, lower through the open top, then close the carton.")})
         seen.extend(members)
     if Counter(seen) != Counter(poses.keys()):
         raise ValueError("Cartons must cover every original unit exactly once")
