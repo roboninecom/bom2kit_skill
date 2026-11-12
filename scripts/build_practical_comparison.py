@@ -79,7 +79,8 @@ def render(config_path,output):
         after_seconds=None
         if case.get('after_run'):
             run=json.loads(Path(case['after_run']).read_bytes());after_seconds=run.get('seconds')
-        rows=[['Metric','Before: matching current inputs','After: practical candidate','Alan: illustrated reference'],
+        after_label=case.get('after_label','After: practical candidate')
+        rows=[['Metric','Before: matching current inputs',after_label,'Alan: illustrated reference'],
               ['Exterior, mm',*[dimensions(v) for v in exterior]],
               ['Shipping volume, L',*[f"{m['external_volume_l']:.3f}" for m in metrics],f'{ref_volume:.3f}'],
               ['Inner cartons / sizes',*[f"{m['cartons']} / {m['carton_types']}" for m in metrics],f"{reference.get('cartons','Unknown')} / not audited"],
@@ -98,7 +99,7 @@ def render(config_path,output):
         pdf.setFont('Helvetica-Bold',10);pdf.setFillColor(colors.HexColor('#9a3412') if delta>0 else colors.HexColor('#166534'))
         pdf.drawString(margin,height-50,f'{status}: {delta:+.1f}% versus Alan. Complete matching before/after source BOM.')
         column=available/3
-        captions=['Before: original CAD','After: original CAD',reference.get('label','Alan: supplied reference')]
+        captions=['Before: original CAD',case.get('after_caption','After: original CAD'),reference.get('label','Alan: supplied reference')]
         for index,(image,caption) in enumerate(zip(images,captions)):
             x=margin+index*column
             pdf.setFillColor(colors.HexColor('#334155'));pdf.setFont('Helvetica-Bold',9)
@@ -131,7 +132,8 @@ def render(config_path,output):
                 'same_before_after_sources_and_protection':True,'checks':checks,'file_sha256':hashes,
                 'reference_image_sha256':sha256(reference_image.read_bytes()).hexdigest(),
                 'illustration_sha256':{label:sha256(path.read_bytes()).hexdigest() for label,path in zip(('before','after','reference'),images)},
-                'after_seconds':after_seconds,'note':case.get('note'),'physical_qualification':False}
+                'after_seconds':after_seconds,'note':case.get('note'),'selection':case.get('selection'),
+                'physical_qualification':False}
         record['organization']=dict(zip(('before','after'),organizations))
         record['retention_screen']=dict(zip(('before','after'),retention))
         record['space_use']=dict(zip(('before','after'),space))

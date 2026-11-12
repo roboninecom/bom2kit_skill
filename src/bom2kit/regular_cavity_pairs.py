@@ -43,53 +43,66 @@ def make_supported_pairs(units,choices,source_items,padding,gap,max_height,*,sec
         best=None
         if declared_state(source_items[first['item_id']])['kind'] in ('source_part','factory_carton') and perf_counter()<deadline:
             manager=trimesh.collision.CollisionManager();manager.add_object('lower',a)
-            eligible=[(i,u) for i,u in enumerate(pending) if motif_neighbors(u,first) and all(u['dimensions'][k]<=first['dimensions'][k]*1.25 for k in (0,1))]
+            eligible=[(i,u) for i,u in enumerate(pending) if motif_neighbors(u,first) and
+                any(all(u['dimensions'][axes[k]]<=first['dimensions'][k]*1.25 for k in (0,1)) for axes in ((0,1),(1,0)))]
             ranked=sorted(eligible,key=lambda iu:(iu[1]['item_id']!=first['item_id'],-math.prod(iu[1]['dimensions'])))
             candidates=ranked[:8]+[entry for entry in ranked[-4:] if entry not in ranked[:8]]
             for index,unit in candidates:
-                b,_,bottom=surfaces[unit['item_id']]
-                if bottom.is_empty:continue
-                for plane,shelf in shelves:
+                base,_,_=surfaces[unit['item_id']]
+                option=choices[unit['item_id']][1]
+                # Relative quarter-turns preserve the stable face but can fit a
+                # rectangular recess that rejects the global row orientation.
+                for turn in range(4):
                     if perf_counter()>=deadline:break
-                    offsets=[(a.bounds.mean(axis=0)[:2]-b.bounds.mean(axis=0)[:2]).tolist(),
-                             [shelf.centroid.x-b.center_mass[0],shelf.centroid.y-b.center_mass[1]]]
-                    # A useful recess need not lie at the whole part's centroid.
-                    # Probe actual connected support patches and their boundaries.
-                    components=list(shelf.geoms) if shelf.geom_type=='MultiPolygon' else [shelf]
-                    for patch in sorted(components,key=lambda p:-p.area)[:6]:
-                        anchor=patch.representative_point();x0,y0,x1,y1=patch.bounds
-                        xs=(x0-b.bounds[0,0],x1-b.bounds[1,0],anchor.x-b.center_mass[0])
-                        ys=(y0-b.bounds[0,1],y1-b.bounds[1,1],anchor.y-b.center_mass[1])
-                        offsets.extend([x,y] for x in xs for y in ys)
-                    offsets=list(dict.fromkeys(tuple(round(v,6) for v in xy) for xy in offsets))
-                    for xy in offsets:
+                    yaw=trimesh.transformations.rotation_matrix(turn*math.pi/2,[0,0,1])
+                    b=base.copy();b.apply_transform(yaw)
+                    yaw[:3,3]-=b.bounds[0];b.apply_translation(-b.bounds[0])
+                    member_transform=yaw@np.asarray(option['transform'])
+                    from .regular_stacks import horizontal_cap
+                    bottom=horizontal_cap(b,b.bounds[0,2],normal_sign=-1)
+                    if bottom.is_empty:continue
+                    for plane,shelf in shelves:
                         if perf_counter()>=deadline:break
-                        offset=np.array([*xy,plane+2*padding+gap])
-                        low=np.minimum(a.bounds[0],b.bounds[0]+offset)
-                        high=np.maximum(a.bounds[1],b.bounds[1]+offset)
-                        dims=high-low+2*padding
-                        if dims[2]>max_height+1e-7 or any(dims[k]>first['dimensions'][k]*1.25 for k in (0,1)):continue
-                        score=math.prod(dims)
-                        if best and score>=best[0]:continue
-                        if score>=.94*(math.prod(first['dimensions'])+math.prod(unit['dimensions'])):continue
-                        contact=shelf.intersection(translate(bottom,xoff=xy[0],yoff=xy[1]))
-                        center=Point(b.center_mass[0]+xy[0],b.center_mass[1]+xy[1])
-                        if contact.area<1e-6 or not contact.convex_hull.covers(center) or contact.convex_hull.boundary.distance(center)<.05:continue
-                        transform=np.eye(4);transform[:3,3]=offset
-                        tested+=1
-                        if manager.in_collision_single(b,transform) or manager.min_distance_single(b,transform)<2*padding+gap-1e-6:continue
-                        # A rectangular protective sheet must also fit the cavity;
-                        # disconnected contact pads cannot conceal a central boss.
-                        x,y,right,back=contact.bounds
-                        if min(right-x,back-y)<minimum_sheet_side-1e-7:continue
-                        sheet=trimesh.creation.box([right-x-.002,back-y-.002,2*padding+gap-.002])
-                        sheet.apply_translation([(x+right)/2,(y+back)/2,plane+padding+gap/2])
-                        if manager.in_collision_single(sheet):continue
-                        best=(score,index,unit,offset,low,dims,plane,contact)
+                        offsets=[(a.bounds.mean(axis=0)[:2]-b.bounds.mean(axis=0)[:2]).tolist(),
+                                 [shelf.centroid.x-b.center_mass[0],shelf.centroid.y-b.center_mass[1]]]
+                        # A useful recess need not lie at the whole part's centroid.
+                        # Probe actual connected support patches and their boundaries.
+                        components=list(shelf.geoms) if shelf.geom_type=='MultiPolygon' else [shelf]
+                        for patch in sorted(components,key=lambda p:-p.area)[:6]:
+                            anchor=patch.representative_point();x0,y0,x1,y1=patch.bounds
+                            xs=(x0-b.bounds[0,0],x1-b.bounds[1,0],anchor.x-b.center_mass[0])
+                            ys=(y0-b.bounds[0,1],y1-b.bounds[1,1],anchor.y-b.center_mass[1])
+                            offsets.extend([x,y] for x in xs for y in ys)
+                        offsets=list(dict.fromkeys(tuple(round(v,6) for v in xy) for xy in offsets))
+                        for xy in offsets:
+                            if perf_counter()>=deadline:break
+                            offset=np.array([*xy,plane+2*padding+gap])
+                            low=np.minimum(a.bounds[0],b.bounds[0]+offset)
+                            high=np.maximum(a.bounds[1],b.bounds[1]+offset)
+                            dims=high-low+2*padding
+                            if dims[2]>max_height+1e-7 or any(dims[k]>first['dimensions'][k]*1.25 for k in (0,1)):continue
+                            score=math.prod(dims)
+                            if best and score>=best[0]:continue
+                            if score>=.94*(math.prod(first['dimensions'])+math.prod(unit['dimensions'])):continue
+                            contact=shelf.intersection(translate(bottom,xoff=xy[0],yoff=xy[1]))
+                            center=Point(b.center_mass[0]+xy[0],b.center_mass[1]+xy[1])
+                            if contact.area<1e-6 or not contact.convex_hull.covers(center) or contact.convex_hull.boundary.distance(center)<.05:continue
+                            transform=np.eye(4);transform[:3,3]=offset
+                            tested+=1
+                            if manager.in_collision_single(b,transform) or manager.min_distance_single(b,transform)<2*padding+gap-1e-6:continue
+                            # A rectangular protective sheet must also fit the cavity;
+                            # disconnected contact pads cannot conceal a central boss.
+                            x,y,right,back=contact.bounds
+                            if min(right-x,back-y)<minimum_sheet_side-1e-7:continue
+                            sheet=trimesh.creation.box([right-x-.002,back-y-.002,2*padding+gap-.002])
+                            sheet.apply_translation([(x+right)/2,(y+back)/2,plane+padding+gap/2])
+                            if manager.in_collision_single(sheet):continue
+                            best=(score,index,unit,offset,low,dims,plane,contact,member_transform,b.extents)
         if best:
-            _,index,unit,offset,low,dims,plane,contact=best;pending.pop(index)
+            _,index,unit,offset,low,dims,plane,contact,member_transform,member_extents=best;pending.pop(index)
+            unit={**unit,'dimensions':(member_extents+2*padding).tolist()}
             members=[{'unit':first,'offset_mm':(-low).tolist()},
-                     {'unit':unit,'offset_mm':(offset-low).tolist()}]
+                     {'unit':unit,'offset_mm':(offset-low).tolist(),'transform_override':member_transform.tolist()}]
             size=dims.tolist();x,y,right,back=contact.bounds
             sheets=[{'lower_unit_id':first['unit_id'],'upper_unit_id':unit['unit_id'],
                      'origin_mm':[x+padding-low[0],y+padding-low[1],plane+padding-low[2]],

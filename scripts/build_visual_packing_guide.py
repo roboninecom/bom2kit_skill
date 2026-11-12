@@ -93,6 +93,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
     property_cards=bound_property_cards(result,properties_path)
     from bom2kit.part_properties import check_accessory_set_cohesion,describe_parts
     cohesion_cards=property_cards or describe_parts(result['input'],result['logistics']['policy'])['cards']
+    property_cards=cohesion_cards
     cohesion_screen=check_accessory_set_cohesion(result,cohesion_cards)
     if not cohesion_screen['valid']:
         raise ValueError('An accessory set is split between cartons; retain this result as diagnostic only')
@@ -146,7 +147,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
     styles.add(ParagraphStyle('TitleGuide',fontName='GuideBold',fontSize=17,leading=22,spaceAfter=7))
     styles.add(ParagraphStyle('SubGuide',fontName='GuideBold',fontSize=11,leading=15,spaceAfter=6,spaceBefore=7))
     styles.add(ParagraphStyle('SmallGuide',fontName='Guide',fontSize=7.5,leading=10,textColor=colors.HexColor('#59636d')))
-    styles.add(ParagraphStyle('CellGuide',fontName='Guide',fontSize=8,leading=11))
+    styles.add(ParagraphStyle('CellGuide',fontName='Guide',fontSize=8,leading=10))
     W,H=A4;margin=32;width=W-2*margin
     def P(text,style='BodyText'):return Paragraph(text,styles[style])
     def pic(path,w,h):
@@ -159,7 +160,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
         t.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e7edf3')),
                               ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#f5f7f9')]),
                               ('LINEBELOW',(0,0),(-1,-1),.3,colors.HexColor('#d7dfe6')),('LEFTPADDING',(0,0),(-1,-1),7),
-                              ('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),4 if compact else 6),('BOTTOMPADDING',(0,0),(-1,-1),4 if compact else 6)]))
+                              ('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),3 if compact else 6),('BOTTOMPADDING',(0,0),(-1,-1),3 if compact else 6)]))
         return t
     flow=[P('Where each box goes','TitleGuide'),P(f'{escape(kit)} | Visual packing guide | {escape(revision)}','SmallGuide'),Spacer(1,8)]
     levels=sorted({r['module']['position_mm'][2] for r in records})
@@ -225,10 +226,13 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
                           'declared_estimate':'estimated dimensions'}.get(state.get('measurement_status'),'dimension evidence requires review')
                 state_label+=' - '+evidence
             if state['kind']!='source_part':description+='<br/>'+state_label
+            confirmed_frame=item.get('source_geometry_definition',{}).get('confirmed_frame_length_mm')
+            if confirmed_frame is not None:
+                description+=f'<br/>Confirmed frame: {float(confirmed_frame):g} mm'
             contents=item.get('contents',{})
             if state['kind']=='protective_packet' or (contents and contents!={iid:1}):
                 description+='<br/>Contents per unit: '+escape('; '.join(f'{q} x {key}' for key,q in contents.items()))
-            rows.append([pic(thumbnails[iid],48,30 if state['kind']=='source_part' else 38),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
+            rows.append([pic(thumbnails[iid],48,30 if state['kind']=='source_part' else 32),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
         flow.append(table(rows,[62,width-62-36-90,36,90],compact=True))
     if plan['templates']:
         flow.extend([PageBreak(),P('Nested groups: workbench assembly','TitleGuide'),P('Build each group in numbered order, then rotate the completed group into its box slot. These are certified workbench frames, not extra packing boxes.','SmallGuide')])
@@ -280,6 +284,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
               'physical_qualification':False,'transport_checks':checks,
               'manual_material_screen':material_screen,'accessory_set_cohesion':cohesion_screen,
               'properties_sha256':sha256(Path(properties_path).read_bytes()).hexdigest() if properties_path else None,
+              'display_property_cards_fingerprint':fingerprint(property_cards),
               'illustrations_sha256':{p.name:sha256(p.read_bytes()).hexdigest() for p in assets.glob('*.png')}}
     (output/'guide-manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf8')
     return {'pdf':str(pdf),'cartons':len(records),'source_units':len(meshes)}

@@ -116,8 +116,15 @@ geometry and independently replay. Name inference, shape similarity and visual
 annotations guide grouping only; they never authorize reduced protection or loads.
 
 ```powershell
-python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts --cache packaging-results/pose-cache --grouping adaptive_type --motifs hybrid --placement-style cohesive --time-limit 180 --wall-limit 900 --max-replays 4 --assignment-budget 45 --refinement-budget 45 --surface-budget 60 --repair-budget 90
+python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts-rows --cache packaging-results/pose-cache --grouping type --motifs rows --placement-style cohesive --time-limit 150 --wall-limit 900 --max-replays 4 --assignment-budget 60 --refinement-budget 15 --repair-budget 90
 ```
+
+Start with the bounded typed-row incumbent. Then, within the user's remaining
+budget, compare a separate run with `--motifs hybrid --grouping adaptive_type`
+and a different output directory. Hybrid includes rows, stacks, alternating
+floor pairs and supported nesting; it can lose under a fixed search budget.
+Preserve the row result unless independent replay and the measured tradeoffs
+justify replacing it. Never overwrite an earlier result during this comparison.
 
 Compare `assembly`, `type`, `shape`, `adaptive_type` and `replicated` grouping when names are incomplete
 or height differences waste space. Keep original identities even for geometrically

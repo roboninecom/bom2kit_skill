@@ -124,9 +124,15 @@ skips unused projected-contour preparation; contour solvers retain full projecti
 ## Run and reproduce
 
 ```powershell
-python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts --cache packaging-results/pose-cache --grouping type --motifs hybrid --placement-style cohesive --time-limit 180 --wall-limit 900 --max-replays 4 --refinement-budget 45 --surface-budget 60 --repair-budget 90
+python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts --cache packaging-results/pose-cache --grouping type --motifs rows --placement-style cohesive --time-limit 150 --wall-limit 900 --max-replays 4 --assignment-budget 60 --refinement-budget 15 --repair-budget 90
 python -m pytest -q tests/test_concept_packing.py tests/test_practical_packing.py
 ```
+
+Typed rows are the CLI starting point because the real-case portfolio did not
+show a consistent benefit from more expensive motifs. Compare a separate
+`--motifs hybrid --grouping adaptive_type` run without replacing the incumbent
+automatically. Relative quarter-turns of a nested child preserve its stable face
+and original transform; independent support, protection and grip replay still apply.
 
 The time limit is a soft proposal budget; the wall limit includes preparation and
 replay and terminates the owned subprocess tree. `run.json` records all stage times,

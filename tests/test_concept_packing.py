@@ -219,6 +219,37 @@ def test_compact_surface_search_uses_a_real_cavity_before_unused_floor(tmp_path)
     assert any(p.get('supported_pairs') for p in portfolio['patterns'])
 
 
+def test_supported_pair_rotates_child_inside_a_rectangular_recess(tmp_path):
+    from bom2kit.regular_patterns import floor_patterns
+    from bom2kit.practical_geometry import contact_certificate
+    from bom2kit.practical_design import build_candidate
+    from bom2kit.carton_tiling import tile_modules
+    solids=[]
+    for size,center in [([50,36,4],[25,18,2]),([4,36,16],[2,18,12]),
+                        ([4,36,16],[48,18,12]),([42,4,16],[25,2,12]),([42,4,16],[25,34,12])]:
+        m=trimesh.creation.box(size);m.apply_translation(center);solids.append(m)
+    tray=trimesh.util.concatenate(solids)
+    child=trimesh.creation.box([10,30,8]);child.apply_translation(-child.bounds[0])
+    items=[];options={}
+    for iid,mesh in [('tray',tray),('insert',child)]:
+        path=tmp_path/(iid+'.json');path.write_text(json.dumps({'units':'mm','vertices_mm':mesh.vertices.tolist(),'triangles':mesh.faces.tolist()}))
+        items.append({'id':iid,'quantity':1,'mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}})
+        options[iid]=[{'dimensions_mm':mesh.extents.tolist(),'transform':np.eye(4).tolist(),'contact':contact_certificate(mesh)}]
+    generated=floor_patterns(items,options,1.,1.5,seconds=2.,hand_border=9.,supported_nesting=True,minimum_sheet_side=10.)
+    nested=[p for p in generated['patterns'] if p.get('supported_pairs')]
+    assert nested,'The insert fits only after a relative quarter-turn in the tray'
+    pattern=min(nested,key=lambda p:np.prod(p['external_mm']))
+    pose=next(p for p in pattern['placements'] if p['item_id']=='insert')
+    parent=next(p for p in pattern['placements'] if p['item_id']=='tray')
+    relative=np.linalg.inv(np.asarray(parent['transform']))@np.asarray(pose['transform'])
+    assert abs(relative[0,1])>.99 and abs(relative[1,0])>.99
+    _,policy,_=inputs(tmp_path);policy['families']={'tray':'print','insert':'print'}
+    modules=[{'family':'print','items':items,'patterns':[pattern]}]
+    tiled=tile_modules(modules,time_limit=.1,max_types=1)['candidate']
+    result=build_candidate({'units':'mm','items':items},policy,modules,tiled)
+    assert result['practical']['valid'],(result['practical']['support'].get('errors'),result['practical']['hand_access'].get('failures'))
+
+
 def test_cached_pair_reuses_geometry_with_new_unit_ids_and_preserved_clearance(tmp_path):
     from bom2kit.regular_floor_pairs import make_floor_pairs, _pair_recipes
     from bom2kit.practical_geometry import contact_certificate
