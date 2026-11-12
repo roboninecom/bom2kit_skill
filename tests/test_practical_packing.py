@@ -331,6 +331,39 @@ def test_real_irregular_solver_source_replay(tmp_path):
     assert result['practical']['valid']
 
 
+def test_irregular_backend_null_certificate_keeps_fallback_available(tmp_path,monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from bom2kit import irregular_floor
+    item,_=source(tmp_path);options={'part':stable_pose_options(item)}
+    seed=floor_patterns([item],options,1,1.5,seconds=.1)['patterns'][0]
+    def no_incumbent(arguments,**kwargs):
+        Path(arguments[arguments.index('--certificate')+1]).write_text('null')
+        return SimpleNamespace(returncode=0,stderr='')
+    monkeypatch.setattr(irregular_floor.subprocess,'run',no_incumbent)
+    proposed=irregular_floor.propose([item],options,seed,1,1.5,executable='test-solver')
+    assert proposed['status']=='incomplete'
+    assert proposed['reason']=='no_solution_certificate'
+    assert 'pattern' not in proposed
+
+
+def test_rejected_contour_proposal_does_not_displace_regular_fallback(tmp_path,monkeypatch):
+    from bom2kit import irregular_floor
+    from bom2kit.practical_design import design_practical
+    item,_=source(tmp_path)
+    def invalid_proposal(items,options,seed,*args,**kwargs):
+        invalid=deepcopy(seed);invalid['external_mm']=[1,1,1];invalid['method']='invalid_test_proposal'
+        return {'status':'validated_planar_proposal','pattern':invalid}
+    monkeypatch.setattr(irregular_floor,'propose',invalid_proposal)
+    run=design_practical({'units':'mm','items':[item]},policy(),{'components':[{'id':'part','quantity':2}]},
+                         time_limit=1.,carton_counts=(1,),type_caps=(1,),max_replays=2,
+                         hand_border=9,packing_gap=9,irregular_executable='test-solver',irregular_budget=.2)
+    assert run['status']=='verified'
+    assert run['replays'][0]['status']=='rejected'
+    assert run['replays'][1]['status']=='verified'
+    assert run['results'][0]['practical']['valid']
+
+
 def test_repeated_kit_partitions_preserve_original_unit_ids(tmp_path):
     from bom2kit.regular_patterns import partition_by_height
     item,_=source(tmp_path);second={**item,'id':'other'}
@@ -417,6 +450,17 @@ def test_height_cost_partition_separates_flat_wide_from_tall_narrow_parts():
     options={i['id']:[{'dimensions_mm':[100,100,5] if i['id'].startswith('plate') else [10,10,80]}] for i in items}
     groups=partition_by_height(items,options,2,'cost')
     assert [{i['id'] for i in group} for group in groups]==[{'plate-a','plate-b'},{'tall-a','tall-b'}]
+
+
+def test_footprint_cost_can_join_a_plate_with_tall_parts_in_another_stable_pose():
+    from bom2kit.regular_patterns import partition_by_height
+    items=[{'id':iid,'quantity':1} for iid in ('plate','cube','bar')]
+    options={'plate':[{'dimensions_mm':[100,100,5]},{'dimensions_mm':[5,100,100]}],
+             'cube':[{'dimensions_mm':[20,20,20]}],'bar':[{'dimensions_mm':[5,5,100]}]}
+    low=partition_by_height(items,options,2,'cost')
+    narrow=partition_by_height(items,options,2,'footprint_cost')
+    assert [{i['id'] for i in group} for group in low]==[{'plate'},{'cube','bar'}]
+    assert [{i['id'] for i in group} for group in narrow]==[{'cube'},{'plate','bar'}]
 
 
 def test_directional_access_lane_preserves_source_dimensions_and_hand_access(tmp_path):

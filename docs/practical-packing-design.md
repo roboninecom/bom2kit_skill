@@ -1,8 +1,9 @@
 # Practical packing redesign
 
-This work addresses handling complexity, not only shipping volume. The previous
+This work addresses handling complexity, not only shipping volume. The historical
 selected layouts used 14 / 17 compound templates and 61 / 85 carton placements
-for 101 / 102. These counts exclude the internal assembly of the compounds.
+for 101 / 102, before the current 102 CAD update. These counts exclude internal
+compound assembly; the matching-current 102 baseline has 18 templates.
 Factory packaging and declared component envelopes were visually conflated;
 101 explicitly assumed twelve unmeasured factory servo cartons.
 
@@ -16,6 +17,8 @@ Factory packaging and declared component envelopes were visually conflated;
    poses; they do not certify real load capacity or restraint.
 3. `regular_patterns.py` generates floor patterns in repeated SKU poses and uses
    height-cost dynamic programming or repeated-copy splits for family subdivision.
+   It also orders SKUs by their narrow-footprint stable pose, allowing a plate
+   to share a taller carton instead of always clustering it by its lowest pose.
    A directional access lane reserves finger space along one axis instead of
    expanding every inter-item gap in both axes; original grip replay still gates it.
    No unsecured multipart compound is handled as a rigid assembly. The existing
@@ -24,7 +27,9 @@ Factory packaging and declared component envelopes were visually conflated;
 4. `irregular_floor.py` optionally proposes 2D contour layouts with PackingSolver.
    Conservative simplified silhouettes generate proposals; original CAD, full
    padded projections, quantities and allowed rotations remain independently
-   checked. Mirroring is forbidden.
+   checked. Mirroring is forbidden. Strip seeds preserve width, height and floor-area
+   alternatives. A null/no-incumbent backend certificate keeps regular fallbacks;
+   it does not imply packing infeasibility.
 5. `practical_master.py` optionally calls isolated OR-Tools CP-SAT to select
    generated carton candidates with exact component coverage. Its finite-pool
    objective is a surrogate, not a proof of globally optimal packing. The carton
@@ -64,8 +69,10 @@ Factory packaging and declared component envelopes were visually conflated;
     proposals. Height/occupied-volume objectives and failed-unit reorder probes
     are search heuristics, not additional acceptance evidence.
 13. `access_repair.py` uses failed fingertip replay as a local repair signal.
-    Repack only rejected cartons with margins derived from the unchanged finger
-    radius, retain the other arrangements, retile and replay the complete kit.
+    First reserve local access margins around unresolved individual units. If
+    replay still fails, try margins for the whole rejected carton within budget.
+    Derive both from the unchanged finger radius, retain other arrangements,
+    retile and replay the complete kit.
     A smaller rejected layout is never promoted by relaxing its grip model.
 
 The search varies family subdivision, carton count and nominal dimensions.

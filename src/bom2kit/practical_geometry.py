@@ -47,7 +47,10 @@ def projected_polygon(mesh, padding_mm=0.):
     triangles = mesh.triangles[:, :, :2]
     a, b = triangles[:, 1]-triangles[:, 0], triangles[:, 2]-triangles[:, 0]
     cross = np.abs(a[:, 0]*b[:, 1]-a[:, 1]*b[:, 0])
-    shape = union_all(polygons(triangles[cross > 1e-12]))
+    from shapely.errors import GEOSException
+    try:shape = union_all(polygons(triangles[cross > 1e-12]))
+    except GEOSException as error:
+        raise ValueError('Original source projection could not be certified') from error
     if shape.is_empty or not shape.is_valid:
         raise ValueError("Invalid complete mesh projection")
     return shape.buffer(padding_mm, join_style="round") if padding_mm else shape

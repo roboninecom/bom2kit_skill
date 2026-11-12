@@ -32,13 +32,18 @@ def compact_access_rows(placements, units, gap, access_lane, *, reach_depth=8.1)
 
 
 def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., seconds=10,
-                   hand_border=0., target_footprints=(), stack_height_factor=0.,rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,supported_nesting=False):
+                   hand_border=0., target_footprints=(), stack_height_factor=0.,rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,supported_nesting=False,
+                   access_units=(),unit_access_margin=0.):
     """Keep identical source SKUs in one stable orientation per pattern.
 
     Every original unit is placed independently on a specified floor liner.
     There are no floating shelves or rigid compound handling assumptions.
     """
     import numpy as np
+    access_units=set(access_units)
+    if access_units and (stack_height_factor or floor_pair_budget or supported_nesting):
+        raise ValueError('Individual access margins require regular individual floor units')
+    if not math.isfinite(unit_access_margin) or unit_access_margin<0:raise ValueError('Invalid individual access margin')
     started = perf_counter()
     heights = sorted({p["dimensions_mm"][2] for item in items for p in options[item["id"]]})
     patterns = [];rectangle_used=0.;rectangle_diagnostics=[];pair_used=0.;supported_diagnostics=[]
@@ -108,8 +113,9 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
             height=max(u['dimensions'][2] for u in units);area=sum(math.prod(u['dimensions'][:2]) for u in units)
         by_unit={u['unit_id']:u for u in units}
         lane_extra=max(0.,access_lane_mm-gap)
-        packing_units=[{**u,'dimensions':[u['dimensions'][0],u['dimensions'][1]+lane_extra,u['dimensions'][2]],
-                        'orientations':[(r,(s[0],s[1]+lane_extra,s[2])) for r,s in u['orientations']]} for u in units]
+        margins={u['unit_id']:unit_access_margin if u['unit_id'] in access_units else 0. for u in units}
+        packing_units=[{**u,'dimensions':[u['dimensions'][0],u['dimensions'][1]+lane_extra+2*margins[u['unit_id']],u['dimensions'][2]],
+                        'orientations':[(r,(s[0],s[1]+lane_extra+2*margins[u['unit_id']],s[2])) for r,s in u['orientations']]} for u in units]
         widths = sorted({max(min(u["dimensions"][:2]) for u in units),
                          *(math.ceil(math.sqrt(area)*f/increment)*increment for f in (.6,.75,.9,1,1.15,1.35,1.6,2.))})
         widths.sort(key=lambda w:abs(math.log(w/math.sqrt(area))))
@@ -132,7 +138,7 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                     rectangle_diagnostics.append({k:v for k,v in trial.items() if k not in ('placements','validation')})
                     if trial['status']=='validated_envelopes' and trial['usable_mm'][1]<p['usable_mm'][1]-1e-7:
                         p=trial
-                if access_lane_mm and not stack_height_factor and not floor_pairs and not supported_pairs:
+                if access_lane_mm and not stack_height_factor and not floor_pairs and not supported_pairs and not access_units:
                     p['placements']=compact_access_rows(p['placements'],units,gap,access_lane_mm)
                 # A stable pose is chosen per SKU, and only horizontal quarter-turns vary.
                 placements = [];separators=[]
@@ -141,7 +147,7 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                     if q["rotation"][0] == 1:
                         yaw[:2,:2] = [[0,-1],[1,0]]
                         yaw[0,3] = by_unit[q['unit_id']]['dimensions'][1]
-                    shift=np.asarray(q['position_mm'])+[hand_border,hand_border,0.]
+                    shift=np.asarray(q['position_mm'])+[hand_border,hand_border+margins[q['unit_id']],0.]
                     def box_pose(origin,size):
                         low=np.asarray(origin);dimensions=list(size)
                         if q['rotation'][0]==1:
@@ -160,6 +166,9 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                         origin,size=box_pose(sheet['origin_mm'],sheet['dimensions_mm'])
                         separators.append({**sheet,'origin_mm':origin,'dimensions_mm':size})
                 used = [max(q["envelope_position_mm"][k]+q["envelope_dimensions_mm"][k] for q in placements) for k in range(3)]
+                if access_units:
+                    used[1]=max(q['envelope_position_mm'][1]+q['envelope_dimensions_mm'][1]+
+                                (unit_access_margin if q['unit_id'] in access_units else 0.) for q in placements)
                 used[:2] = [v+hand_border for v in used[:2]]
                 external = [math.ceil((v+2*wall)/increment-1e-9)*increment for v in used]
                 if depth is not None:
@@ -170,6 +179,8 @@ def floor_patterns(items, options, padding, wall, *, gap=.2, increment=1., secon
                                  'individual_floor_pairs':floor_pairs,'source_clearance_slots':bool(floor_pairs),
                                  'supported_pairs':supported_pairs,'source_contact_slots':bool(supported_pairs),
                                  'access_lane_mm':access_lane_mm,
+                                 'individual_access_units':sorted(access_units),
+                                 'individual_access_margin_mm':unit_access_margin,
                                  "stable_sku_orientations": {iid: index for iid,(index,_) in choices.items()}})
             if patterns and target_index>=3 and perf_counter()-started > seconds:
                 break
@@ -194,6 +205,8 @@ def partition_by_height(items, options, count, strategy="height"):
     """Partition whole SKUs to keep repeated components together, without recipes."""
     if not 1 <= count <= len(items):
         raise ValueError("Invalid family partition count")
+    if strategy not in ('height','cost','footprint_cost','area','copies'):
+        raise ValueError('Unknown family partition strategy')
     if strategy == 'copies':
         # Repeated kits can share carton patterns without trapping every copy of
         # a long component in one large carton. Source identities remain unique.
@@ -211,7 +224,11 @@ def partition_by_height(items, options, count, strategy="height"):
         if any(not g for g in groups):raise ValueError('Empty repeated-kit partition')
         return groups
     ranked = sorted(items, key=lambda i: (min(p["dimensions_mm"][2] for p in options[i["id"]]), i["id"]))
-    if strategy=='cost':
+    if strategy=='footprint_cost':
+        # A plate can share a tall layer in its narrow stable pose. Ordering only
+        # by each SKU's lowest pose hides this useful family partition.
+        ranked.sort(key=lambda i:(min(options[i['id']],key=lambda p:(math.prod(p['dimensions_mm'][:2]),p['dimensions_mm'][2]))['dimensions_mm'][2],i['id']))
+    if strategy in ('cost','footprint_cost'):
         # Dynamic programming on source-derived height order. Volume-balanced
         # cuts mix broad flat parts with a few tall items and waste whole layers.
         costs={}

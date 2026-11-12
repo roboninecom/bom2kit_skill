@@ -193,7 +193,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     allocations=[c for c in seeds if c is not None]+[c for c in allocations if c not in seeds]
     for counts in allocations:
         if proposals and perf_counter()-search_start>time_limit*.72:break
-        for strategy in ("cost","copies","height","area"):
+        for strategy in ("cost","footprint_cost","copies","height","area"):
             modules=[]
             for family,count in zip(family_names,counts):
                 local_gap=family_gaps.get(family,gap)
@@ -210,6 +210,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                             access_lane_mm=access_lane_mm,
                             rectangle_budget=min(2,max(0,rectangle_budget-rectangle_used)),
                             floor_pair_budget=0.)
+                        patterns_cache[key]['regular_floor_patterns']=list(patterns_cache[key]['patterns'])
                         if stack_height_factor or supported_nesting or floor_pair_budget>pair_used:
                             # Experimental patterns compete per carton with the
                             # regular floor; enabling stacks must not force every
@@ -249,20 +250,39 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                         if irregular_executable and irregular_used<irregular_budget:
                             from .irregular_floor import propose
                             irregular_start=perf_counter()
-                            seeds=sorted((p for p in patterns_cache[key]['patterns'] if 'stable_sku_orientations' in p),
-                                         key=lambda p:math.prod(p['external_mm']))[:2]
+                            eligible=[p for p in patterns_cache[key]['patterns'] if 'stable_sku_orientations' in p]
+                            seeds=[]
+                            # The two smallest-volume rows can have the same
+                            # width and miss all useful contour strip widths.
+                            for scoring in (lambda p:math.prod(p['external_mm']),
+                                            lambda p:p['external_mm'][0],
+                                            lambda p:math.prod(p['external_mm'][:2]),
+                                            lambda p:p['external_mm'][2]):
+                                seed=min(eligible,key=scoring)
+                                if seed not in seeds:seeds.append(seed)
                             for seed in seeds:
                                 left=irregular_budget-irregular_used-(perf_counter()-irregular_start)
                                 if left<=0:break
-                                proposal=propose(subset,options,seed,policy['item_padding_mm'],spec['inner_wall_mm'],
-                                    executable=irregular_executable,time_limit=min(2.,left),gap=local_gap,hand_border=hand_border,
-                                    increment=spec['dimension_increment_mm'],access_lane_mm=access_lane_mm)
+                                from shapely.errors import GEOSException
+                                try:
+                                    proposal=propose(subset,options,seed,policy['item_padding_mm'],spec['inner_wall_mm'],
+                                        executable=irregular_executable,time_limit=min(2.,left),gap=local_gap,hand_border=hand_border,
+                                        increment=spec['dimension_increment_mm'],access_lane_mm=access_lane_mm)
+                                except (ValueError,GEOSException) as error:
+                                    proposal={'status':'rejected_geometry_proposal','error':str(error)}
                                 irregular_diagnostics.append({'members':[i['id'] for i in subset],**{k:v for k,v in proposal.items() if k!='pattern'}})
                                 if proposal['status']=='validated_planar_proposal':patterns_cache[key]['patterns'].append(proposal['pattern'])
                             irregular_used+=perf_counter()-irregular_start
                     modules.append({"family":family,"items":subset,**patterns_cache[key]})
             if progress:progress({'stage':'carton_candidates','counts':dict(zip(family_names,counts)),'strategy':strategy,
                                   'seconds':perf_counter()-started,'irregular_seconds':irregular_used})
+            if any(len(m['patterns'])>len(m['regular_floor_patterns']) for m in modules):
+                regular=[{**m,'patterns':m['regular_floor_patterns']} for m in modules]
+                fallback=tile_modules(regular,time_limit=.2,wall=spec['wall_mm'],foam=spec['protection_mm'],
+                    reserve=spec['reserved_top_mm'],max_types=max(type_caps),increment=spec['dimension_increment_mm'])['candidate']
+                if fallback:
+                    fallback['proposal_kind']='regular_floor_fallback'
+                    proposals.append((fallback['volume_mm3'],regular,fallback,max(type_caps)))
             for cap in type_caps:
                 left=time_limit*.85-(perf_counter()-search_start)
                 if left<.1 and proposals:break
@@ -320,6 +340,8 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     verified=[];verified_plans={};replays=[];seen=set();repair_used=0.
     # Select diverse carton/type alternatives instead of discarding them on volume alone.
     ranked=sorted(proposals,key=lambda p:p[0]);queue=ranked[:1]
+    fallbacks=[p for p in ranked if p[2].get('proposal_kind')=='regular_floor_fallback']
+    if fallbacks:queue.append(fallbacks[0])
     for n in carton_counts:
         subset=[p for p in ranked if len(p[1])==n]
         if subset:queue.append(subset[0])
@@ -345,7 +367,10 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                 try:
                     repaired=floor_patterns(module['items'],options,policy['item_padding_mm'],spec['inner_wall_mm'],
                         gap=family_gaps.get(module['family'],gap),increment=spec['dimension_increment_mm'],seconds=.3,hand_border=hand_border,
-                        target_footprints=[leaf['external_mm'][:2]],stack_height_factor=stack_height_factor,access_lane_mm=access_lane_mm,supported_nesting=supported_nesting)
+                        target_footprints=[leaf['external_mm'][:2]],
+                        stack_height_factor=0. if tiled.get('proposal_kind')=='regular_floor_fallback' else stack_height_factor,
+                        access_lane_mm=access_lane_mm,
+                        supported_nesting=False if tiled.get('proposal_kind')=='regular_floor_fallback' else supported_nesting)
                     fits=[p for p in repaired['patterns'] if all(a<=b+1e-7 for a,b in zip(p['external_mm'],leaf['external_mm']))]
                     # Keep contour packing when a rectangular repair loses its fit.
                     if fits:
@@ -358,20 +383,26 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
             if result['practical']['support']['valid'] and not result['practical']['hand_access']['valid'] and repair_used<access_repair_budget:
                 from .access_repair import repair
                 repair_start=perf_counter()
+                repair_attempts=[]
                 try:
-                    repaired,repair_diagnostic=repair((volume,modules,tiled,cap),result,options,trial_policy,
-                        seconds=min(10.,access_repair_budget-repair_used),finger_radius=finger_radius,
-                        hand_border=hand_border,access_lane=access_lane_mm,gap=gap,family_gaps=family_gaps)
-                    if repaired:
-                        repaired_volume,repaired_modules,repaired_tiled,_=repaired
-                        repaired_result=build_candidate(library,trial_policy,repaired_modules,repaired_tiled,finger_radius=finger_radius)
-                        repair_diagnostic['original_failures']=result['practical']['hand_access']['failures']
-                        repair_diagnostic['replay_passed']=repaired_result['practical']['valid']
-                        if repaired_result['practical']['valid']:
-                            volume,modules,tiled,result=repaired_volume,repaired_modules,repaired_tiled,repaired_result
+                    for individual in (True,False):
+                        remaining=access_repair_budget-repair_used-(perf_counter()-repair_start)
+                        if remaining<=0:break
+                        repaired,diagnostic=repair((volume,modules,tiled,cap),result,options,trial_policy,
+                            seconds=min(10.,remaining),finger_radius=finger_radius,individual=individual,
+                            hand_border=hand_border,access_lane=access_lane_mm,gap=gap,family_gaps=family_gaps)
+                        repair_attempts.append(diagnostic)
+                        if repaired:
+                            repaired_volume,repaired_modules,repaired_tiled,_=repaired
+                            repaired_result=build_candidate(library,trial_policy,repaired_modules,repaired_tiled,finger_radius=finger_radius)
+                            diagnostic['original_failures']=result['practical']['hand_access']['failures']
+                            diagnostic['replay_passed']=repaired_result['practical']['valid']
+                            if repaired_result['practical']['valid']:
+                                volume,modules,tiled,result=repaired_volume,repaired_modules,repaired_tiled,repaired_result
+                                break
                 finally:
                     elapsed=perf_counter()-repair_start;repair_used+=elapsed
-                    if repair_diagnostic:repair_diagnostic['including_replay_seconds']=elapsed
+                    repair_diagnostic={'attempts':repair_attempts,'including_replay_seconds':elapsed}
             record={"volume_l":volume/1e6,"cartons":len(modules),"types":tiled["distinct_carton_sizes"],
                     "support":result["practical"]["support"]["valid"],"hand_access":result["practical"]["hand_access"]["valid"]}
             if repair_diagnostic:record['access_repair']=repair_diagnostic

@@ -148,10 +148,12 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1'):
     for r in records:
         n=r['number'];label=result['logistics']['policy'].get('family_labels',{}).get(r['module']['family'],r['module']['family'])
         label=label.replace('Factory-boxed servos, protected electronics and cables','Protected servos, electronics and cables')
+        compact_views=len(r['counts'])<=5
         flow.extend([PageBreak(),P(f'Box {n}: how the parts sit','TitleGuide'),P(escape(label)),
                      P(f'Outside {dims(r["module"]["external_mm"])} mm | Cavity {dims(r["layer"]["inner_mm"])} mm','SmallGuide'),
-                     pic(assets/f'box-{n}-iso.png',width,245),P('Isometric - rear walls full height; front/right walls cut; lid omitted','SmallGuide')])
-        views=Table([[pic(assets/f'box-{n}-top.png',width/2-8,180),pic(assets/f'box-{n}-side.png',width/2-8,180)],
+                     pic(assets/f'box-{n}-iso.png',width,200 if compact_views else 245),P('Isometric - rear walls full height; front/right walls cut; lid omitted','SmallGuide')])
+        view_height=140 if compact_views else 180
+        views=Table([[pic(assets/f'box-{n}-top.png',width/2-8,view_height),pic(assets/f'box-{n}-side.png',width/2-8,view_height)],
                      [P('Top - numbered slots','SmallGuide'),P('Side - carton walls omitted','SmallGuide')]],colWidths=[width/2]*2)
         flow.extend([views,Spacer(1,8)])
         order=' / '.join(', '.join(map(str,s)) for s in r['order'])

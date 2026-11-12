@@ -64,7 +64,15 @@ def propose(items,options,seed,padding,wall,*,executable,time_limit=3.,gap=.2,ha
                                timeout=time_limit+5,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         except subprocess.TimeoutExpired:return {'status':'timeout','seconds':perf_counter()-started}
         if run.returncode or not target.exists():return {'status':'backend_error','message':run.stderr[-1200:],'seconds':perf_counter()-started}
-        certificate=json.loads(target.read_bytes())
+        try:certificate=json.loads(target.read_bytes())
+        except (ValueError,UnicodeDecodeError):
+            return {'status':'malformed_certificate','seconds':perf_counter()-started}
+    # PackingSolver can emit JSON null when its bounded search has no complete
+    # incumbent. Keep the regular-floor fallback; this is not infeasibility.
+    if certificate is None:
+        return {'status':'incomplete','reason':'no_solution_certificate','seconds':perf_counter()-started}
+    if not isinstance(certificate,dict):
+        return {'status':'malformed_certificate','seconds':perf_counter()-started}
     bins=certificate.get('bins',[])
     if len(bins)!=1 or bins[0].get('copies')!=1:return {'status':'incomplete'}
     poses=bins[0].get('items',[]);counts=Counter(p['id'] for p in poses)
