@@ -164,8 +164,8 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
 def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=None,minimum_sheet_side=10.):
     """Generate source-derived motifs; all outputs still require independent replay."""
     if mode=='hybrid':
-        generated=[group_patterns(group,options,policy,seconds=seconds/3,mode=m,cache=cache,minimum_sheet_side=minimum_sheet_side)
-                   for m in ('rows','stacks','alternating')]
+        generated=[group_patterns(group,options,policy,seconds=seconds/4,mode=m,cache=cache,minimum_sheet_side=minimum_sheet_side)
+                   for m in ('rows','stacks','alternating','nesting')]
         return {'patterns':diverse_patterns([p for g in generated for p in g['patterns']],20),
                 'diagnostics':[d for g in generated for d in g['diagnostics']]}
     wall = policy["carton"]["inner_wall_mm"]; padding = policy["item_padding_mm"]
@@ -175,7 +175,7 @@ def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=Non
         cached = cache.get(key) if cache is not None else None
         if cached is None:
             patterns = repeated_rows(item, options, padding, wall, gap=gap)
-            if mode in ("stacks", "nesting"):
+            if mode in ("stacks", "nesting") and item['quantity']>1:
                 try:
                     generated = floor_patterns([item], options, padding, wall, gap=gap, seconds=max(.1, seconds/max(1, len(group["items"]))),
                                                hand_border=0., access_lane_mm=6.4,
@@ -221,8 +221,8 @@ def cohesive_carton_patterns(groups, options, policy, *, seconds=2., mode="rows"
                              access_lane=6.4, packing_gap=None,target_footprints=(),semantic_order='portfolio',minimum_sheet_side=10.):
     """Keep meaningful neighbors without assigning rectangular private zones."""
     if mode=='hybrid':
-        return diverse_patterns([p for m in ('rows','stacks','alternating')
-            for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/3,mode=m,
+        return diverse_patterns([p for m in ('rows','stacks','alternating','nesting')
+            for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/4,mode=m,
                 hand_border=hand_border,access_lane=access_lane,packing_gap=packing_gap,
                 target_footprints=target_footprints,semantic_order=semantic_order,minimum_sheet_side=minimum_sheet_side)],24)
     if semantic_order=='portfolio':

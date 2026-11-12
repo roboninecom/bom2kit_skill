@@ -11,6 +11,10 @@ import math
 from .packing_states import declared_state
 from .report import fingerprint
 
+# Declared kitting rule: ship a small functional accessory set together even
+# when it is disassembled. These semantic labels are not SKU-specific recipes.
+ATOMIC_ACCESSORY_SETS={'fiducial_object','learning_objects','identification'}
+
 
 def _fact(value, source, status="declared"):
     return {"value": value, "status": status, "source": source}
@@ -126,7 +130,10 @@ def semantic_key(card, mode="assembly"):
     family = card["family"]["value"]
     kind = card["part_type"]["value"]
     assembly = card["assembly"]["value"]
-    if mode == "sku":
+    if mode not in ('sku','shape','type','assembly'):raise ValueError('Unknown semantic grouping mode')
+    if assembly in ATOMIC_ACCESSORY_SETS:
+        group='accessory_set-'+assembly
+    elif mode == "sku":
         group = card["id"]
     elif mode == "shape":
         group = 'shape-'+card['shape_cohort']['value'] if 'shape_cohort' in card else kind
@@ -147,7 +154,9 @@ def semantic_groups(library, cards, mode="assembly"):
     for item in library["items"]:
         groups[semantic_key(cards[item["id"]], mode)].append(item)
     return [{"id": key, "family": cards[items[0]["id"]]["family"]["value"],
-             "items": deepcopy(items), "semantic_mode": mode} for key, items in sorted(groups.items())]
+             "items": deepcopy(items), "semantic_mode": mode,
+             'assignment_atomic':cards[items[0]['id']]['assembly']['value'] in ATOMIC_ACCESSORY_SETS}
+            for key, items in sorted(groups.items())]
 
 
 def adaptive_groups(library, cards, options, policy,base_mode='assembly'):
@@ -172,6 +181,10 @@ def adaptive_groups(library, cards, options, policy,base_mode='assembly'):
         return min(scores)
     revised=[]
     for group in groups:
+        if group.get('assignment_atomic'):
+            revised.append({**group,'semantic_parent':group['id'],
+                'revision':{'method':'preserve_complete_accessory_set','basis':'Declared kitting rule applied to evidenced semantic labels','reference_used':False}})
+            continue
         original=estimate(group['items']);best=(original,[group['items']],'unchanged')
         for count in range(2,min(3,len(group['items']))+1):
             for strategy in ('cost','footprint_cost'):
@@ -196,7 +209,7 @@ def replicated_groups(library,cards,options,policy):
     """
     groups=adaptive_groups(library,cards,options,policy,base_mode='type');result=[]
     for group in groups:
-        if max(i['quantity'] for i in group['items'])<2 or sum(i['quantity'] for i in group['items'])<4:
+        if group.get('assignment_atomic') or max(i['quantity'] for i in group['items'])<2 or sum(i['quantity'] for i in group['items'])<4:
             result.append(group);continue
         halves=[[],[]];weights=[0.,0.]
         for item in sorted(group['items'],key=lambda i:-min(math.prod(p['dimensions_mm']) for p in options[i['id']])):
@@ -232,6 +245,22 @@ def motif_neighbors(first,second):
     """Prefer same-type or same-assembly motifs inside an already compatible family."""
     return (first.get('cohesion_group')==second.get('cohesion_group') or
             bool(set(first.get('nesting_affinities',())).intersection(second.get('nesting_affinities',()))))
+
+
+def check_accessory_set_cohesion(result,cards):
+    """Replay whole-set carton membership independently of search-group flags."""
+    by_unit={p['unit_id']:p['item_id'] for p in result['layout']['placements']}
+    locations=defaultdict(set)
+    for module in result['logistics']['modules']:
+        for uid in module['unit_ids']:
+            card=cards[by_unit[uid]];assembly=card['assembly']['value']
+            if assembly in ATOMIC_ACCESSORY_SETS:
+                locations[(card['family']['value'],assembly)].add(module['id'])
+    split=[{'family':family,'accessory_set':assembly,'carton_ids':sorted(ids)}
+           for (family,assembly),ids in locations.items() if len(ids)>1]
+    return {'valid':not split,'split_sets':split,
+            'basis':'Declared whole-accessory-set kitting rule; source semantics remain evidence-tagged',
+            'restraint_verified':False}
 
 
 def organization_metrics(result, cards, mode='type'):

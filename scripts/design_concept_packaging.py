@@ -23,9 +23,9 @@ def main():
     p.add_argument("--beam-width", type=int, default=12)
     p.add_argument("--cartons", type=int, nargs="+", default=[3, 4, 5, 6, 7])
     p.add_argument("--types", type=int, nargs="+", default=[3, 4, 7])
-    p.add_argument("--motifs", nargs="+", default=["rows", "stacks"])
-    p.add_argument("--grouping", nargs="+", default=["assembly"])
-    p.add_argument("--placement-style",choices=['zones','cohesive','portfolio'],default='zones')
+    p.add_argument("--motifs", nargs="+", default=["hybrid"])
+    p.add_argument("--grouping", nargs="+", default=["adaptive_type"])
+    p.add_argument("--placement-style",choices=['zones','cohesive','portfolio'],default='cohesive')
     p.add_argument("--max-replays", type=int, default=6)
     p.add_argument("--hand-border", type=float, default=7.2)
     p.add_argument("--access-lane", type=float, default=6.4)
@@ -37,7 +37,7 @@ def main():
     p.add_argument("--minimum-sheet-side",type=float,default=10.,help='Declared minimum manually handled contact-sheet width/depth, mm')
     p.add_argument('--irregular-solver',type=Path)
     p.add_argument('--irregular-budget',type=float,default=0.)
-    p.add_argument('--assignment-budget',type=float,default=0.,help='Regenerate only moved/swapped semantic groups and retile the complete carton block')
+    p.add_argument('--assignment-budget',type=float,default=45.,help='Regenerate only moved/swapped semantic groups and retile the complete carton block')
     p.add_argument("--_supervised", action="store_true", help=argparse.SUPPRESS)
     a = p.parse_args()
     if not a._supervised:
@@ -81,7 +81,9 @@ def main():
             module['patterns']=[module['patterns'][leaf['pattern']]];leaf['pattern']=0
         (a.output/f'proposal-{proposal_counter:02}.json').write_text(json.dumps(compact,indent=2),encoding='utf8')
     def progress(record):
-        brief={k:v for k,v in record.items() if k not in ('access','support','organization','original_rejection','surface_refinement')}
+        brief={k:v for k,v in record.items() if k not in ('access','support','organization','original_rejection','surface_refinement','assignment_refinement','irregular_refinement')}
+        for stage in ('assignment_refinement','irregular_refinement'):
+            if stage in record:brief[stage+'_seconds']=record[stage]['seconds']
         if 'surface_refinement' in record:
             brief['surface_refinement_seconds']=record['surface_refinement']['seconds']
         if 'support' in record:brief['support_errors']=record['support'].get('errors',[])

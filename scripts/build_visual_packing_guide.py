@@ -89,8 +89,13 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     raw=Path(result_path).read_bytes();bom_raw=Path(bom_path).read_bytes()
     result=json.loads(raw);bom=json.loads(bom_raw)
-    check_manual_materials(result)
+    material_screen=check_manual_materials(result)
     property_cards=bound_property_cards(result,properties_path)
+    from bom2kit.part_properties import check_accessory_set_cohesion,describe_parts
+    cohesion_cards=property_cards or describe_parts(result['input'],result['logistics']['policy'])['cards']
+    cohesion_screen=check_accessory_set_cohesion(result,cohesion_cards)
+    if not cohesion_screen['valid']:
+        raise ValueError('An accessory set is split between cartons; retain this result as diagnostic only')
     checks=validate_transport(result,result['logistics']['policy'])
     if not checks['valid']:raise ValueError(checks['errors'])
     plan=build_assembly_plan(result,bom)
@@ -164,16 +169,20 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
         steps.append(f'Insert level {i}: boxes {numbers}, in that order.')
     steps.append('Fit the foam lid and close the outer carton.')
     for i,step in enumerate(steps,1):flow.append(P(f'<b>{i}.</b> {step}'))
-    flow.extend([Spacer(1,5),P(f'Exterior: {dims(outer)} mm | {np.prod(outer)/1e6:.3f} L | {len(records)} inner boxes','SmallGuide'),
-                 pic(assets/'outer-exploded.png',width,505),
-                 P('Colors: gray = source CAD; tan = factory carton; blue = protective packet; purple = declared envelope, not an extra box. Foam is pale gray. Shapes and dimensions are retained from the source evidence.','SmallGuide'),
+    flow.extend([Spacer(1,5),P(f'Exterior: {dims(outer)} mm | {np.prod(outer)/1e6:.3f} L | {len(records)} inner boxes','SmallGuide')])
+    legend=[P('Colors: gray = source CAD; tan = factory carton; blue = protective packet; purple = declared envelope, not an extra box. Foam is pale gray. Shapes and dimensions are retained from the source evidence.','SmallGuide'),
                  P('Exploded display only: gaps are not packing clearances. Front/right walls are cut down and lids hidden; rear walls retain their specified height. Close all inner boxes before insertion.','SmallGuide'),
-                 Spacer(1,5),P('Geometric draft. Source quantities and geometry checked; physical restraint and transport release still require a prototype.','SmallGuide')])
+                 Spacer(1,5),P('Geometric draft. Source quantities and geometry checked; physical restraint and transport release still require a prototype.','SmallGuide')]
+    # Reserve measured text height: a tall stack must not push only its legend
+    # onto an otherwise empty page. Frame padding and paragraph spacing count.
+    text_height=sum(f.wrap(width-12,H)[1]+f.getSpaceBefore()+f.getSpaceAfter() for f in [*flow,*legend])
+    image_height=min(505,max(180,H-30-44-12-text_height-8))
+    flow.extend([pic(assets/'outer-exploded.png',width,image_height),*legend])
     template_for_unit={uid:t['id'] for t in plan['templates'] for copy in t['copies'] for uid in copy['unit_mapping'].values()}
     for r in records:
         n=r['number'];label=result['logistics']['policy'].get('family_labels',{}).get(r['module']['family'],r['module']['family'])
         label=label.replace('Factory-boxed servos, protected electronics and cables','Protected servos, electronics and cables')
-        compact_views=len(r['counts'])<=5
+        compact_views=len(r['counts'])<=8
         flow.extend([PageBreak(),P(f'Box {n}: how the parts sit','TitleGuide'),P(escape(label)),
                      P(f'Outside {dims(r["module"]["external_mm"])} mm | Cavity {dims(r["layer"]["inner_mm"])} mm','SmallGuide'),
                      pic(assets/f'box-{n}-iso.png',width,200 if compact_views else 245),P('Isometric - rear walls full height; front/right walls cut; lid omitted','SmallGuide')])
@@ -215,11 +224,11 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
                 evidence={'measured':'measured dimensions','supplier_verified':'supplier dimensions',
                           'declared_estimate':'estimated dimensions'}.get(state.get('measurement_status'),'dimension evidence requires review')
                 state_label+=' - '+evidence
-            description+='<br/>'+state_label
+            if state['kind']!='source_part':description+='<br/>'+state_label
             contents=item.get('contents',{})
             if state['kind']=='protective_packet' or (contents and contents!={iid:1}):
                 description+='<br/>Contents per unit: '+escape('; '.join(f'{q} x {key}' for key,q in contents.items()))
-            rows.append([pic(thumbnails[iid],48,38),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
+            rows.append([pic(thumbnails[iid],48,30 if state['kind']=='source_part' else 38),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
         flow.append(table(rows,[62,width-62-36-90,36,90],compact=True))
     if plan['templates']:
         flow.extend([PageBreak(),P('Nested groups: workbench assembly','TitleGuide'),P('Build each group in numbered order, then rotate the completed group into its box slot. These are certified workbench frames, not extra packing boxes.','SmallGuide')])
@@ -269,6 +278,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
               'kit':kit,'revision':revision,'source_units':len(meshes),'carton_numbering':[{ 'number':r['number'],'id':r['module']['id'],'unit_ids':r['module']['unit_ids']} for r in records],
               'display_offsets':offsets,'source_geometry_modified':False,'explosion_is_display_only':True,
               'physical_qualification':False,'transport_checks':checks,
+              'manual_material_screen':material_screen,'accessory_set_cohesion':cohesion_screen,
               'properties_sha256':sha256(Path(properties_path).read_bytes()).hexdigest() if properties_path else None,
               'illustrations_sha256':{p.name:sha256(p.read_bytes()).hexdigest() for p in assets.glob('*.png')}}
     (output/'guide-manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf8')

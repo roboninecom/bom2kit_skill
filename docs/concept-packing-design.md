@@ -20,6 +20,12 @@ and `replicated`. Shape cohorts
 use Trimesh's rigid-invariant descriptor only to suggest neighbors; every original
 mesh and identity remains in the final replay. Adaptive grouping splits whole SKUs
 when height/footprint estimates justify the added group, and permits later reunion.
+Declared small accessory sets (fiducial object, learning objects and identification)
+remain atomic for carton assignment even when shipped disassembled. Height or copy
+splitting must not isolate marker faces from their core or create a thin label
+carton merely to improve volume. This is a kitting rule applied to evidenced
+semantic labels, not a reference recipe or rigid-handling assumption. Independent
+whole-set membership replay gates concept acceptance and operator guides.
 `adaptive_type` applies that split to type groups. `replicated` also proposes two
 balanced repetitions when a group contains repeated units; original unit IDs are
 preserved and later concepts may reunite them. Packets are never opened by this split.
@@ -28,13 +34,16 @@ preserved and later concepts may reunite them. Packets are never opened by this 
 
 1. `concept_patterns.py` generates equal-orientation rows, actual flat-interface
    stacks with enumerated contact sheets, alternating floor pairs and supported
-   nesting. `hybrid` preserves competing row/stack/pair patterns per carton.
+   nesting. `hybrid` includes all four motif families per carton; adding a
+   family can change bounded search ranking and is not a monotonic improvement.
    Zones are search envelopes, **not extra boxes or rigid handling assemblies**.
 2. `concept_planner.py` uses a bounded beam, placing the largest constraining
    groups first. It compares compact, balanced and organized scoring profiles;
    incompatible families never share a carton. Multiple carton counts survive.
    Cohabitation is normalized by compatible group-pair count so finer labels do
    not overwhelm volume. Bounded whole-group moves/swaps reconsider early choices.
+   Expensive geometry trials cover distinct carton counts before nearby beam
+   variants, reducing starvation of simple architectures under a time limit.
 3. The cohesive strip heuristic penalizes growth of a group's occupied region
    without assigning it an inflexible rectangular compartment. Same-SKU orientation
    reuse and group-aware pair/support selection reduce arbitrary interleaving.
@@ -72,6 +81,9 @@ supported parts; it does not turn the pair into a rigid assembly. Coarse raster
 emptiness never certifies clearance. Original triangles, full source containment
 and individual insertion still gate acceptance. Cold voxel preparation is charged
 to elapsed time; a short bounded narrow phase may exceed the soft pair budget.
+The second member can use its minimum-height or minimum-footprint stable pose,
+not just a same-height opposite face. Pairs rank their resulting 3D envelope;
+the original source transform, identity and independent support are preserved.
 
 Motifs prefer shared type **or** assembly labels within the hard compatibility
 family. Compact 3D proposals retain separately ranked empty-floor fallbacks so a
@@ -87,6 +99,9 @@ Source-surface refinement includes a footprint-first alternative, with a height
 cap derived from the minimum-footprint stable source orientations. A low existing
 carton must not accidentally forbid those taller poses. This remains a proposal;
 actual contact, complete intermediate load states and individual access decide acceptance.
+Supported nesting also probes connected horizontal support patches, rather than
+only the parent part's overall center. Every proposed interface still needs
+source clearance, a sufficiently large contact sheet and independent load replay.
 
 `--irregular-solver PATH --irregular-budget 150` optionally invokes the installed
 PackingSolver Irregular binary on full projected source outlines. Projections are

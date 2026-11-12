@@ -10,12 +10,12 @@ apply to Codex and Claude Code. Install `python -m pip install -e ".[mesh,cad,te
 as needed; `[report]` enables mesh visualization. Read
 `docs/independent-design-progress.md` for capabilities and remaining gaps.
 The complete no-worse 101/102 objective is still open.
-For shipping kits and manual kitting, default to the **Practical manual packing**
-workflow below. The older compound engines are research/baseline tools: their
+For shipping kits and manual kitting, start with **Concept-first packing** below
+and compare the **Practical manual packing** baseline when an incumbent exists.
+The older compound engines are research/baseline tools: their
 collision-free groups do not establish a practical way to carry loose parts.
 
-For requests emphasizing meaningful groups and simple kitting, also evaluate the
-**Concept-first packing** workflow. Retain the better independently verified
+Retain the better independently verified practical
 incumbent: the new architecture alone is not evidence of improved packaging.
 
 ## Prepare independent inputs
@@ -116,7 +116,7 @@ geometry and independently replay. Name inference, shape similarity and visual
 annotations guide grouping only; they never authorize reduced protection or loads.
 
 ```powershell
-python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts --cache packaging-results/pose-cache --grouping type --motifs hybrid --placement-style cohesive --time-limit 180 --wall-limit 900 --max-replays 4 --refinement-budget 45 --surface-budget 60 --repair-budget 90
+python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/concepts --cache packaging-results/pose-cache --grouping adaptive_type --motifs hybrid --placement-style cohesive --time-limit 180 --wall-limit 900 --max-replays 4 --assignment-budget 45 --refinement-budget 45 --surface-budget 60 --repair-budget 90
 ```
 
 Compare `assembly`, `type`, `shape`, `adaptive_type` and `replicated` grouping when names are incomplete
@@ -131,6 +131,10 @@ later reunion, preserving original unit IDs. Pair/stack neighbors may share a ty
 or assembly; hard material-family restrictions still apply. The default
 `--minimum-sheet-side 10` rejects contact cuts too small for the declared manual
 handling assumption. Report that assumption; it is not transport qualification.
+Keep complete small accessory sets together: disassembled fiducial faces and core,
+learning-object sets and identification pieces must not be scattered across cartons
+by a height split. The planner and renderer replay this kitting rule from semantic
+cards; it does not make the contents a rigid assembly or establish restraint.
 Optional `--irregular-solver PATH --irregular-budget 150` tests full concave source
 outlines inside the generated compatible cartons. It may alter same-type adjacency;
 compare organization and handling after original-source replay. Keep the earlier

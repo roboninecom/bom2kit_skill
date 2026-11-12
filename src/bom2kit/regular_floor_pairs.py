@@ -118,20 +118,26 @@ def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3,all_opti
             for index,other in candidates[:4]:
                 iid=other['item_id'];selected_index,selected=choices[iid]
                 alternatives=[(selected_index,selected)]
+                if all_options:
+                    available=list(enumerate(all_options[iid]))
+                    alternatives.extend((min(available,key=lambda ip:ip[1]['dimensions_mm'][2]),
+                                         min(available,key=lambda ip:math.prod(ip[1]['dimensions_mm'][:2]))))
                 if all_options and any('contact_frame_signature' in p for p in all_options[iid]):
                     normal=np.asarray(selected['transform'])[2,:3]
                     opposite=[(j,p) for j,p in enumerate(all_options[iid]) if j!=selected_index
                         and np.dot(normal,np.asarray(p['transform'])[2,:3])<-.999
                         and abs(p['dimensions_mm'][2]-selected['dimensions_mm'][2])<.05]
                     alternatives=[*opposite[:1],*alternatives]
+                alternatives=list({index:(index,option) for index,option in alternatives}.values())
                 for number,(option_index,option) in enumerate(alternatives):
                     ref=source_items[iid]['mesh'];other_key=(ref['path'],ref['sha256'],tuple(np.asarray(option['transform']).ravel()))
                     cache_key=_recipe_key(keys[first['item_id']],other_key,padding,gap)
                     if perf_counter()-started>=seconds and cache_key not in _pair_recipes:continue
                     recipe=_pair_recipe(keys[first['item_id']],other_key,padding,gap,
                         max(0.,seconds-(perf_counter()-started))/(len(alternatives)-number))
-                    if recipe and (best is None or recipe['score']<best[0]):
-                        best=(recipe['score'],index,other,np.asarray(recipe['yaw']),recipe['offset'],
+                    rank=math.prod(recipe['size']) if recipe else None
+                    if recipe and (best is None or rank<best[0]):
+                        best=(rank,index,other,np.asarray(recipe['yaw']),recipe['offset'],
                               np.asarray(recipe['low']),recipe['size'],other_key,option_index,recipe.get('proposal_method','feature_planes'))
             if best:
                 _,index,other,yaw,offset,low,size,other_key,option_index,search_backend=best;pending.pop(index)

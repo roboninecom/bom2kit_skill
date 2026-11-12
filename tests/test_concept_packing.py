@@ -82,6 +82,16 @@ def test_compact_concept_does_not_buy_extra_cartons_only_for_more_labels():
     assert len(beam['states'][0])==1
 
 
+def test_budgeted_trial_order_exposes_carton_counts_before_near_duplicates():
+    from bom2kit.concept_planner import concept_trial_order
+    states=[((0,),(1,),(2,3)),((0,),(2,),(1,3)),((0,1),(2,3)),((0,1,2,3),)]
+    ordered=concept_trial_order(states,(1,2,3))
+    assert ordered[0]==states[0]
+    assert {len(state) for state in ordered[:3]}=={1,2,3}
+    assert len(ordered)==len(states) and set(ordered)==set(states)
+    assert all(len(s)!=1 for s in concept_trial_order(states,(2,3)))
+
+
 def test_frontier_does_not_discard_keeping_repeated_skus_together():
     from bom2kit.concept_planner import _concept_frontier
     together={'practical':{'metrics':{'external_volume_l':20.,'cartons':4,'carton_types':2,
@@ -107,6 +117,25 @@ def test_actual_block_assignment_repair_preserves_units_and_compatibility(tmp_pa
     assert {p['unit_id'] for p in result['layout']['placements']}=={f'{i["id"]}#{n+1}' for i in library['items'] for n in range(i['quantity'])}
     by_unit={p['unit_id']:p['item_id'] for p in result['layout']['placements']}
     assert all(len({policy['families'][by_unit[u]] for u in m['unit_ids']})==1 for m in result['logistics']['modules'])
+
+
+def test_disassembled_accessory_faces_and_core_remain_one_carton_assignment():
+    from bom2kit.part_properties import adaptive_groups,replicated_groups,check_accessory_set_cohesion
+    items=[{'id':'face','quantity':6},{'id':'core','quantity':1}]
+    cards={i['id']:{'id':i['id'],'family':{'value':'printed'},'assembly':{'value':'fiducial_object'},
+        'part_type':{'value':'fiducial_parts'}} for i in items}
+    options={'face':[{'dimensions_mm':[40,40,2]}],'core':[{'dimensions_mm':[40,40,40]}]}
+    library={'items':items};policy={'item_padding_mm':1.}
+    for groups in (adaptive_groups(library,cards,options,policy,'type'),replicated_groups(library,cards,options,policy)):
+        assert len(groups)==1 and groups[0]['assignment_atomic']
+        assert {i['id'] for i in groups[0]['items']}=={'face','core'}
+    placements=[{'item_id':i['id'],'unit_id':f'{i["id"]}#{n+1}'} for i in items for n in range(i['quantity'])]
+    result={'layout':{'placements':placements},'logistics':{'modules':[
+        {'id':'thin-box','unit_ids':[p['unit_id'] for p in placements[:-1]]},
+        {'id':'main-box','unit_ids':[placements[-1]['unit_id']]}]}}
+    assert not check_accessory_set_cohesion(result,cards)['valid']
+    result['logistics']['modules']=[{'id':'main-box','unit_ids':[p['unit_id'] for p in placements]}]
+    assert check_accessory_set_cohesion(result,cards)['valid']
 
 
 def test_repeated_group_split_can_reunite_without_duplicating_original_units(tmp_path):
@@ -185,6 +214,9 @@ def test_compact_surface_search_uses_a_real_cavity_before_unused_floor(tmp_path)
     tile=tile_modules(modules,time_limit=.1,max_types=1)['candidate']
     result=build_candidate({'units':'mm','items':items},policy,modules,tile)
     assert result['practical']['valid']
+    from bom2kit.concept_patterns import group_patterns
+    portfolio=group_patterns({'id':'fixture','family':'print','items':items},options,policy,seconds=1.,mode='hybrid')
+    assert any(p.get('supported_pairs') for p in portfolio['patterns'])
 
 
 def test_cached_pair_reuses_geometry_with_new_unit_ids_and_preserved_clearance(tmp_path):
@@ -214,6 +246,32 @@ def test_cached_pair_reuses_geometry_with_new_unit_ids_and_preserved_clearance(t
         assert manager.min_distance_single(meshes[1])>=2.2-1e-6
     # Changed protection cannot hit the previous motif cache.
     assert not make_floor_pairs(units('changed',2),choices,{'angle':source},2,.2,seconds=0.)[2]
+
+
+def test_floor_pair_can_select_a_lower_supported_pose_for_its_second_part(tmp_path):
+    from bom2kit.regular_floor_pairs import make_floor_pairs,_pair_recipes,_pair_attempts
+    from bom2kit.practical_geometry import contact_certificate
+    a=trimesh.creation.box([100,4,10]);a.apply_translation([50,2,5])
+    side=trimesh.creation.box([4,76,10]);side.apply_translation([2,42,5]);a=trimesh.util.concatenate([a,side])
+    b=trimesh.creation.box([60,20,5]);b.apply_translation(-b.bounds[0])
+    sources={};options={}
+    for iid,mesh in [('frame',a),('insert',b)]:
+        path=tmp_path/(iid+'.json');path.write_text(json.dumps({'units':'mm','vertices_mm':mesh.vertices.tolist(),'triangles':mesh.faces.tolist()}))
+        sources[iid]={'id':iid,'quantity':1,'mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}}
+        frames=[np.eye(4)]
+        if iid=='insert':frames.insert(0,trimesh.transformations.rotation_matrix(np.pi/2,[0,1,0]))
+        options[iid]=[]
+        for frame in frames:
+            placed=mesh.copy();placed.apply_transform(frame);frame[:3,3]-=placed.bounds[0];placed.apply_translation(-placed.bounds[0])
+            options[iid].append({'transform':frame.tolist(),'dimensions_mm':placed.extents.tolist(),'contact':contact_certificate(placed)})
+    choices={iid:(0,opts[0]) for iid,opts in options.items()}
+    units=[{'item_id':iid,'unit_id':iid+'#1','dimensions':[v+2 for v in opts[0]['dimensions_mm']]} for iid,opts in options.items()]
+    _pair_recipes.clear();_pair_attempts.clear()
+    packed,expanded,pairs=make_floor_pairs(units,choices,sources,1,.2,seconds=3,all_options=options)
+    assert len(pairs)==1 and len(packed)==1
+    assert packed[0]['dimensions'][2]<=12.01
+    members=next(iter(expanded.values()))['members']
+    assert next(m for m in members if m['unit']['item_id']=='insert')['stable_option_override']==1
 
 
 def test_free_translation_screen_proves_empty_paths_but_not_restraint():

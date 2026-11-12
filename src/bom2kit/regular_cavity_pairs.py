@@ -53,7 +53,17 @@ def make_supported_pairs(units,choices,source_items,padding,gap,max_height,*,sec
                     if perf_counter()>=deadline:break
                     offsets=[(a.bounds.mean(axis=0)[:2]-b.bounds.mean(axis=0)[:2]).tolist(),
                              [shelf.centroid.x-b.center_mass[0],shelf.centroid.y-b.center_mass[1]]]
+                    # A useful recess need not lie at the whole part's centroid.
+                    # Probe actual connected support patches and their boundaries.
+                    components=list(shelf.geoms) if shelf.geom_type=='MultiPolygon' else [shelf]
+                    for patch in sorted(components,key=lambda p:-p.area)[:6]:
+                        anchor=patch.representative_point();x0,y0,x1,y1=patch.bounds
+                        xs=(x0-b.bounds[0,0],x1-b.bounds[1,0],anchor.x-b.center_mass[0])
+                        ys=(y0-b.bounds[0,1],y1-b.bounds[1,1],anchor.y-b.center_mass[1])
+                        offsets.extend([x,y] for x in xs for y in ys)
+                    offsets=list(dict.fromkeys(tuple(round(v,6) for v in xy) for xy in offsets))
                     for xy in offsets:
+                        if perf_counter()>=deadline:break
                         offset=np.array([*xy,plane+2*padding+gap])
                         low=np.minimum(a.bounds[0],b.bounds[0]+offset)
                         high=np.maximum(a.bounds[1],b.bounds[1]+offset)

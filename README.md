@@ -56,8 +56,9 @@ The [practical packing redesign](docs/practical-packing-design.md) adds explicit
 packing states, source-based support checks, individual placement sequences,
 simplified fingertip clearance and operational tradeoffs. Its experimental
 regular rows, flat-interface stacks, adjacent floor pairs and actual-surface
-support trees target easier kitting. Shipping-kit requests use this pipeline by
-default; the older compound searches remain research/baseline tools.
+support trees target easier kitting. Shipping-kit requests start with concept-first
+planning and compare the practical baseline; the older compound searches remain
+research/baseline tools.
 The [four-hour goal](docs/practical-packing-four-hour-goal.md) states acceptance
 conditions and the fixed reporting deadline. These additions do not establish
 production readiness or success against Alan's volume reference.

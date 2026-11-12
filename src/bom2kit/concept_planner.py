@@ -8,7 +8,7 @@ from .assembly_plan import build_assembly_plan
 from .carton_tiling import tile_modules
 from .concept_patterns import compose_zones, group_patterns, cohesive_carton_patterns, diverse_patterns, manual_pattern_screen
 from .packing_states import declared_state
-from .part_properties import describe_parts, semantic_groups, adaptive_groups, replicated_groups, coalesce_items, organization_metrics
+from .part_properties import describe_parts, semantic_groups, adaptive_groups, replicated_groups, coalesce_items, organization_metrics,check_accessory_set_cohesion
 from .practical_design import build_candidate
 from .practical_geometry import stable_pose_options
 from .report import fingerprint
@@ -119,6 +119,21 @@ def concept_partitions(groups, pattern_sets, *, beam_width=12, max_cartons=7, pr
             "maximum_compatible_group_pairs":maximum_mixing,
             "semantic_reassignments":repairs,"reassignment_seconds":perf_counter()-local_started,
             "scores": [score(s) for s in sorted(states, key=score)]}
+
+
+def concept_trial_order(states, allowed_counts):
+    """Expose one architecture per carton count before spending on close variants.
+
+    Input order is the beam's estimated score. Keep its first eligible state,
+    then cover other eligible counts before returning the remaining states.
+    This changes proposal scheduling only, never feasibility or source geometry.
+    """
+    eligible=[state for state in states if len(state) in allowed_counts]
+    first=[];seen=set()
+    for state in eligible:
+        if len(state) not in seen:
+            first.append(state);seen.add(len(state))
+    return first+[state for state in eligible if state not in first]
 
 
 def _concept_frontier(results):
@@ -448,7 +463,7 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
             for profile in ("compact", "balanced", "organized"):
                 beam = concept_partitions(groups, group_sets, beam_width=beam_width, max_cartons=max(carton_counts), profile=profile)
                 generation.append({k: v for k, v in beam.items() if k != "states"})
-                for state in beam["states"]:
+                for state in concept_trial_order(beam["states"],carton_counts):
                     if len(state) not in carton_counts:
                         continue
                     signature = (grouping_mode, mode, state)
@@ -598,11 +613,14 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                                      "grouping_mode": proposal["grouping_mode"], "motif_mode": proposal["motif_mode"],
                                      "organization": organization_metrics(result, cards),
                                      "assembly_organization": organization_metrics(result, cards,mode='assembly'),
+                                     'accessory_set_cohesion':check_accessory_set_cohesion(result,cards),
                                      "manual_material_screen":manual_pattern_screen(
                                          {'protective_separators':result['practical']['protective_separators']},minimum_sheet_side),
                                      "retention_screen":screen_retention(result),"zones": []}
                 if not result['concept']['manual_material_screen']['valid']:
                     raise ValueError('Manual contact-sheet dimensions failed independent final screening')
+                if not result['concept']['accessory_set_cohesion']['valid']:
+                    raise ValueError('A complete accessory set was split between cartons')
                 for index, leaf in enumerate(sorted(proposal["tiled"]["leaves"], key=lambda l: (l["position_mm"][2], l["position_mm"][0])), 1):
                     pattern = proposal["modules"][leaf["module"]]["patterns"][leaf["pattern"]]
                     result["concept"]["zones"].append({"carton_id": f"module-{index}", "groups": deepcopy(pattern.get("semantic_zones", [])),
