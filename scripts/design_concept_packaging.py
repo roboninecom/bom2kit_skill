@@ -37,6 +37,7 @@ def main():
     p.add_argument("--minimum-sheet-side",type=float,default=10.,help='Declared minimum manually handled contact-sheet width/depth, mm')
     p.add_argument('--irregular-solver',type=Path)
     p.add_argument('--irregular-budget',type=float,default=0.)
+    p.add_argument('--assignment-budget',type=float,default=0.,help='Regenerate only moved/swapped semantic groups and retile the complete carton block')
     p.add_argument("--_supervised", action="store_true", help=argparse.SUPPRESS)
     a = p.parse_args()
     if not a._supervised:
@@ -104,6 +105,7 @@ def main():
                           preserve_contact_faces=a.preserve_contact_faces,
                           minimum_sheet_side=a.minimum_sheet_side,
                           irregular_executable=a.irregular_solver,irregular_budget=a.irregular_budget,
+                          assignment_budget=a.assignment_budget,
                           progress=progress, callback=save_trial,proposal_callback=save_proposal)
     results = run.pop("results"); plans = run.pop("assembly_plans"); properties = run.pop("properties")
     (a.output/"part-properties.json").write_text(json.dumps(properties, indent=2), encoding="utf8")

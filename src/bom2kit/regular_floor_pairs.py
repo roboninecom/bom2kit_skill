@@ -71,19 +71,24 @@ def _pair_recipe(first_key, second_key, padding, gap, seconds):
         pitch=max(2.,min(a.extents[0],b.extents[0])/16)
         xs=list(dict.fromkeys([*_feature_offsets(a,b,0,clearance,0.,a.extents[0]+clearance),
                                *np.arange(0.,a.extents[0]+clearance+pitch,pitch)]))
-        for y in ys:
-            if perf_counter()-started >= seconds: break
-            for x in xs:
-                if perf_counter()-started >= seconds: break
-                low = np.minimum([0., 0., 0.], [x, y, 0.])
-                high = np.maximum(a.bounds[1], b.bounds[1]+[x, y, 0.])
-                dims = (high-low+2*padding).tolist(); score = math.prod(dims[:2])
-                if score >= area*.94 or (best and score >= best['score']): continue
-                transform = np.eye(4); transform[:3, 3] = [x, y, 0.]
-                moving.set_transform('other', transform)
-                if manager.min_distance_other(moving) < 2*padding+gap-1e-6: continue
-                best = {'score': score, 'yaw': yaw.tolist(), 'offset': [float(x), float(y), 0.],
-                        'low': low.tolist(), 'size': dims}
+        from .floor_pair_voxels import floor_offsets
+        voxel_positions=floor_offsets(first_key,second_key,yaw,angle,a.extents,b.extents,padding)
+        positions=list(dict.fromkeys([*voxel_positions,*[(x,y) for y in ys for x in xs]]))
+        # Charge preparation to elapsed time, but permit a small bounded narrow
+        # phase after cold voxel preparation; the runner enforces the hard wall.
+        deadline=max(started+seconds,perf_counter()+min(.1,seconds))
+        for x,y in positions:
+            if perf_counter()>=deadline: break
+            low = np.minimum([0., 0., 0.], [x, y, 0.])
+            high = np.maximum(a.bounds[1], b.bounds[1]+[x, y, 0.])
+            dims = (high-low+2*padding).tolist(); score = math.prod(dims[:2])
+            if score >= area*.94 or (best and score >= best['score']): continue
+            transform = np.eye(4); transform[:3, 3] = [x, y, 0.]
+            moving.set_transform('other', transform)
+            if manager.min_distance_other(moving) < 2*padding+gap-1e-6: continue
+            best = {'score': score, 'yaw': yaw.tolist(), 'offset': [float(x), float(y), 0.],
+                    'low': low.tolist(), 'size': dims,
+                    'proposal_method':'voxel_floor_correlation' if (x,y) in voxel_positions else 'feature_planes'}
     if best is not None:
         if len(_pair_recipes) >= 512: _pair_recipes.pop(next(iter(_pair_recipes)))
         _pair_recipes[key] = deepcopy(best)
@@ -127,9 +132,9 @@ def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3,all_opti
                         max(0.,seconds-(perf_counter()-started))/(len(alternatives)-number))
                     if recipe and (best is None or recipe['score']<best[0]):
                         best=(recipe['score'],index,other,np.asarray(recipe['yaw']),recipe['offset'],
-                              np.asarray(recipe['low']),recipe['size'],other_key,option_index)
+                              np.asarray(recipe['low']),recipe['size'],other_key,option_index,recipe.get('proposal_method','feature_planes'))
             if best:
-                _,index,other,yaw,offset,low,size,other_key,option_index=best;pending.pop(index)
+                _,index,other,yaw,offset,low,size,other_key,option_index,search_backend=best;pending.pop(index)
                 first_offset=(-low).tolist();second_offset=(np.asarray(offset)-low).tolist()
                 transformed=yaw@np.asarray(other_key[2]).reshape(4,4)
                 mesh=_source_pose(*other_key).copy();mesh.apply_transform(yaw)
@@ -138,7 +143,8 @@ def make_floor_pairs(units,choices,source_items,padding,gap,*,seconds=3,all_opti
                          {'unit':second,'offset_mm':second_offset,'transform_override':transformed.tolist(),
                           'stable_option_override':option_index}]
                 certificates.append({'unit_ids':[first['unit_id'],other['unit_id']],
-                                     'method':'adjacent_individually_supported_floor_pair','bounding_floor_mm':size[:2]})
+                                     'method':'adjacent_individually_supported_floor_pair','bounding_floor_mm':size[:2],
+                                     'proposal_search':search_backend})
         cid=f'floor-pattern-{len(pairs)+1}'
         pairs.append({'item_id':cid,'unit_id':cid+'#1','dimensions':size,
                       'orientations':[((0,1,2),tuple(size)),((1,0,2),(size[1],size[0],size[2]))]})

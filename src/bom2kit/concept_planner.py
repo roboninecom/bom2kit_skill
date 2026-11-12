@@ -126,7 +126,8 @@ def _concept_frontier(results):
         m = r["practical"]["metrics"]; o = r["concept"]["organization"]
         return (m["external_volume_l"], m["cartons"], m["carton_types"],
                 o["mixed_group_pairs"], o["additional_spatial_fragments"],
-                m["source_and_contact_sheet_placements"], m["additional_sku_orientations"])
+                m["source_and_contact_sheet_placements"], m["additional_sku_orientations"],
+                m['split_source_skus'],o['split_semantic_groups'])
     return [r for i, r in enumerate(results) if not any(i != j and all(a <= b for a, b in zip(values(other), values(r)))
             and any(a < b for a, b in zip(values(other), values(r))) for j, other in enumerate(results))]
 
@@ -278,6 +279,81 @@ def refine_source_surfaces(proposal, options, policy, *, seconds=60., hand_borde
     return result
 
 
+def refine_group_assignments(proposal,options,policy,*,seconds=45.,max_cartons=7,max_types=7,
+                             hand_border=7.2,access_lane=6.4,minimum_sheet_side=10.):
+    """Repair semantic assignments against actual regenerated carton/block volume.
+
+    Move, exchange or split whole semantic groups. Only affected carton patterns
+    are regenerated; source identities and hard compatibility remain unchanged.
+    This produces a proposal, never a substitute for independent full replay.
+    """
+    started=perf_counter();current=deepcopy(proposal);spec=policy['carton'];attempts=[];seen=set();cache={}
+    def signature(groups):return tuple(sorted(g['id'] for g in groups))
+    def build_module(groups):
+        key=signature(groups)
+        if key not in cache:
+            patterns=cohesive_carton_patterns(groups,options,policy,seconds=.35,mode=proposal['motif_mode'],
+                hand_border=hand_border,access_lane=access_lane,minimum_sheet_side=minimum_sheet_side)
+            cache[key]={'family':groups[0]['family'],'items':coalesce_items([i for g in groups for i in g['items']]),
+                'semantic_groups':deepcopy(groups),'semantic_members':[g['id'] for g in groups],
+                'patterns':diverse_patterns(patterns,16)}
+        return deepcopy(cache[key])
+    for module in current['modules']:cache[signature(module['semantic_groups'])]=deepcopy(module)
+    for iteration in range(3):
+        if perf_counter()-started>=seconds:break
+        modules=current['modules'];neighbors=[]
+        for a,module in enumerate(modules):
+            groups=module['semantic_groups']
+            for gi,group in enumerate(groups):
+                targets=[b for b,other in enumerate(modules) if b!=a and other['family']==module['family']]
+                if len(groups)>1 and len(modules)<max_cartons:targets.append(len(modules))
+                for b in targets:
+                    if len(groups)<=1:continue
+                    memberships=[m['semantic_groups'] for m in modules]
+                    memberships[a]=[g for j,g in enumerate(groups) if j!=gi]
+                    if b==len(modules):memberships.append([group])
+                    else:memberships[b]=[*memberships[b],group]
+                    neighbors.append(('move',a,b,memberships))
+                for b in targets:
+                    if b>=len(modules) or a>=b:continue
+                    for gj,other in enumerate(modules[b]['semantic_groups']):
+                        memberships=[m['semantic_groups'] for m in modules]
+                        memberships[a]=[other if j==gi else g for j,g in enumerate(groups)]
+                        memberships[b]=[group if j==gj else g for j,g in enumerate(modules[b]['semantic_groups'])]
+                        neighbors.append(('exchange',a,b,memberships))
+        # Height dispersion ranks probes; actual full block volume accepts them.
+        def estimate(neighbor):
+            value=0.
+            for groups in neighbor[3]:
+                items=[i for g in groups for i in g['items']]
+                h=max(min(p['dimensions_mm'][2] for p in options[i['id']]) for i in items)
+                area=sum(i['quantity']*min(math.prod([v+2*policy['item_padding_mm'] for v in p['dimensions_mm'][:2]])
+                    for p in options[i['id']] if p['dimensions_mm'][2]<=h+1e-7) for i in items)
+                value+=area*(h+2*spec['inner_wall_mm'])
+            return value
+        best=current
+        for kind,a,b,memberships in sorted(neighbors,key=estimate):
+            if perf_counter()-started>=seconds:break
+            key=tuple(sorted(signature(g) for g in memberships))
+            if key in seen:continue
+            seen.add(key)
+            candidate_modules=[build_module(g) if i in (a,b) else deepcopy(modules[i]) for i,g in enumerate(memberships)]
+            if any(not m['patterns'] for m in candidate_modules):continue
+            tiled=tile_modules(candidate_modules,time_limit=.15,wall=spec['wall_mm'],foam=spec['protection_mm'],
+                reserve=spec['reserved_top_mm'],max_types=max_types,increment=spec['dimension_increment_mm'])['candidate']
+            attempts.append({'iteration':iteration+1,'operation':kind,'changed_modules':[a,b],
+                'cartons':len(candidate_modules),'volume_l':tiled['volume_mm3']/1e6 if tiled else None})
+            if tiled and tiled['volume_mm3']<best['tiled']['volume_mm3']-1e-6:
+                best={**current,'modules':candidate_modules,'tiled':tiled,'type_cap':max_types,
+                      'mixing':sum(len(m['semantic_groups'])*(len(m['semantic_groups'])-1)//2 for m in candidate_modules)}
+        if best is current:break
+        current=best
+    current['assignment_refinement']={'seconds':perf_counter()-started,'attempts':attempts,
+        'initial_volume_l':proposal['tiled']['volume_mm3']/1e6,'final_volume_l':current['tiled']['volume_mm3']/1e6,
+        'reference_used':False,'original_source_replay_required':True}
+    return current
+
+
 def refine_irregular_floors(proposal,options,policy,*,executable,seconds=60.,hand_border=7.2,access_lane=6.4):
     """Explore concave source outlines within generated compatible cartons."""
     from .irregular_floor import propose
@@ -299,8 +375,11 @@ def refine_irregular_floors(proposal,options,policy,*,executable,seconds=60.,han
             if remaining<=0:break
             generated=propose(module['items'],options,seed,policy['item_padding_mm'],spec['inner_wall_mm'],
                 executable=executable,time_limit=min(10.,remaining),gap=spec['gap_mm'],hand_border=hand_border,
-                increment=spec['dimension_increment_mm'],access_lane_mm=access_lane)
-            diagnostics.append({'module':leaf['module'],**{k:v for k,v in generated.items() if k!='pattern'}})
+                increment=spec['dimension_increment_mm'],access_lane_mm=0.)
+            diagnostics.append({'module':leaf['module'],'proposal_access_lane_mm':0.,'unchanged_finger_replay_required':True,
+                'seed_external_mm':seed['external_mm'],
+                'proposed_external_mm':generated.get('pattern',{}).get('external_mm'),
+                **{k:v for k,v in generated.items() if k!='pattern'}})
             if generated['status']=='validated_planar_proposal':
                 pattern=generated['pattern'];pattern['semantic_zones']=deepcopy(selected.get('semantic_zones',[]))
                 pattern['motif_operations']=[{'action':'place_individual_contour_floor',
@@ -320,10 +399,10 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                     beam_width=12, carton_counts=(3, 4, 5, 6, 7), type_caps=(3, 4, 7),
                     motif_modes=("rows", "stacks"), grouping_modes=("assembly",),
                     max_replays=6, hand_border=7.2, finger_radius=4., progress=None, callback=None,
-                    placement_style="zones",repair_budget=60.,proposal_callback=None,refinement_budget=45.,surface_budget=0.,access_lane=6.4,preserve_contact_faces=False,minimum_sheet_side=10.,irregular_executable=None,irregular_budget=0.):
+                    placement_style="zones",repair_budget=60.,proposal_callback=None,refinement_budget=45.,surface_budget=0.,access_lane=6.4,preserve_contact_faces=False,minimum_sheet_side=10.,irregular_executable=None,irregular_budget=0.,assignment_budget=0.):
     started = perf_counter()
     if (not math.isfinite(seconds) or seconds <= 0 or beam_width < 1 or max_replays < 1
-        or any(not math.isfinite(v) or v<0 for v in (repair_budget,refinement_budget,surface_budget,irregular_budget,hand_border,access_lane,minimum_sheet_side))):
+        or any(not math.isfinite(v) or v<0 for v in (repair_budget,refinement_budget,surface_budget,irregular_budget,assignment_budget,hand_border,access_lane,minimum_sheet_side))):
         raise ValueError("Positive finite budgets required")
     if not carton_counts or min(carton_counts) < 1 or max(carton_counts) > 7 or not type_caps or min(type_caps) < 1:
         raise ValueError("Invalid carton/type limits")
@@ -431,12 +510,17 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
             if choices and choices[0] not in queue:
                 queue.append(choices[0])
         queue.extend(p for p in ranked if p not in queue)
-    results = []; plans = {}; trials = []; replay_start = perf_counter();repair_used=0.;refinement_used=0.;surface_used=0.;irregular_used=0.
+    results = []; plans = {}; trials = []; replay_start = perf_counter();repair_used=0.;refinement_used=0.;surface_used=0.;irregular_used=0.;assignment_used=0.
     for proposal in queue[:max_replays]:
         if refinement_used<refinement_budget:
             proposal=refine_concept(proposal,options,policy,seconds=min(15.,refinement_budget-refinement_used),hand_border=hand_border,access_lane=access_lane,minimum_sheet_side=minimum_sheet_side)
             refinement_used+=proposal['joint_refinement']['seconds']
         fallback_proposal=deepcopy(proposal)
+        if assignment_used<assignment_budget:
+            proposal=refine_group_assignments(proposal,options,policy,seconds=min(45.,assignment_budget-assignment_used),
+                max_cartons=max(carton_counts),max_types=max(type_caps),hand_border=hand_border,
+                access_lane=access_lane,minimum_sheet_side=minimum_sheet_side)
+            assignment_used+=proposal['assignment_refinement']['seconds']
         if irregular_executable and irregular_used<irregular_budget:
             proposal=refine_irregular_floors(proposal,options,policy,executable=irregular_executable,
                 seconds=min(60.,irregular_budget-irregular_used),hand_border=hand_border,access_lane=access_lane)
@@ -452,6 +536,7 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
         if 'joint_refinement' in proposal:record['joint_refinement']=proposal['joint_refinement']
         if 'surface_refinement' in proposal:record['surface_refinement']=proposal['surface_refinement']
         if 'irregular_refinement' in proposal:record['irregular_refinement']=proposal['irregular_refinement']
+        if 'assignment_refinement' in proposal:record['assignment_refinement']=proposal['assignment_refinement']
         local_policy = deepcopy(policy); local_policy["max_inner_cartons"] = max(carton_counts); local_policy["max_carton_types"] = proposal["type_cap"]
         try:
             result=None;failure=None
@@ -490,7 +575,7 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                         elapsed=perf_counter()-repair_start;repair_used+=elapsed;record['repair_seconds']=elapsed
             # A speculative 3D improvement must not lose its simpler in-run
             # incumbent when source/access replay or a larger repair rejects it.
-            if (any(k in record for k in ('surface_refinement','irregular_refinement')) and
+            if (any(k in record for k in ('surface_refinement','irregular_refinement','assignment_refinement')) and
                 (failure or result is None or not result['practical']['valid'] or
                  proposal['tiled']['volume_mm3']>fallback_proposal['tiled']['volume_mm3']+1e-6)):
                 fallback_started=perf_counter()
@@ -541,5 +626,6 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
             "refinement_seconds":refinement_used,
             "surface_seconds":surface_used,
             "irregular_seconds":irregular_used,
+            "assignment_seconds":assignment_used,
             "search_seconds": search_seconds, "replay_seconds": perf_counter()-replay_start,
             "seconds": perf_counter()-started, "reference_used": False}

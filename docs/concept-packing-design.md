@@ -51,6 +51,12 @@ preserved and later concepts may reunite them. Packets are never opened by this 
    is the fallback. Both repairs retile and replay; neither lowers finger, support,
    clearance or protection thresholds. Row compaction preserves required clearance
    even when neighboring X intervals are disjoint but closer than the required gap.
+7. Optional `--assignment-budget 90` revisits whole-group assignments using the
+   regenerated carton/block volume. It moves, exchanges or splits semantic groups,
+   regenerates only affected cartons and retiles the complete package. This differs
+   from the beam's preliminary height/area estimate. The bounded proposals still
+   need full source, material, support and access replay; the original in-run
+   proposal remains a fallback. Pareto filtering counts SKU and semantic splits.
 
 Pair motifs cache source-relative transforms keyed by both source hashes, frames
 and protection. Reuse creates fresh unit identities. Cached proposal success never
@@ -60,6 +66,12 @@ Already explored bounded pair probes can be deferred until a larger budget is
 available; other partners remain eligible. Source-hash equality allows repeated
 geometry at different paths to share a proposal, never an identity. Vertex-plane
 offsets complement coarse pair sampling; FCL still checks original triangle clearance.
+Floor-pair proposals also correlate dilated 3 mm voxel occupancy along shared Z
+columns with SciPy FFTs. This ranks XY translations for stable, independently
+supported parts; it does not turn the pair into a rigid assembly. Coarse raster
+emptiness never certifies clearance. Original triangles, full source containment
+and individual insertion still gate acceptance. Cold voxel preparation is charged
+to elapsed time; a short bounded narrow phase may exceed the soft pair budget.
 
 Motifs prefer shared type **or** assembly labels within the hard compatibility
 family. Compact 3D proposals retain separately ranked empty-floor fallbacks so a
@@ -82,6 +94,10 @@ prepared lazily for selected stable frames and cached within the invocation.
 The solver preserves compatible-carton membership; it does not promise type
 adjacency. Report measured organization and retain the simpler in-run fallback
 if original geometry, access, or subsequent repair rejects an apparent improvement.
+Contour proposals retain actual part padding but omit the heuristic row-access
+lane. The unchanged two-finger trajectory check, local repair and fallback decide
+whether their tighter arrangement is usable; a zero proposal lane is not a lower
+finger-clearance threshold.
 
 `--preserve-contact-faces` retains different stable support faces with equal
 bounding dimensions, including opposite orientations. Floor pairs may reuse the

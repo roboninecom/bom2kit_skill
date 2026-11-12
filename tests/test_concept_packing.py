@@ -82,6 +82,33 @@ def test_compact_concept_does_not_buy_extra_cartons_only_for_more_labels():
     assert len(beam['states'][0])==1
 
 
+def test_frontier_does_not_discard_keeping_repeated_skus_together():
+    from bom2kit.concept_planner import _concept_frontier
+    together={'practical':{'metrics':{'external_volume_l':20.,'cartons':4,'carton_types':2,
+        'source_and_contact_sheet_placements':20,'additional_sku_orientations':0,'split_source_skus':0}},
+        'concept':{'organization':{'mixed_group_pairs':3,'additional_spatial_fragments':0,'split_semantic_groups':0}}}
+    split=deepcopy(together);split['practical']['metrics']['split_source_skus']=1
+    split['concept']['organization']['split_semantic_groups']=1
+    assert _concept_frontier([split,together])==[together]
+    split['practical']['metrics']['external_volume_l']=19.
+    assert len(_concept_frontier([split,together]))==2
+
+
+def test_actual_block_assignment_repair_preserves_units_and_compatibility(tmp_path):
+    library,policy,bom=inputs(tmp_path)
+    run=design_concepts(library,policy,bom,seconds=.5,carton_counts=(2,3),type_caps=(3,),
+        grouping_modes=('sku',),motif_modes=('rows',),placement_style='cohesive',max_replays=1,
+        refinement_budget=0,assignment_budget=1.)
+    assert run['status']=='verified',run['trials']
+    refinement=run['trials'][0]['assignment_refinement']
+    assert refinement['attempts'] and refinement['final_volume_l']<=refinement['initial_volume_l']
+    result=run['results'][0]
+    assert result['input']['items']==library['items']
+    assert {p['unit_id'] for p in result['layout']['placements']}=={f'{i["id"]}#{n+1}' for i in library['items'] for n in range(i['quantity'])}
+    by_unit={p['unit_id']:p['item_id'] for p in result['layout']['placements']}
+    assert all(len({policy['families'][by_unit[u]] for u in m['unit_ids']})==1 for m in result['logistics']['modules'])
+
+
 def test_repeated_group_split_can_reunite_without_duplicating_original_units(tmp_path):
     from bom2kit.part_properties import replicated_groups,coalesce_items
     library,policy,bom=inputs(tmp_path);library['items'][0]['quantity']=4

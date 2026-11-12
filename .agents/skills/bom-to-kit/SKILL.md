@@ -136,6 +136,9 @@ outlines inside the generated compatible cartons. It may alter same-type adjacen
 compare organization and handling after original-source replay. Keep the earlier
 in-run proposal if contour placement or its repair is worse. A backend certificate
 alone is never an accepted packaging instruction.
+Use `--assignment-budget 90` to revisit whole-group assignments against actual
+regenerated carton/block volume. This can trade an extra carton for lower volume;
+retain and report the earlier fewer-carton alternative instead of hiding that cost.
 
 Try `--preserve-contact-faces` when equal-size opposite stable orientations have
 different nesting surfaces. It preserves source-derived alternatives; it does not
