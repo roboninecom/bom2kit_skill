@@ -28,6 +28,8 @@ def main():
     p.add_argument('--cluster-order', choices=['depth', 'breadth'], default='depth')
     p.add_argument('--cluster-partners', type=int, default=2)
     p.add_argument('--cluster-pitch', type=float, default=3.)
+    p.add_argument('--cluster-members', type=int, choices=range(2,13), default=6,
+                   help='Maximum members for fresh obstacle correlation; default 6, experimental ceiling 12')
     a = p.parse_args()
     root = Path(__file__).resolve().parents[1]
     def code_hashes():
@@ -49,8 +51,9 @@ def main():
         if earlier['protection'] != result['protection']: raise ValueError('Cannot merge different protection policies')
         result['recipes'].extend(earlier['recipes'])
         result['merged_catalogs'].append({'path': str(path), 'sha256': sha256(path.read_bytes()).hexdigest()})
-    result['recipes'] = [r for r in result['recipes'] if len(r['item_ids']) == 2
+    result['recipes'] = [r for r in result['recipes'] if 2 <= len(r['item_ids']) <= 12
                          and all(known.get(iid) == digest for iid, digest in zip(r['item_ids'], r['source_hashes'], strict=True))]
+    result['reused_cluster_count'] = sum(len(r['item_ids']) > 2 for r in result['recipes'])
     extensions, result['cluster_search'] = extend_catalog(result['recipes'], library['items'],
         policy['item_padding_mm'], policy['carton']['gap_mm'], seconds=a.cluster_seconds)
     result['recipes'].extend(extensions)
@@ -59,9 +62,10 @@ def main():
         extended, result['cluster_correlation'] = extend_with_correlation(result['recipes'], library, policy,
             output=a.output.parent/'cluster-obstacles', pose_cache=a.pose_cache,
             seconds=a.cluster_correlation_seconds, search_order=a.cluster_order,
-            partner_limit=a.cluster_partners, pitch=a.cluster_pitch,
+            partner_limit=a.cluster_partners, pitch=a.cluster_pitch, maximum_members=a.cluster_members,
             progress=lambda r: print(json.dumps(r), flush=True))
         result['recipes'].extend(extended)
+    result['recipes'] = list({r['id']: r for r in result['recipes']}.values())
     result['engine_provenance'] = {'initial_sha256': before, 'unchanged_during_run': before == code_hashes()}
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(result, indent=2), encoding='utf8')

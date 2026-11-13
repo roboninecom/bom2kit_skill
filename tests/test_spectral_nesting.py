@@ -144,6 +144,28 @@ def test_cluster_correlation_finds_new_third_part_offset(tmp_path):
     assert nested['assembly_replay_required']
 
 
+def test_cluster_seed_is_rejected_when_source_geometry_changes(tmp_path):
+    from bom2kit.cluster_correlation import extend_with_correlation
+    item, _ = source(tmp_path, 'part', trimesh.creation.box([10, 10, 10]))
+    item['quantity'] = 2
+    recipe = {'item_ids': ['part', 'part'], 'source_hashes': ['stale', 'stale']}
+    policy = {'item_padding_mm': 1., 'carton': {'gap_mm': .2}, 'families': {'part': 'printed'}}
+    with pytest.raises(ValueError, match='source hash'):
+        extend_with_correlation([recipe], {'items': [item]}, policy, output=tmp_path/'search', seconds=.1)
+
+
+def test_large_cluster_seed_is_skipped_after_bom_quantity_reduction(tmp_path):
+    from bom2kit.cluster_correlation import extend_with_correlation
+    item, _ = source(tmp_path, 'part', trimesh.creation.box([10, 10, 10]))
+    item['quantity'] = 10
+    recipe = {'item_ids': ['part']*11, 'source_hashes': [item['mesh']['sha256']]*11}
+    policy = {'item_padding_mm': 1., 'carton': {'gap_mm': .2}, 'families': {'part': 'printed'}}
+    found, diagnostic = extend_with_correlation([recipe], {'items': [item]}, policy,
+        output=tmp_path/'search', seconds=.1, maximum_members=12)
+    assert found == [] and diagnostic['trials'] == []
+    assert diagnostic['maximum_members'] == 12
+
+
 def test_internal_underside_can_rest_on_a_post_without_floating_bottom(tmp_path):
     from copy import deepcopy
     from bom2kit.volumetric_patterns import materialize

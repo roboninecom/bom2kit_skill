@@ -25,15 +25,24 @@ def extend_with_correlation(recipes, library, policy, *, output, pose_cache=None
     from .packing_states import declared_state
     from .report import fingerprint
     if (not math.isfinite(seconds) or seconds <= 0 or not math.isfinite(pair_seconds) or pair_seconds <= 0
-            or not 2 <= maximum_members <= 6 or search_order not in ('depth', 'breadth')
+            or not 2 <= maximum_members <= 12 or search_order not in ('depth', 'breadth')
             or not isinstance(partner_limit, int) or partner_limit < 1 or not math.isfinite(pitch) or pitch <= 0):
-        raise ValueError('Positive finite search budgets and two through six members required')
+        raise ValueError('Positive finite search budgets and two through twelve members required')
     started = perf_counter(); directory = Path(output); directory.mkdir(parents=True, exist_ok=True)
     by_id = {i['id']: i for i in library['items']}; meshes = {}; options = {}; found = []; trials = []
     padding = policy['item_padding_mm']; gap = policy['carton']['gap_mm']
     seeds = sorted(recipes, key=lambda r: -r.get('saving_vs_best_separate_fraction', 0))
     unique = {}; seen = set()
     for seed in seeds:
+        counts = Counter(seed['item_ids'])
+        if any(iid not in by_id or n > by_id[iid]['quantity'] for iid,n in counts.items()):
+            continue
+        if len(set(policy['families'][iid] for iid in counts)) != 1:
+            raise ValueError('A cluster seed must retain one compatible family')
+        if (len(seed['source_hashes']) != len(seed['item_ids'])
+                or any(by_id[iid]['mesh']['sha256'] != digest
+                       for iid,digest in zip(seed['item_ids'],seed['source_hashes']))):
+            raise ValueError('Cluster seed source hash differs from the current library')
         if len(seed['item_ids']) < maximum_members:
             unique.setdefault(tuple(sorted(seed['item_ids'])), seed)
     frontier = list(unique.values())[:12]
@@ -119,4 +128,5 @@ def extend_with_correlation(recipes, library, policy, *, output, pose_cache=None
             if progress: progress({'stage': 'cluster_correlation', **record})
     return found, {'seconds': perf_counter()-started, 'trials': trials,
                    'search_order': search_order, 'partner_limit': partner_limit, 'pitch_mm': pitch,
+                   'maximum_members': maximum_members,
                    'accepted_proposals': len(found), 'complete_replay_required': True}

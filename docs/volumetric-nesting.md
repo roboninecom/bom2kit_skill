@@ -76,6 +76,13 @@ Depth-first extension is the default: two promising partners per seed and a
 exhausting its budget on pairs. `--cluster-order breadth --cluster-partners 6
 --cluster-pitch 2` restores the broader, finer proposal experiment. Neither
 configuration changes original-source clearance or support acceptance.
+Incremental extension retains source-bound larger seeds instead of discarding
+them on every invocation. `--cluster-members 12` experimentally continues fresh
+correlation beyond the default six members. The declared ceiling is not a rigid
+handling group: every original unit still needs quantity, support and access
+replay. Seeds exceeding a changed BOM's quantities are skipped; changed source
+hashes are rejected by the correlation engine. Eleven-part research subsets
+have passed replay; their full-kit benefit is evaluated separately.
 
 For a practical run, optionally pass `--rectangle-solver PATH
 --motif-rectangle-budget 40`. PackingSolver translates source-motif envelopes

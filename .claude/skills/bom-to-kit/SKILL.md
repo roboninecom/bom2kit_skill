@@ -118,7 +118,11 @@ Replay and illustrate promising motifs with `scripts/replay_volumetric_motifs.py
 local pair savings do not establish a smaller complete kit. Report preparation,
 cache reuse, complete-kit verification and transport qualification separately.
 Use `--cluster-correlation-seconds` to search fresh translations against whole
-source clusters when pair-template extension stalls. The practical planner also
+source clusters when pair-template extension stalls. The default ceiling is six
+parts; `--cluster-members 12` can extend source-bound seeds further after smaller
+combinations prove useful. Larger recipes still require individual support,
+quantity and insertion replay, and their full-kit benefit must be measured.
+The practical planner also
 compares motif-aware partitions; pass evidence-tagged `--annotations` when source
 names do not identify complete accessory sets. Keep those sets together and
 replay the full kit before treating a local motif gain as a delivered improvement.
