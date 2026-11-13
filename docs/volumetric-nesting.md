@@ -67,6 +67,19 @@ with retained factory cartons. `--cluster-correlation-seconds 120` additionally
 searches fresh translations against a complete multi-part obstacle, instead of
 only chaining previously discovered pair alignments. The temporary combined
 mesh is a search obstacle, never a BOM item or a rigid handling instruction.
+Depth-first extension is the default: two promising partners per seed and a
+3 mm proposal grid let the bounded search reach four to six source parts before
+exhausting its budget on pairs. `--cluster-order breadth --cluster-partners 6
+--cluster-pitch 2` restores the broader, finer proposal experiment. Neither
+configuration changes original-source clearance or support acceptance.
+
+For a practical run, optionally pass `--rectangle-solver PATH
+--motif-rectangle-budget 40`. PackingSolver translates source-motif envelopes
+while retaining each seed's orientation, internal source poses, directional
+access lanes and contact sheets. It is a layout proposal, not a rigid assembly.
+The complete source and hand replay remains mandatory. `--rectangle-budget`
+separately controls ordinary floor proposals. The finite CP-SAT carton master
+samples diverse motif and floor patterns rather than only the first floor rows.
 
 ## Algorithm and evidence
 

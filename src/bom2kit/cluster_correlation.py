@@ -14,7 +14,8 @@ from time import perf_counter
 
 
 def extend_with_correlation(recipes, library, policy, *, output, pose_cache=None,
-                            seconds=120., pair_seconds=8., maximum_members=6, progress=None):
+                            seconds=120., pair_seconds=8., maximum_members=6, progress=None,
+                            search_order='depth', partner_limit=2, pitch=3.):
     import numpy as np
     import trimesh
     from shapely.geometry import Point
@@ -24,7 +25,8 @@ def extend_with_correlation(recipes, library, policy, *, output, pose_cache=None
     from .packing_states import declared_state
     from .report import fingerprint
     if (not math.isfinite(seconds) or seconds <= 0 or not math.isfinite(pair_seconds) or pair_seconds <= 0
-            or not 2 <= maximum_members <= 6):
+            or not 2 <= maximum_members <= 6 or search_order not in ('depth', 'breadth')
+            or not isinstance(partner_limit, int) or partner_limit < 1 or not math.isfinite(pitch) or pitch <= 0):
         raise ValueError('Positive finite search budgets and two through six members required')
     started = perf_counter(); directory = Path(output); directory.mkdir(parents=True, exist_ok=True)
     by_id = {i['id']: i for i in library['items']}; meshes = {}; options = {}; found = []; trials = []
@@ -36,6 +38,9 @@ def extend_with_correlation(recipes, library, policy, *, output, pose_cache=None
             unique.setdefault(tuple(sorted(seed['item_ids'])), seed)
     frontier = list(unique.values())[:12]
     while frontier and perf_counter()-started < seconds:
+        if search_order == 'depth':
+            frontier.sort(key=lambda r: (-len(r['item_ids']),
+                math.prod(r['dimensions_mm'])/max(1., r.get('selection_reference_mm3', r.get('best_separate_envelope_mm3', 1.)))))
         seed = frontier.pop(0); count = len(seed['item_ids'])
         if count >= maximum_members: continue
         placed = []
@@ -59,14 +64,15 @@ def extend_with_correlation(recipes, library, policy, *, output, pose_cache=None
             if item['id'] not in meshes: meshes[item['id']] = load_mesh(item)
             shape = meshes[item['id']]
             ranked.append((min(float(shape.volume), float(math.prod(obstacle.extents)-obstacle.volume)), item))
-        for _, item in sorted(ranked, key=lambda row: -row[0])[:6]:
+        for _, item in sorted(ranked, key=lambda row: -row[0])[:partner_limit]:
             if perf_counter()-started >= seconds: break
             iid = item['id']
             if iid not in options:
                 options[iid] = stable_pose_options(item, maximum=8, cache=pose_cache,
                                                    preserve_faces=True, include_projection=False)
             result = discover_pairs(host, item, host_options, options[iid], padding=padding, gap=gap,
-                                    seconds=min(pair_seconds, max(.1, seconds-(perf_counter()-started))))
+                                    seconds=min(pair_seconds, max(.1, seconds-(perf_counter()-started))),
+                                    pitch=pitch, voxel_cache=directory/'voxels')
             accepted = 0
             for pair in result['recipes']:
                 alignment = np.asarray(pair['transforms'][0])
@@ -112,4 +118,5 @@ def extend_with_correlation(recipes, library, policy, *, output, pose_cache=None
             trials.append(record)
             if progress: progress({'stage': 'cluster_correlation', **record})
     return found, {'seconds': perf_counter()-started, 'trials': trials,
+                   'search_order': search_order, 'partner_limit': partner_limit, 'pitch_mm': pitch,
                    'accepted_proposals': len(found), 'complete_replay_required': True}

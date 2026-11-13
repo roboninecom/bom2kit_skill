@@ -25,6 +25,9 @@ def main():
                    default=['source_part', 'factory_carton'])
     p.add_argument('--merge-catalog', type=Path, action='append', default=[], help='Merge earlier source-bound proposals before cluster extension')
     p.add_argument('--cluster-correlation-seconds', type=float, default=0., help='Search new 3D offsets against multi-part source obstacles')
+    p.add_argument('--cluster-order', choices=['depth', 'breadth'], default='depth')
+    p.add_argument('--cluster-partners', type=int, default=2)
+    p.add_argument('--cluster-pitch', type=float, default=3.)
     a = p.parse_args()
     root = Path(__file__).resolve().parents[1]
     def code_hashes():
@@ -55,7 +58,9 @@ def main():
         from bom2kit.cluster_correlation import extend_with_correlation
         extended, result['cluster_correlation'] = extend_with_correlation(result['recipes'], library, policy,
             output=a.output.parent/'cluster-obstacles', pose_cache=a.pose_cache,
-            seconds=a.cluster_correlation_seconds, progress=lambda r: print(json.dumps(r), flush=True))
+            seconds=a.cluster_correlation_seconds, search_order=a.cluster_order,
+            partner_limit=a.cluster_partners, pitch=a.cluster_pitch,
+            progress=lambda r: print(json.dumps(r), flush=True))
         result['recipes'].extend(extended)
     result['engine_provenance'] = {'initial_sha256': before, 'unchanged_during_run': before == code_hashes()}
     a.output.parent.mkdir(parents=True, exist_ok=True)

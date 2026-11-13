@@ -122,7 +122,8 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                      hand_border=8.,packing_gap=None,finger_radius=4.,max_replays=12,callback=None,cp_sat_python=None,
                      irregular_executable=None,irregular_budget=0.,family_gaps=None,progress=None,stack_height_factor=0.,refinement_budget=0.,
                      rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,
-                     common_floor_budget=0.,common_floor_only=False,supported_nesting=False,source_surface_budget=0.,access_repair_budget=0.,volumetric_catalog=None,annotations=None):
+                     common_floor_budget=0.,common_floor_only=False,supported_nesting=False,source_surface_budget=0.,access_repair_budget=0.,volumetric_catalog=None,annotations=None,
+                     motif_rectangle_budget=0.):
     """Search source-derived family partitions and retain a verified Pareto set."""
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -140,10 +141,12 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     if not math.isfinite(time_limit) or time_limit<=0:raise ValueError("Positive time limit required")
     if not carton_counts or not type_caps or not isinstance(max_replays,int) or max_replays<1:
         raise ValueError('Nonempty carton/type search and a positive replay count required')
-    values=[hand_border,irregular_budget,refinement_budget,rectangle_budget,floor_pair_budget,access_lane_mm,common_floor_budget,source_surface_budget,access_repair_budget]
+    values=[hand_border,irregular_budget,refinement_budget,rectangle_budget,floor_pair_budget,access_lane_mm,common_floor_budget,source_surface_budget,access_repair_budget,motif_rectangle_budget]
     if packing_gap is not None:values.append(packing_gap)
     if any(not math.isfinite(v) or v<0 for v in values):raise ValueError('Finite nonnegative search parameters required')
     if common_floor_only and not common_floor_budget:raise ValueError('Common-floor-only mode requires a positive budget')
+    if motif_rectangle_budget and (not rectangle_executable or volumetric_catalog is None):
+        raise ValueError('Motif rectangle search requires a catalog and rectangle executable')
     if not math.isfinite(finger_radius) or finger_radius<=0:raise ValueError('Positive finite fingertip radius required')
     if any(n<1 or n>7 for n in carton_counts) or any(n<1 or n>7 for n in type_caps):raise ValueError("Invalid carton/type search limits")
     if not math.isfinite(stack_height_factor) or stack_height_factor<0:raise ValueError('Invalid stack height factor')
@@ -165,7 +168,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     if set(family_gaps)-set(families) or any(not math.isfinite(v) or v<spec['gap_mm'] for v in family_gaps.values()):
         raise ValueError('Family gap overrides must preserve the declared clearance and name known families')
     patterns_cache={};cached_items={};proposals=[];attempts=[];irregular_used=0.;irregular_diagnostics=[];rectangle_used=0.;rectangle_diagnostics=[];pair_used=0.
-    surface_used=0.;surface_diagnostics=[]
+    surface_used=0.;surface_diagnostics=[];motif_rectangle_used=0.;motif_rectangle_diagnostics=[]
     allocations=[counts for counts in product(range(1,max(carton_counts)+1),repeat=len(families))
                  if sum(counts) in carton_counts and all(c<=len(families[f]) for f,c in zip(family_names,counts))]
     group_estimates={}
@@ -240,9 +243,15 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                         patterns_cache[key]['regular_floor_patterns']=list(patterns_cache[key]['patterns'])
                         if volumetric_catalog is not None:
                             from .volumetric_patterns import volumetric_patterns
+                            local_diagnostics = []
                             patterns_cache[key]['patterns'].extend(volumetric_patterns(subset, options,
                                 {**policy, '_volumetric_catalog': volumetric_catalog}, seconds=1.,
-                                hand_border=hand_border, access_lane=access_lane_mm))
+                                hand_border=hand_border, access_lane=access_lane_mm,
+                                rectangle_executable=rectangle_executable,
+                                rectangle_budget=min(4., max(0., motif_rectangle_budget-motif_rectangle_used)),
+                                rectangle_diagnostics=local_diagnostics))
+                            motif_rectangle_used += sum(d.get('elapsed_seconds', 0.) for d in local_diagnostics)
+                            motif_rectangle_diagnostics.extend(local_diagnostics)
                         if stack_height_factor or supported_nesting or floor_pair_budget>pair_used:
                             # Experimental patterns compete per carton with the
                             # regular floor; enabling stacks must not force every
@@ -337,7 +346,8 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
         master_candidates=[];master_modules=[]
         for key,entry in patterns_cache.items():
             subset=cached_items[key]
-            for pattern in entry['patterns'][:12]:
+            from .concept_patterns import diverse_patterns
+            for pattern in diverse_patterns(entry['patterns'], 12):
                 size=pattern['external_mm']
                 master_candidates.append({'contents':{p['unit_id']:1 for p in pattern['placements']},
                                           'external_mm':size,'size_key':[*sorted(size[:2]),size[2]]})
@@ -477,6 +487,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                           "irregular_proposals":irregular_diagnostics,
                           "joint_refinement":refinement_diagnostics,
                           "rectangle_proposals":rectangle_diagnostics,
+                          'motif_rectangle_proposals': motif_rectangle_diagnostics,
                           "common_footprint_proposals":common_diagnostics,
                           "supported_pair_proposals":cavity_diagnostics,
                           "source_surface_proposals":surface_diagnostics,
@@ -489,6 +500,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
             "attempts":attempts,"replays":replays,"exact_cover_master":master_diagnostics,
             "joint_refinement":refinement_diagnostics,
             "rectangle_proposals":rectangle_diagnostics,
+            'motif_rectangle_proposals': motif_rectangle_diagnostics,
             "common_footprint_proposals":common_diagnostics,
             "supported_pair_proposals":cavity_diagnostics,
             "source_surface_proposals":surface_diagnostics,

@@ -62,6 +62,7 @@ def main():
     p.add_argument('--refinement-budget',type=float,default=0.,help='Additional joint carton/content refinement seconds')
     p.add_argument('--rectangle-solver',type=Path)
     p.add_argument('--rectangle-budget',type=float,default=0.)
+    p.add_argument('--motif-rectangle-budget', type=float, default=0., help='Additional PackingSolver budget for translating source motif envelopes')
     p.add_argument('--floor-pair-budget',type=float,default=0.,help='Repeated adjacent source-supported pairs, individually handled')
     p.add_argument('--access-lane',type=float,default=0.,help='Envelope gap along Y only, subject to independent grip replay')
     p.add_argument('--common-floor-budget',type=float,default=0.,help='Footprint-first partial-layer beam search seconds')
@@ -100,6 +101,7 @@ def main():
         stack_height_factor=a.stack_height_factor,
         refinement_budget=a.refinement_budget,
         rectangle_executable=a.rectangle_solver,rectangle_budget=a.rectangle_budget,
+        motif_rectangle_budget=a.motif_rectangle_budget,
         floor_pair_budget=a.floor_pair_budget,
         access_lane_mm=a.access_lane,
         common_floor_budget=a.common_floor_budget,common_floor_only=a.common_floor_only,

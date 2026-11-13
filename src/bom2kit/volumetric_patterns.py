@@ -134,7 +134,8 @@ def cover_variants(items, recipes, *, maximum=8, options=None, padding=1.):
 
 
 def volumetric_patterns(items, options, policy, *, seconds=2., hand_border=7.2,
-                        access_lane=6.4, target_footprints=()):
+                        access_lane=6.4, target_footprints=(), rectangle_executable=None,
+                        rectangle_budget=0., rectangle_diagnostics=None):
     from .concept_patterns import repeated_rows, compose_zones, diverse_patterns
     catalog = policy.get('_volumetric_catalog')
     if not catalog:
@@ -172,4 +173,17 @@ def volumetric_patterns(items, options, policy, *, seconds=2., hand_border=7.2,
             raise ValueError('Motif selection changed source quantities')
         if len({q['unit_id'] for q in p['placements']}) != len(p['placements']):
             raise ValueError('Motif selection duplicated a source unit')
-    return diverse_patterns(patterns, 20)
+    patterns = diverse_patterns(patterns, 20)
+    if rectangle_executable and rectangle_budget > 0:
+        from .motif_rectangle import polish
+        tick = perf_counter()
+        for pattern in sorted(patterns, key=lambda p: math.prod(p['external_mm']))[:4]:
+            remaining = rectangle_budget-(perf_counter()-tick)
+            if remaining <= 0: break
+            changed, diagnostic = polish(pattern, rectangle_executable, wall=wall, border=hand_border,
+                lane=access_lane, gap=spec['gap_mm'], seconds=min(1., remaining),
+                increment=spec.get('dimension_increment_mm', 1.))
+            if rectangle_diagnostics is not None: rectangle_diagnostics.append(diagnostic)
+            if changed and math.prod(changed['external_mm']) < math.prod(pattern['external_mm'])-1e-6:
+                patterns.append(changed)
+    return diverse_patterns(patterns, 24)
