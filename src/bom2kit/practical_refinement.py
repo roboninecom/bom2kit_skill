@@ -6,6 +6,27 @@ from .carton_tiling import tile_modules
 from .regular_patterns import floor_patterns
 
 
+def choose_repacked_block(modules, tiled, replacements, spec, cap, *, seconds=.5):
+    """Compare original motifs with floor repairs at whole-carton-block scope.
+
+    Fitting inside an expanded leaf is insufficient to replace its source
+    pattern: a lower repair can require a wider floor and lose after retiling.
+    Keep both proposals and retain the original block if none is smaller.
+    """
+    selected = {leaf['module']: leaf['pattern'] for leaf in tiled['leaves']}
+    alternatives = []
+    for index, module in enumerate(modules):
+        patterns = [deepcopy(module['patterns'][selected[index]])]
+        patterns.extend(deepcopy(replacements.get(index, [])))
+        alternatives.append({**deepcopy(module), 'patterns': patterns})
+    compact = tile_modules(alternatives, time_limit=seconds, wall=spec['wall_mm'],
+        foam=spec['protection_mm'], reserve=spec['reserved_top_mm'], max_types=cap,
+        increment=spec['dimension_increment_mm'])['candidate']
+    if compact and compact['volume_mm3'] < tiled['volume_mm3']-1e-6:
+        return alternatives, compact
+    return deepcopy(modules), deepcopy(tiled)
+
+
 def refine(proposal, options, policy, *, seconds=15, gap=.2, family_gaps=None,
            hand_border=0, stack_height_factor=0,access_lane_mm=0,supported_nesting=False,
            volumetric_catalog=None):

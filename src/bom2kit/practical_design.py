@@ -405,7 +405,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
             # Repack against the expanded, current-run carton dimensions. This
             # does not import an external recipe. If this reduces a module's
             # required height, retile the block before independent replay.
-            modules=deepcopy(modules);tiled=deepcopy(tiled)
+            modules=deepcopy(modules);tiled=deepcopy(tiled);replacements={}
             for leaf in tiled['leaves']:
                 module=modules[leaf['module']]
                 try:
@@ -419,13 +419,11 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                     # Keep contour packing when a rectangular repair loses its fit.
                     if fits:
                         replacement=min(fits,key=lambda p:p['external_mm'][2])
-                        module['patterns'].append(replacement);leaf['pattern']=len(module['patterns'])-1
+                        replacements[leaf['module']]=[replacement]
                 except ValueError:
                     pass
-            selected = {leaf['module']: leaf['pattern'] for leaf in tiled['leaves']}
-            compact_modules = [{**m, 'patterns': [m['patterns'][selected[index]]]} for index, m in enumerate(modules)]
-            compact = tile_modules(compact_modules, time_limit=.5, wall=spec['wall_mm'], foam=spec['protection_mm'],
-                reserve=spec['reserved_top_mm'], max_types=cap, increment=spec['dimension_increment_mm'])['candidate']
+            from .practical_refinement import choose_repacked_block
+            compact_modules, compact = choose_repacked_block(modules,tiled,replacements,spec,cap)
             post_repack_retiling = {'before_l': volume/1e6, 'after_l': volume/1e6}
             if compact and compact['volume_mm3'] < volume-1e-6:
                 volume, modules, tiled = compact['volume_mm3'], compact_modules, compact

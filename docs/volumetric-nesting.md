@@ -43,6 +43,10 @@ prefer fewer types. Joint refinement also tests motifs at footprints generated
 by the current run. If later floor repacking lowers the required height, the
 outer block is retiled and independently replayed rather than keeping stale
 larger exterior dimensions.
+The final floor-repair pass keeps the original motif as a competing pattern.
+A repair fitting an expanded carton can have a lower height but a wider floor;
+it no longer replaces nesting before comparing both complete shipping blocks.
+If retiling cannot improve the block, the original source poses are preserved.
 
 Inspect local combinations, optionally rendering actual CAD with `[report]`:
 
