@@ -34,6 +34,8 @@ def main():
     p.add_argument("--refinement-budget",type=float,default=45.)
     p.add_argument("--surface-budget",type=float,default=0.)
     p.add_argument("--preserve-contact-faces",action='store_true',help='Keep different stable support faces even when bounding dimensions match')
+    p.add_argument('--volumetric-catalog', type=Path, help='Source-bound 3D motif proposals; full replay remains mandatory')
+    p.add_argument('--volumetric-refinement-budget', type=float, default=0., help='Try catalog motifs inside generated row-based carton architectures')
     p.add_argument("--minimum-sheet-side",type=float,default=10.,help='Declared minimum manually handled contact-sheet width/depth, mm')
     p.add_argument('--irregular-solver',type=Path)
     p.add_argument('--irregular-budget',type=float,default=0.)
@@ -68,6 +70,7 @@ def main():
     if a.annotations:
         files['annotations']=sha256(a.annotations.read_bytes()).hexdigest()
     if a.irregular_solver:files['irregular_solver']=sha256(a.irregular_solver.read_bytes()).hexdigest()
+    if a.volumetric_catalog:files['volumetric_catalog']=sha256(a.volumetric_catalog.read_bytes()).hexdigest()
     root = Path(__file__).resolve().parents[1]
     def hashes():
         return {str(f.relative_to(root)): sha256(f.read_bytes()).hexdigest() for f in [*sorted((root/"src/bom2kit").glob("*.py")), Path(__file__).resolve()]}
@@ -108,6 +111,8 @@ def main():
                           minimum_sheet_side=a.minimum_sheet_side,
                           irregular_executable=a.irregular_solver,irregular_budget=a.irregular_budget,
                           assignment_budget=a.assignment_budget,
+                          volumetric_catalog=json.loads(a.volumetric_catalog.read_bytes()) if a.volumetric_catalog else None,
+                          volumetric_refinement_budget=a.volumetric_refinement_budget,
                           progress=progress, callback=save_trial,proposal_callback=save_proposal)
     results = run.pop("results"); plans = run.pop("assembly_plans"); properties = run.pop("properties")
     (a.output/"part-properties.json").write_text(json.dumps(properties, indent=2), encoding="utf8")

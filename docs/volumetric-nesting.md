@@ -1,0 +1,90 @@
+# Volumetric source-part nesting
+
+This mode proposes cavity use, complementary shapes and protected stacks from
+original CAD. It does not consume engineer carton dimensions or packing poses.
+It is an experimental portfolio member: preserve the better verified incumbent.
+The full SO-ARM101/102 no-worse-than-Alan objective remains open.
+
+## Reproduce
+
+Run from the repository root with the existing `[mesh]` dependencies:
+
+```powershell
+python scripts/build_volumetric_catalog.py LIBRARY.json POLICY.json --output packaging-results/volume/catalog.json --cache packaging-results/volume/cache --pose-cache packaging-results/pose-cache --max-pairs 24 --pair-seconds 12 --cluster-seconds 30
+python scripts/design_concept_packaging.py LIBRARY.json POLICY.json EXPECTED.json --output packaging-results/volume/concepts --cache packaging-results/pose-cache --motifs volumetric --volumetric-catalog packaging-results/volume/catalog.json --grouping type --placement-style cohesive --time-limit 150 --wall-limit 900
+```
+
+Also compare the family-partition planner by passing the same
+`--volumetric-catalog` to `scripts/design_practical_packaging.py`. Both planners
+retain ordinary floor candidates. Search budgets are soft; the design runners'
+`--wall-limit` includes preparation and replay. Catalog preparation currently
+has no process supervisor: account for it separately within the task deadline.
+
+To preserve row-generated carton architectures while trying nesting inside them,
+use `--motifs rows --volumetric-catalog CATALOG.json
+--volumetric-refinement-budget 60`. This avoids changing the initial partition
+estimates when a catalog's locally compact motifs rank whole-kit concepts poorly.
+Both the refined proposal and its fallback still require independent replay.
+
+Inspect local combinations, optionally rendering actual CAD with `[report]`:
+
+```powershell
+python scripts/replay_volumetric_motifs.py LIBRARY.json POLICY.json packaging-results/volume/catalog.json --output packaging-results/volume/motifs --maximum 5 --render
+```
+
+These subset experiments do not prove that a motif is selected in the full kit.
+Use the accepted result's individual poses and motif records for final guides.
+`--extend-catalog EXISTING.json` reuses pair proposals and searches larger
+combinations without repeating pair discovery. New BOM quantities are checked
+when selecting motifs; new or changed geometry needs new discovery.
+
+## Algorithm and evidence
+
+1. Rank compatible source pairs by geometric void potential, spreading the
+   budget across parts. Purchased envelopes retain their declared dimensions;
+   their empty bounding space is not treated as a physical cavity.
+   Declared factory cartons are eligible for protected flat-interface stacks;
+   ordinary purchased-item envelopes are not relabeled as load-bearing cartons.
+2. Generate independent stable contact faces and relative quarter-turns.
+   `scipy.signal.fftconvolve` correlates **3D occupied voxels**, not projected
+   silhouettes. Candidate translations use the floor and original horizontal
+   support faces. Quantization only proposes poses.
+3. Recheck original triangle collision and protected clearance with FCL. Check
+   enclosed solids with component-wise point containment. Reuse acceleration
+   trees across translations. Supported pairs include explicit contact sheets.
+4. Extend pairs into combinations of up to six individual parts, retaining
+   source transforms, quantities and support relationships. Recheck all member
+   collisions. Extension failure does not prove that no larger nesting exists.
+5. Use a bounded exact-coverage beam at shared height bands to select motifs
+   and remaining single parts. Compare footprint savings at a common carton
+   height; isolated pair volume can wrongly discard useful stacks. Retain
+   volume, footprint and height alternatives for carton tiling.
+6. Expand every original unit before the existing full-kit BOM, geometry,
+   compatibility, foam, support and hand-access replay. A motif is neither a
+   new purchased box nor a rigid preassembly.
+
+The cache binds source hashes, pose options, protection, pitch, search parameters
+and the pair engine hash. Cached proposal geometry still requires complete-kit
+replay. Report cache hits separately from cold search time. The
+`saving_vs_best_separate_fraction` metric compares a pair with the best
+side-by-side envelope among its prepared orientations, excluding carton walls.
+It is not the complete shipping-volume saving. Larger-cluster selection costs
+are heuristic estimates, not measured control layouts.
+
+## Backend trials and limits
+
+The initial native setup trials used
+[psacking](https://github.com/Vrroom/psacking/tree/515060015ae7fd1ba437aefe4a33df36d56ba3b9)
+and [sparrow-3d](https://github.com/JonasTollenaere/sparrow-3d/tree/bf9babfe7adc953cb41f7b1e4196566139873afe).
+The former required an unavailable compiled CUDA extension. The latter needed
+the C++/CGAL/MeshCore toolchain; both HTTP and HTTPS WSL dependency setup attempts
+failed. Neither native engine completed a real-part benchmark. The implemented
+CPU correlation is a separate implementation, not a psacking benchmark result.
+Setup logs are retained under ignored `packaging-results/volume-round5/`.
+
+Current motion replay checks straight vertical insertion/removal and a fingertip
+model. A failure is not proof against a tilted or rotated insertion path. General
+SE(3) motion planning, arbitrary frictional contacts and deformable wrapping are
+not implemented. Stable-face search is not exhaustive orientation search.
+Static support assumes uniform source-solid density and does not certify EPE
+bearing strength, shipping retention or drop-test performance.

@@ -120,7 +120,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                      hand_border=8.,packing_gap=None,finger_radius=4.,max_replays=12,callback=None,cp_sat_python=None,
                      irregular_executable=None,irregular_budget=0.,family_gaps=None,progress=None,stack_height_factor=0.,refinement_budget=0.,
                      rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,
-                     common_floor_budget=0.,common_floor_only=False,supported_nesting=False,source_surface_budget=0.,access_repair_budget=0.):
+                     common_floor_budget=0.,common_floor_only=False,supported_nesting=False,source_surface_budget=0.,access_repair_budget=0.,volumetric_catalog=None):
     """Search source-derived family partitions and retain a verified Pareto set."""
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
@@ -146,7 +146,9 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     if stack_height_factor and irregular_executable:raise ValueError('Stack and planar-contour modes must be evaluated separately')
     if floor_pair_budget and irregular_executable:raise ValueError('Floor pairs and projected contours require separate experiments')
     if supported_nesting and (irregular_executable or floor_pair_budget):raise ValueError('Supported cavity pairs require a separate experiment')
-    options={i["id"]:stable_pose_options(i,cache=cache) for i in library["items"]}
+    # Rectangular and volumetric motifs do not use planar triangle unions.
+    # Prepare them only for an explicitly requested contour backend.
+    options={i["id"]:stable_pose_options(i,cache=cache,include_projection=bool(irregular_executable)) for i in library["items"]}
     preparation_seconds=perf_counter()-started
     if progress:progress({'stage':'sources_prepared','seconds':preparation_seconds,'source_skus':len(options)})
     search_start=perf_counter()
@@ -211,6 +213,11 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                             rectangle_budget=min(2,max(0,rectangle_budget-rectangle_used)),
                             floor_pair_budget=0.)
                         patterns_cache[key]['regular_floor_patterns']=list(patterns_cache[key]['patterns'])
+                        if volumetric_catalog is not None:
+                            from .volumetric_patterns import volumetric_patterns
+                            patterns_cache[key]['patterns'].extend(volumetric_patterns(subset, options,
+                                {**policy, '_volumetric_catalog': volumetric_catalog}, seconds=1.,
+                                hand_border=hand_border, access_lane=access_lane_mm))
                         if stack_height_factor or supported_nesting or floor_pair_budget>pair_used:
                             # Experimental patterns compete per carton with the
                             # regular floor; enabling stacks must not force every

@@ -245,6 +245,43 @@ def refine_concept(proposal, options, policy, *, seconds=15., hand_border=7.2,ac
     return current
 
 
+def refine_volumetric(proposal, options, policy, *, seconds=30., hand_border=7.2,
+                      access_lane=6.4, minimum_sheet_side=10.):
+    """Improve a generated carton architecture without changing its seed search.
+
+    Row-based estimates can find a better partition than motif-based estimates.
+    Keep that architecture and let complete 3D motifs compete inside its cartons.
+    """
+    from .volumetric_patterns import volumetric_patterns
+    started = perf_counter(); current = deepcopy(proposal); spec = policy['carton']; rounds = []
+    for iteration in range(2):
+        modules = deepcopy(current['modules']); added = 0
+        for leaf in current['tiled']['leaves']:
+            index = leaf['module']; module = modules[index]
+            selected = current['modules'][index]['patterns'][leaf['pattern']]
+            module['patterns'] = [deepcopy(selected)]
+            for targets in ((), [leaf['external_mm'][:2]]):
+                remaining = seconds-(perf_counter()-started)
+                if remaining <= 0: break
+                generated = volumetric_patterns(module['items'], options, policy,
+                    seconds=min(2., remaining), hand_border=hand_border, access_lane=access_lane,
+                    target_footprints=targets)
+                generated = [p for p in generated if manual_pattern_screen(p, minimum_sheet_side)['valid']]
+                module['patterns'].extend(generated); added += len(generated)
+        candidate = tile_modules(modules, time_limit=.5, wall=spec['wall_mm'], foam=spec['protection_mm'],
+            reserve=spec['reserved_top_mm'], max_types=proposal['type_cap'],
+            increment=spec['dimension_increment_mm'])['candidate']
+        improved = bool(candidate and candidate['volume_mm3'] < current['tiled']['volume_mm3']-1e-6)
+        rounds.append({'patterns_added': added, 'before_l': current['tiled']['volume_mm3']/1e6,
+                       'after_l': candidate['volume_mm3']/1e6 if candidate else None, 'improved': improved})
+        if not improved: break
+        current = {**current, 'modules': modules, 'tiled': candidate}
+        if perf_counter()-started >= seconds: break
+    current['volumetric_refinement'] = {'seconds': perf_counter()-started, 'rounds': rounds,
+                                       'reference_used': False, 'independent_replay_required': True}
+    return current
+
+
 def refine_source_surfaces(proposal, options, policy, *, seconds=60., hand_border=7.2,minimum_sheet_side=10.):
     """Try compact, source-supported 3D arrangements within generated concepts.
 
@@ -414,15 +451,21 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                     beam_width=12, carton_counts=(3, 4, 5, 6, 7), type_caps=(3, 4, 7),
                     motif_modes=("rows", "stacks"), grouping_modes=("assembly",),
                     max_replays=6, hand_border=7.2, finger_radius=4., progress=None, callback=None,
-                    placement_style="zones",repair_budget=60.,proposal_callback=None,refinement_budget=45.,surface_budget=0.,access_lane=6.4,preserve_contact_faces=False,minimum_sheet_side=10.,irregular_executable=None,irregular_budget=0.,assignment_budget=0.):
+                    placement_style="zones",repair_budget=60.,proposal_callback=None,refinement_budget=45.,surface_budget=0.,access_lane=6.4,preserve_contact_faces=False,minimum_sheet_side=10.,irregular_executable=None,irregular_budget=0.,assignment_budget=0.,volumetric_catalog=None,volumetric_refinement_budget=0.):
     started = perf_counter()
     if (not math.isfinite(seconds) or seconds <= 0 or beam_width < 1 or max_replays < 1
-        or any(not math.isfinite(v) or v<0 for v in (repair_budget,refinement_budget,surface_budget,irregular_budget,assignment_budget,hand_border,access_lane,minimum_sheet_side))):
+        or any(not math.isfinite(v) or v<0 for v in (repair_budget,refinement_budget,surface_budget,irregular_budget,assignment_budget,volumetric_refinement_budget,hand_border,access_lane,minimum_sheet_side))):
         raise ValueError("Positive finite budgets required")
     if not carton_counts or min(carton_counts) < 1 or max(carton_counts) > 7 or not type_caps or min(type_caps) < 1:
         raise ValueError("Invalid carton/type limits")
-    if not motif_modes or any(m not in ("rows", "stacks", "nesting", "alternating", "hybrid") for m in motif_modes):
+    if not motif_modes or any(m not in ("rows", "stacks", "nesting", "alternating", "hybrid", "volumetric") for m in motif_modes):
         raise ValueError("Unknown motif mode")
+    if 'volumetric' in motif_modes or volumetric_refinement_budget:
+        if volumetric_catalog is None:
+            raise ValueError('Volumetric mode requires a source-bound catalog')
+        # The catalog may be reused with a changed BOM; materialization checks
+        # each referenced source and exact unit coverage, never cached counts.
+        policy = {**policy, '_volumetric_catalog': volumetric_catalog}
     if placement_style not in ('zones','cohesive','portfolio'):
         raise ValueError('Unknown concept placement style')
     if policy.get("allow_all_rotations") is not True or policy["item_padding_mm"] <= 0:
@@ -526,6 +569,7 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                 queue.append(choices[0])
         queue.extend(p for p in ranked if p not in queue)
     results = []; plans = {}; trials = []; replay_start = perf_counter();repair_used=0.;refinement_used=0.;surface_used=0.;irregular_used=0.;assignment_used=0.
+    volumetric_used = 0.
     for proposal in queue[:max_replays]:
         if refinement_used<refinement_budget:
             proposal=refine_concept(proposal,options,policy,seconds=min(15.,refinement_budget-refinement_used),hand_border=hand_border,access_lane=access_lane,minimum_sheet_side=minimum_sheet_side)
@@ -536,6 +580,11 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
                 max_cartons=max(carton_counts),max_types=max(type_caps),hand_border=hand_border,
                 access_lane=access_lane,minimum_sheet_side=minimum_sheet_side)
             assignment_used+=proposal['assignment_refinement']['seconds']
+        if volumetric_used < volumetric_refinement_budget:
+            proposal = refine_volumetric(proposal, options, policy,
+                seconds=min(30., volumetric_refinement_budget-volumetric_used),
+                hand_border=hand_border, access_lane=access_lane, minimum_sheet_side=minimum_sheet_side)
+            volumetric_used += proposal['volumetric_refinement']['seconds']
         if irregular_executable and irregular_used<irregular_budget:
             proposal=refine_irregular_floors(proposal,options,policy,executable=irregular_executable,
                 seconds=min(60.,irregular_budget-irregular_used),hand_border=hand_border,access_lane=access_lane)
@@ -552,6 +601,7 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
         if 'surface_refinement' in proposal:record['surface_refinement']=proposal['surface_refinement']
         if 'irregular_refinement' in proposal:record['irregular_refinement']=proposal['irregular_refinement']
         if 'assignment_refinement' in proposal:record['assignment_refinement']=proposal['assignment_refinement']
+        if 'volumetric_refinement' in proposal:record['volumetric_refinement']=proposal['volumetric_refinement']
         local_policy = deepcopy(policy); local_policy["max_inner_cartons"] = max(carton_counts); local_policy["max_carton_types"] = proposal["type_cap"]
         try:
             result=None;failure=None
@@ -645,5 +695,6 @@ def design_concepts(library, policy, bom, *, cache=None, annotations=None, secon
             "surface_seconds":surface_used,
             "irregular_seconds":irregular_used,
             "assignment_seconds":assignment_used,
+            "volumetric_refinement_seconds":volumetric_used,
             "search_seconds": search_seconds, "replay_seconds": perf_counter()-replay_start,
             "seconds": perf_counter()-started, "reference_used": False}

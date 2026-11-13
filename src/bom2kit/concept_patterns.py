@@ -186,6 +186,13 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
 
 def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=None,minimum_sheet_side=10.):
     """Generate source-derived motifs; all outputs still require independent replay."""
+    if mode == 'volumetric':
+        from .volumetric_patterns import volumetric_patterns
+        fallback = group_patterns(group, options, policy, seconds=seconds/2, mode='rows', cache=cache,
+                                  minimum_sheet_side=minimum_sheet_side)
+        patterns = volumetric_patterns(group['items'], options, policy, seconds=seconds/2, hand_border=0.)
+        return {'patterns': diverse_patterns(patterns+fallback['patterns'], 20),
+                'diagnostics': fallback['diagnostics']}
     if mode=='hybrid':
         generated=[group_patterns(group,options,policy,seconds=seconds/4,mode=m,cache=cache,minimum_sheet_side=minimum_sheet_side)
                    for m in ('rows','stacks','alternating','nesting')]
@@ -243,6 +250,16 @@ def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=Non
 def cohesive_carton_patterns(groups, options, policy, *, seconds=2., mode="rows", hand_border=7.2,
                              access_lane=6.4, packing_gap=None,target_footprints=(),semantic_order='portfolio',minimum_sheet_side=10.):
     """Keep meaningful neighbors without assigning rectangular private zones."""
+    if mode == 'volumetric':
+        from .volumetric_patterns import volumetric_patterns
+        items = coalesce_items([i for g in groups for i in g['items']])
+        generated = volumetric_patterns(items, options, policy, seconds=seconds/2, hand_border=hand_border,
+                                        access_lane=access_lane, target_footprints=target_footprints)
+        fallback = cohesive_carton_patterns(groups, options, policy, seconds=seconds/2, mode='rows',
+                       hand_border=hand_border, access_lane=access_lane, packing_gap=packing_gap,
+                       target_footprints=target_footprints, semantic_order=semantic_order,
+                       minimum_sheet_side=minimum_sheet_side)
+        return diverse_patterns(generated+fallback, 24)
     if mode=='hybrid':
         return diverse_patterns([p for m in ('rows','stacks','alternating','nesting')
             for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/4,mode=m,

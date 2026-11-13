@@ -67,6 +67,7 @@ def main():
     p.add_argument('--common-floor-only',action='store_true',help='Evaluate footprint-first search separately')
     p.add_argument('--supported-nesting',action='store_true',help='Individually inserted pairs supported by actual internal horizontal faces')
     p.add_argument('--source-surface-budget',type=float,default=0.,help='Actual-surface 3D proposals with branching support trees')
+    p.add_argument('--volumetric-catalog', type=Path, help='Source-bound 3D motif proposals, expanded before full replay')
     p.add_argument('--access-repair-budget',type=float,default=0.,help='Repack cartons rejected by the unchanged finger model, including replay')
     p.add_argument('--wall-limit',type=float,help='Hard complete-invocation limit, including replay and report JSON')
     p.add_argument('--_supervised',action='store_true',help=argparse.SUPPRESS)
@@ -75,6 +76,7 @@ def main():
         raise SystemExit(supervise(sys.argv[1:],a.output,a.wall_limit))
     values={name:json.loads(getattr(a,name).read_bytes()) for name in ("library","policy","bom")}
     files={name:sha256(getattr(a,name).read_bytes()).hexdigest() for name in values}
+    if a.volumetric_catalog: files['volumetric_catalog'] = sha256(a.volumetric_catalog.read_bytes()).hexdigest()
     root=Path(__file__).resolve().parents[1]
     def code_hashes():
         files=[*sorted((root/"src/bom2kit").glob("*.py")),Path(__file__).resolve()]
@@ -102,6 +104,7 @@ def main():
         supported_nesting=a.supported_nesting,
         source_surface_budget=a.source_surface_budget,
         access_repair_budget=a.access_repair_budget,
+        volumetric_catalog=json.loads(a.volumetric_catalog.read_bytes()) if a.volumetric_catalog else None,
         progress=lambda record:print(json.dumps(record),flush=True))
     results=run.pop("results");plans=run.pop('assembly_plans')
     run["input_files_sha256"]=files

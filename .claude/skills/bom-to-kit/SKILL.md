@@ -110,6 +110,14 @@ Voxel emptiness alone never certifies a fit. This differs from the older
 
 ### Concept-first packing
 
+When floor-only layouts waste cavities or stackable height, read
+`docs/volumetric-nesting.md`. Build a source-bound volumetric catalog, then
+compare `--motifs volumetric --volumetric-catalog CATALOG.json` with the verified
+row incumbent. Both concept and practical planners can consume this catalog.
+Replay and illustrate promising motifs with `scripts/replay_volumetric_motifs.py`;
+local pair savings do not establish a smaller complete kit. Report preparation,
+cache reuse, complete-kit verification and transport qualification separately.
+
 Read `docs/concept-packing-design.md`. Build evidence-tagged property cards, form
 semantic groups, generate executable motifs, compare bounded kit concepts, refine
 geometry and independently replay. Name inference, shape similarity and visual
