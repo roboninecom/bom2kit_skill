@@ -24,6 +24,23 @@ def dimensions(values):
     return ' x '.join(f'{v:g}' for v in values)
 
 
+def packing_event_inventory(result,metrics):
+    """Declared handling-event model; not measured labor or a supplier process."""
+    if 'practical' not in result:return None
+    boxes=len(result['logistics']['modules'])
+    categories={'source_and_compound_placements':metrics['total_counted_placements'],
+        'contact_sheet_placements':metrics['protective_sheet_placements'],
+        'floor_liner_placements':metrics['floor_liner_placements'],
+        'inner_carton_forming':boxes,'inner_carton_closing':boxes,
+        'inner_carton_insertion':boxes,
+        'foam_panel_placements':sum(p.get('quantity',1) for p in result['logistics']['foam_panels']),
+        'outer_carton_forming':1,'outer_carton_closing':1}
+    return {'categories':categories,'total':sum(categories.values()),
+        'basis':'One counted event per source/compound placement, material placement, carton forming, closure and insertion; forming/closure are declared event assumptions.',
+        'excluded':['packet preparation','labeling','rework','individual tape/fold motions'],
+        'measured_labor_seconds':None,'physical_process_validated':False}
+
+
 def render(config_path,output):
     from reportlab.pdfgen import canvas
     from reportlab.platypus import Paragraph,Table,TableStyle
@@ -79,12 +96,13 @@ def render(config_path,output):
         after_seconds=None
         if case.get('after_run'):
             run=json.loads(Path(case['after_run']).read_bytes());after_seconds=run.get('seconds')
+        events=[packing_event_inventory(r,m) for r,m in zip((before,after),metrics)]
         after_label=case.get('after_label','After: practical candidate')
         rows=[['Metric','Before: matching current inputs',after_label,'Alan: illustrated reference'],
               ['Exterior, mm',*[dimensions(v) for v in exterior]],
               ['Shipping volume, L',*[f"{m['external_volume_l']:.3f}" for m in metrics],f'{ref_volume:.3f}'],
               ['Inner cartons / sizes',*[f"{m['cartons']} / {m['carton_types']}" for m in metrics],f"{reference.get('cartons','Unknown')} / not audited"],
-              ['Source + compound placements',*[str(m['total_counted_placements']) for m in metrics],'Not counted'],
+              ['Source / modeled packing events',*[f"{m['total_counted_placements']} / {e['total'] if e else 'not specified'}" for m,e in zip(metrics,events)],'Not counted'],
               ['Contact sheets / floor liners',
                f"{metrics[0]['protective_sheet_placements']} / {metrics[0]['floor_liner_placements']}" if 'practical' in before else 'Not specified',
                f"{metrics[1]['protective_sheet_placements']} / {metrics[1]['floor_liner_placements']}",'Not counted'],
@@ -120,7 +138,7 @@ def render(config_path,output):
             f"Before/after keep the same sources, {spec['protection_mm']:g} mm six-face foam, {spec['wall_mm']:g} mm outer wall, {spec['inner_wall_mm']:g} mm inner walls and declared part protection. Finger model: {grip['radius_mm']:g} mm radius, up to {grip['insertion_depth_mm']:g} mm engagement, vertical paths.",
             'Cohabitation counts shared-carton type pairs; fragments use 10 mm AABB adjacency. Empty space outside protected bounds is a lower bound, not usable capacity.',
             'Free travel is a conservative geometric diagnostic, not a transport standard. Blocked/overlapping bounds do not prove restraint. Strength and shipping performance remain unqualified.',
-            'Placements are not measured labor. Forming/closure add work. Timings use prepared meshes and warm pose caches; concurrent runs are not a controlled speed comparison.',
+            'Events = source/compound + sheets + liners + 3 per inner carton (form, close, insert) + 8 outer/foam events. Packet preparation, labeling and measured labor are excluded. Timings use prepared meshes/warm caches; concurrent runs are not a controlled speed comparison.',
             case.get('note','')]
         paragraph=Paragraph('<br/>'.join(escape(n) for n in notes if n),style)
         _,ph=paragraph.wrap(available,110);paragraph.drawOn(pdf,margin,306-table_height-8-ph)
@@ -138,6 +156,7 @@ def render(config_path,output):
         record['retention_screen']=dict(zip(('before','after'),retention))
         record['space_use']=dict(zip(('before','after'),space))
         record['accessory_set_cohesion']=dict(zip(('before','after'),cohesion))
+        record['packing_event_inventory']=dict(zip(('before','after'),events))
         record['evaluation_cards']=cards
         records.append(record)
         def picture(path):return 'data:image/png;base64,'+base64.b64encode(path.read_bytes()).decode()

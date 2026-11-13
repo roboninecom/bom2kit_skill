@@ -233,6 +233,11 @@ frontier preserves volume/carton/type/handling tradeoffs. Include protective-she
 placements, floor liners and carton closures when discussing actual labor;
 source placements alone are not the full work count. Prices and manual times
 remain unknown unless supplied or measured.
+For a transparent event-count comparison, list source/compound placements,
+contact sheets, liners, inner-carton forming/closing/insertion, foam panels and
+outer-carton forming/closing separately. Declaring one event per forming or
+closure is a model assumption. Disclose excluded packet preparation, labeling,
+rework and individual fold/tape motions; do not call the sum measured labor.
 Retain the Pareto alternatives and explain the delivery choice. A slightly
 smaller layout with more cartons or protective sheets is not automatically the
 better procurement/kitting choice. Label declared hollow proxies as assumptions

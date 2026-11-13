@@ -40,6 +40,13 @@ contact sheets; liners increase from three to four. 102 retains 108 placements,
 ten packets and four liners. The purple purchased-item envelopes are **not extra
 cartons**. Manual seconds, supplier prices and strength are unmeasured.
 
+The declared handling-event model counts **99 -> 103 events for 101** and
+**132 -> 132 for 102**: source/compound placements, contact sheets, liners,
+one forming/closing/insertion event per inner carton, six foam panels and
+outer-carton forming/closing. Packet preparation, labeling, rework and individual
+fold/tape motions are excluded. These are model events, not timed manual work;
+the extra 101 carton increases this operational count despite lower volume.
+
 ## Why the gap remains
 
 1. **Grouping improved; internal space use did not.** For 101, space outside
