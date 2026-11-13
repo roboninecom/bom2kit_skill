@@ -47,11 +47,16 @@ larger exterior dimensions.
 Inspect local combinations, optionally rendering actual CAD with `[report]`:
 
 ```powershell
-python scripts/replay_volumetric_motifs.py LIBRARY.json POLICY.json packaging-results/volume/catalog.json --output packaging-results/volume/motifs --maximum 5 --render
+python scripts/replay_volumetric_motifs.py LIBRARY.json POLICY.json packaging-results/volume/catalog.json --output packaging-results/volume/motifs --maximum 5 --render --control-floor
 ```
 
 These subset experiments do not prove that a motif is selected in the full kit.
 Use the accepted result's individual poses and motif records for final guides.
+`--control-floor` generates and independently replays a separate floor-layout
+control with the same source quantities and protection, and reports external
+shipping volume for both. A smaller local pair envelope can still lose after
+carton walls and six-face foam. Keep negative results; this bounded control
+portfolio is not an optimality certificate.
 `--extend-catalog EXISTING.json` reuses pair proposals and searches larger
 combinations without repeating pair discovery. New BOM quantities are checked
 when selecting motifs; new or changed geometry needs new discovery.

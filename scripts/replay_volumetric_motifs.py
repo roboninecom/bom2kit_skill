@@ -27,6 +27,7 @@ def main():
     p.add_argument('--maximum', type=int, default=5)
     p.add_argument('--recipe-id')
     p.add_argument('--render', action='store_true')
+    p.add_argument('--control-floor', action='store_true', help='Independently replay a separate floor-layout control for the same source subset')
     a = p.parse_args(); a.output.mkdir(parents=True, exist_ok=True)
     library, policy, catalog = [json.loads(getattr(a, k).read_bytes()) for k in ('library', 'policy', 'catalog')]
     by_id = {i['id']: i for i in library['items']}; spec = policy['carton']
@@ -44,6 +45,7 @@ def main():
                   'scope': 'Source subset; not a complete-kit or physical transport certificate',
                   'local_envelope_saving_fraction': recipe.get('saving_vs_best_separate_fraction')}
         directory = a.output/f'motif-{len(records)+1:02}'; directory.mkdir(exist_ok=True)
+        control = None
         try:
             if any(i not in by_id or n > by_id[i]['quantity'] for i, n in counts.items()):
                 raise ValueError('Recipe exceeds source BOM quantities')
@@ -68,6 +70,37 @@ def main():
                           result_fingerprint=fingerprint(result))
             (directory/'result.json').write_text(json.dumps(result, indent=2), encoding='utf8')
             (directory/'recipe.json').write_text(json.dumps(recipe, indent=2), encoding='utf8')
+            if a.control_floor and record['valid']:
+                from bom2kit.practical_geometry import stable_pose_options
+                from bom2kit.regular_patterns import floor_patterns
+                control_started = perf_counter()
+                options = {i['id']: stable_pose_options(i, include_projection=False) for i in items}
+                floors = floor_patterns(items, options, policy['item_padding_mm'], spec['inner_wall_mm'],
+                    gap=spec['gap_mm'], seconds=2., hand_border=7.2, access_lane_mm=6.4)['patterns']
+                controls = []
+                for floor in floors:
+                    module = [{**modules[0], 'patterns': [floor]}]
+                    candidate = tile_modules(module, wall=spec['wall_mm'], foam=spec['protection_mm'],
+                        reserve=spec['reserved_top_mm'], time_limit=.1, max_types=1)['candidate']
+                    if candidate: controls.append((candidate['volume_mm3'], module, candidate))
+                attempts = []
+                for _, module, candidate in sorted(controls, key=lambda c: c[0])[:6]:
+                    try:
+                        proposal = build_candidate({'units': 'mm', 'items': items}, local, module, candidate)
+                        attempts.append({'valid': proposal['practical']['valid'],
+                                         'external_volume_l': candidate['volume_mm3']/1e6})
+                        if proposal['practical']['valid']:
+                            control = proposal; break
+                    except ValueError as error:
+                        attempts.append({'valid': False, 'error': str(error)})
+                record['floor_control'] = {'attempts': attempts, 'seconds': perf_counter()-control_started,
+                    'scope': 'Same complete source subset and protection; bounded floor portfolio, not global optimality'}
+                if control:
+                    before_l = control['practical']['metrics']['external_volume_l']
+                    record['floor_control'].update(external_volume_l=before_l,
+                        shipping_volume_saving_fraction=1-record['external_volume_l']/before_l,
+                        support=True, access=True)
+                    (directory/'floor-control.json').write_text(json.dumps(control, indent=2), encoding='utf8')
             if a.render and record['valid']:
                 from bom2kit.packing_illustrations import render_scene, cuboid, FOAM
                 colors = [(.76,.78,.80), (.48,.65,.76), (.78,.64,.48), (.56,.72,.60)]
@@ -79,6 +112,12 @@ def main():
                     objects.append((cuboid(sheet['origin_mm'], sheet['dimensions_mm']), FOAM))
                 for view in ('iso', 'top', 'side'):
                     render_scene(objects, directory/(view+'.png'), view=view, trim=True)
+                if control:
+                    objects = []
+                    for index, placement in enumerate(control['layout']['placements']):
+                        mesh = load_mesh(by_id[placement['item_id']]); mesh.apply_transform(placement['transform'])
+                        objects.append((mesh, colors[index % len(colors)]))
+                    render_scene(objects, directory/'floor-control-iso.png', trim=True)
         except ValueError as error:
             record.update(valid=False, error=str(error))
         record['seconds'] = perf_counter()-started; records.append(record)
