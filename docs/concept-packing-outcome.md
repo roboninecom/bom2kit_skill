@@ -46,6 +46,9 @@ one forming/closing/insertion event per inner carton, six foam panels and
 outer-carton forming/closing. Packet preparation, labeling, rework and individual
 fold/tape motions are excluded. These are model events, not timed manual work;
 the extra 101 carton increases this operational count despite lower volume.
+This expanded event inventory is a report calculation, not the planner's search
+objective. The search retains separate placement, carton-count and orientation
+proxies; it does not yet optimize a measured end-to-end kitting process.
 
 ## Why the gap remains
 

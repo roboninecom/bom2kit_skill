@@ -154,6 +154,13 @@ SKU orientation changes and splits. Real procurement prices and operator times a
 unknown until measured. Existing packets retain their source contents and protection;
 the planner does not assume that a newly drawn bag makes loose parts rigid.
 
+The concept Pareto filter uses source/contact-sheet placements, carton count,
+carton-size count, SKU orientation changes and organization/split metrics as
+separate dimensions. The comparison report additionally counts liner, carton
+forming/closing/insertion and foam events under declared assumptions. This
+expanded inventory is report-only: it is not a calibrated labor objective in
+the beam score or Pareto filter. Preparation, labeling and rework remain excluded.
+
 Organization metrics use the **same cards for before and after**. Group cohabitation
 pairs measure shared cartons, not proven physical intermixing. Connected components
 use a declared 10 mm AABB-distance proxy. Type grouping is the primary measurement;
