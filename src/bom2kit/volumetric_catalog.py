@@ -77,7 +77,8 @@ def build_catalog(library, policy, *, cache=None, pose_cache=None, pair_seconds=
                 found = data['result']
             else:
                 found = discover_pairs(first, second, options[aid], options[bid], padding=padding, gap=gap,
-                                       pitch=pitch, seconds=pair_seconds, minimum_sheet_side=minimum_sheet_side)
+                                       pitch=pitch, seconds=pair_seconds, minimum_sheet_side=minimum_sheet_side,
+                                       voxel_cache=directory/'voxel-grids' if directory else None)
                 if file: file.write_text(json.dumps({'binding': binding, 'result': found}), encoding='utf8')
             trial = {'items': [aid, bid], 'cache_hit': cached, 'wall_seconds': perf_counter()-tick,
                      'diagnostics': found['diagnostics']}

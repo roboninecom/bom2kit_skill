@@ -46,6 +46,7 @@ def main():
     for name in ("library","policy","bom"):p.add_argument(name,type=Path)
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--cache",type=Path)
+    p.add_argument('--annotations', type=Path, help='Evidence-tagged semantic labels, including complete accessory sets')
     p.add_argument("--time-limit",type=float,default=120)
     p.add_argument("--cartons",type=int,nargs="+",default=[3,4,5,6,7])
     p.add_argument("--types",type=int,nargs="+",default=[2,3,4])
@@ -77,6 +78,7 @@ def main():
     values={name:json.loads(getattr(a,name).read_bytes()) for name in ("library","policy","bom")}
     files={name:sha256(getattr(a,name).read_bytes()).hexdigest() for name in values}
     if a.volumetric_catalog: files['volumetric_catalog'] = sha256(a.volumetric_catalog.read_bytes()).hexdigest()
+    if a.annotations: files['annotations'] = sha256(a.annotations.read_bytes()).hexdigest()
     root=Path(__file__).resolve().parents[1]
     def code_hashes():
         files=[*sorted((root/"src/bom2kit").glob("*.py")),Path(__file__).resolve()]
@@ -105,8 +107,10 @@ def main():
         source_surface_budget=a.source_surface_budget,
         access_repair_budget=a.access_repair_budget,
         volumetric_catalog=json.loads(a.volumetric_catalog.read_bytes()) if a.volumetric_catalog else None,
+        annotations=json.loads(a.annotations.read_bytes()) if a.annotations else None,
         progress=lambda record:print(json.dumps(record),flush=True))
     results=run.pop("results");plans=run.pop('assembly_plans')
+    (a.output/'part-properties.json').write_text(json.dumps(run.pop('part_properties'), indent=2), encoding='utf8')
     run["input_files_sha256"]=files
     run["engine_provenance"]={"initial_sha256":before,"unchanged_during_run":before==code_hashes()}
     run["parameters"]={k:str(v) if isinstance(v,Path) else v for k,v in vars(a).items()}

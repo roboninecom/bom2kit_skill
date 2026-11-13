@@ -117,6 +117,11 @@ row incumbent. Both concept and practical planners can consume this catalog.
 Replay and illustrate promising motifs with `scripts/replay_volumetric_motifs.py`;
 local pair savings do not establish a smaller complete kit. Report preparation,
 cache reuse, complete-kit verification and transport qualification separately.
+Use `--cluster-correlation-seconds` to search fresh translations against whole
+source clusters when pair-template extension stalls. The practical planner also
+compares motif-aware partitions; pass evidence-tagged `--annotations` when source
+names do not identify complete accessory sets. Keep those sets together and
+replay the full kit before treating a local motif gain as a delivered improvement.
 
 Read `docs/concept-packing-design.md`. Build evidence-tagged property cards, form
 semantic groups, generate executable motifs, compare bounded kit concepts, refine

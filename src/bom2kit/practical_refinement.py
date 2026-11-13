@@ -7,7 +7,8 @@ from .regular_patterns import floor_patterns
 
 
 def refine(proposal, options, policy, *, seconds=15, gap=.2, family_gaps=None,
-           hand_border=0, stack_height_factor=0,access_lane_mm=0,supported_nesting=False):
+           hand_border=0, stack_height_factor=0,access_lane_mm=0,supported_nesting=False,
+           volumetric_catalog=None):
     """Only this invocation's generated footprints are used, never a reference."""
     started=perf_counter();_,modules,tiled,cap=proposal
     modules=deepcopy(modules);tiled=deepcopy(tiled);best=proposal;rounds=[]
@@ -28,8 +29,13 @@ def refine(proposal, options, policy, *, seconds=15, gap=.2, family_gaps=None,
                     gap=family_gaps.get(module['family'],gap),increment=spec['dimension_increment_mm'],
                     seconds=min(2,max(.1,seconds-(perf_counter()-started))),hand_border=hand_border,
                     target_footprints=footprints,stack_height_factor=stack_height_factor,access_lane_mm=access_lane_mm,supported_nesting=supported_nesting)
-                existing={tuple(p['external_mm']) for p in module['patterns']}
-                new=[p for p in generated['patterns'] if tuple(p['external_mm']) not in existing]
+                if volumetric_catalog is not None and perf_counter()-started < seconds:
+                    from .volumetric_patterns import volumetric_patterns
+                    generated['patterns'].extend(volumetric_patterns(module['items'], options,
+                        {**policy, '_volumetric_catalog': volumetric_catalog}, seconds=min(1., seconds-(perf_counter()-started)),
+                        hand_border=hand_border, access_lane=access_lane_mm, target_footprints=footprints))
+                existing={(tuple(p['external_mm']), p['method']) for p in module['patterns']}
+                new=[p for p in generated['patterns'] if (tuple(p['external_mm']), p['method']) not in existing]
                 module['patterns'].extend(new);added+=len(new)
             except ValueError:
                 continue

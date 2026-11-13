@@ -11,14 +11,14 @@ from time import perf_counter
 
 
 @lru_cache(maxsize=192)
-def _variant(path, digest, frame_values, turn, pitch):
+def _variant(path, digest, frame_values, turn, pitch, voxel_cache=None):
     import numpy as np
     import trimesh
     from .practical_geometry import load_mesh
     from .regular_stacks import horizontal_cap
     if turn:
         from shapely.affinity import affine_transform
-        base = _variant(path, digest, frame_values, 0, pitch)
+        base = _variant(path, digest, frame_values, 0, pitch, voxel_cache)
         yaw = trimesh.transformations.rotation_matrix(turn * math.pi / 2, [0, 0, 1])
         mesh = base['mesh'].copy(); mesh.apply_transform(yaw)
         yaw[:3, 3] -= mesh.bounds[0]; mesh.apply_translation(-mesh.bounds[0])
@@ -29,13 +29,34 @@ def _variant(path, digest, frame_values, turn, pitch):
                 'grid': np.rot90(base['grid'], turn, axes=(0, 1)),
                 'grid_origin': trimesh.transform_points(corners, yaw).min(axis=0),
                 'faces': [(z, affine_transform(face, planar)) for z, face in base['faces']],
+                'down_faces': [(z, affine_transform(face, planar)) for z, face in base['down_faces']],
                 'bottom': affine_transform(base['bottom'], planar), 'manager': manager}
     mesh = load_mesh({'mesh': {'path': path, 'sha256': digest}})
     frame = trimesh.transformations.rotation_matrix(turn * math.pi / 2, [0, 0, 1]) @ np.asarray(frame_values).reshape(4, 4)
     mesh.apply_transform(frame)
     frame[:3, 3] -= mesh.bounds[0]
     mesh.apply_translation(-mesh.bounds[0])
-    grid = mesh.voxelized(pitch).fill()
+    grid_file = None
+    if voxel_cache:
+        from hashlib import sha256
+        import json
+        from pathlib import Path
+        key = sha256(json.dumps([digest, [float(v) for v in frame_values], pitch, 'source-voxel-v1']).encode()).hexdigest()
+        grid_file = Path(voxel_cache)/(key+'.npz')
+    if grid_file and grid_file.exists():
+        with np.load(grid_file, allow_pickle=False) as saved:
+            grid_matrix = saved['matrix']; grid_origin = saved['origin']
+        if grid_matrix.ndim != 3 or grid_matrix.dtype != bool or grid_origin.shape != (3,) or not np.isfinite(grid_origin).all():
+            raise ValueError('Invalid source voxel cache')
+    else:
+        grid = mesh.voxelized(pitch).fill(); grid_matrix = grid.matrix; grid_origin = grid.transform[:3, 3]
+        if grid_file:
+            import tempfile
+            grid_file.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=grid_file.parent, suffix='.npz', delete=False) as temporary:
+                temporary_path = Path(temporary.name)
+            np.savez_compressed(temporary_path, matrix=grid_matrix, origin=grid_origin)
+            temporary_path.replace(grid_file)
     horizontal = (np.ptp(mesh.triangles[:, :, 2], axis=1) < .02) & (mesh.face_normals[:, 2] > .99)
     plane_values = np.round(mesh.triangles[horizontal, :, 2].mean(axis=1), 3)
     heights, inverse = np.unique(plane_values, return_inverse=True)
@@ -43,20 +64,27 @@ def _variant(path, digest, frame_values, turn, pitch):
     heights = heights[np.argsort(-plane_areas)[:12]]
     faces = [(float(z), horizontal_cap(mesh, z, normal_sign=1)) for z in heights]
     faces = sorted((f for f in faces if f[1].area > 1), key=lambda f: -f[1].area)[:12]
+    down_mask = (np.ptp(mesh.triangles[:, :, 2], axis=1) < .02) & (mesh.face_normals[:, 2] < -.99)
+    down_values = np.round(mesh.triangles[down_mask, :, 2].mean(axis=1), 3)
+    down_heights, inverse = np.unique(down_values, return_inverse=True)
+    down_areas = np.bincount(inverse, weights=mesh.area_faces[down_mask])
+    down_heights = down_heights[np.argsort(-down_areas)[:4]]
+    down_faces = [(float(z), horizontal_cap(mesh, z, normal_sign=-1)) for z in down_heights if z > .02]
     manager = trimesh.collision.CollisionManager()
     manager.add_object('source', mesh)
     components = trimesh.graph.connected_components(mesh.edges_unique, nodes=np.arange(len(mesh.vertices)))
-    return {'mesh': mesh, 'frame': frame, 'grid': grid.matrix,
+    return {'mesh': mesh, 'frame': frame, 'grid': grid_matrix,
             'component_indices': [int(c[0]) for c in components],
-            'grid_origin': grid.transform[:3, 3], 'faces': faces,
+            'grid_origin': grid_origin, 'faces': faces,
+            'down_faces': [(0., horizontal_cap(mesh, 0., normal_sign=-1)), *down_faces],
             'bottom': horizontal_cap(mesh, 0., normal_sign=-1), 'manager': manager}
 
 
-def variants(item, options, pitch=2.):
+def variants(item, options, pitch=2., voxel_cache=None):
     """Retain independent stable faces for each part, including opposite faces."""
     import numpy as np
     return [_variant(item['mesh']['path'], item['mesh']['sha256'],
-                     tuple(np.asarray(option['transform']).ravel()), turn, pitch)
+                     tuple(np.asarray(option['transform']).ravel()), turn, pitch, str(voxel_cache) if voxel_cache else None)
             for option in options for turn in range(4)]
 
 
@@ -98,7 +126,7 @@ def correlation_offsets(a, b, levels, clearance, *, pitch=2., per_level=32):
 
 
 def discover_pairs(first, second, first_options, second_options, *, padding=1., gap=.2,
-                   pitch=2., seconds=30., maximum=8, minimum_sheet_side=10.):
+                   pitch=2., seconds=30., maximum=8, minimum_sheet_side=10., voxel_cache=None):
     """Find source-relative pair recipes; no fixed carton/reference dimensions."""
     import numpy as np
     import trimesh
@@ -112,7 +140,12 @@ def discover_pairs(first, second, first_options, second_options, *, padding=1., 
     started = perf_counter(); diagnostics = {'orientations': 0, 'exact_checks': 0,
         'clearance_rejections': 0, 'support_rejections': 0, 'sheet_rejections': 0}
     required = 2 * padding + gap
-    av = variants(first, first_options, pitch)[::4]; bv = variants(second, second_options, pitch)
+    cache_before = _variant.cache_info()
+    av = variants(first, first_options, pitch, voxel_cache)[::4]; bv = variants(second, second_options, pitch, voxel_cache)
+    cache_after = _variant.cache_info()
+    diagnostics.update(memory_cache_hits=cache_after.hits-cache_before.hits,
+                       memory_cache_misses=cache_after.misses-cache_before.misses,
+                       voxel_disk_cache_enabled=voxel_cache is not None)
     separate_best = min(
         min((a['mesh'].extents[0]+b['mesh'].extents[0]+4*padding+gap)
             * max(a['mesh'].extents[1]+2*padding, b['mesh'].extents[1]+2*padding),
@@ -134,7 +167,10 @@ def discover_pairs(first, second, first_options, second_options, *, padding=1., 
         diagnostics['orientations'] += 1
         levels = [(0., None)]
         if declared_state(first)['kind'] in ('source_part', 'factory_carton'):
-            levels.extend((z + required, face) for z, face in a['faces'])
+            levels.extend((z + required - upper_z, {'lower': face, 'upper': upper_face,
+                           'lower_z': z, 'upper_z': upper_z})
+                          for z, face in a['faces'] for upper_z, upper_face in b['down_faces']
+                          if z + required - upper_z >= -1e-7)
         candidates = correlation_offsets(a, b, levels, required, pitch=pitch, per_level=12)
         queue.extend((cost, a, b, offset, face) for cost, offset, face in candidates)
     diagnostics['correlation_candidates'] = len(queue)
@@ -153,19 +189,20 @@ def discover_pairs(first, second, first_options, second_options, *, padding=1., 
             continue
         sheet = None
         if face is not None:
-            contact = face.intersection(translate(b['bottom'], xoff=shift[0], yoff=shift[1]))
+            contact = face['lower'].intersection(translate(face['upper'], xoff=shift[0], yoff=shift[1]))
             center = Point(b['mesh'].center_mass[:2] + shift[:2])
             if contact.area <= 1e-6 or not contact.convex_hull.covers(center) or contact.convex_hull.boundary.distance(center) < .05:
                 diagnostics['support_rejections'] += 1; continue
             x0, y0, x1, y1 = contact.bounds
             if min(x1-x0, y1-y0) < minimum_sheet_side - 1e-7:
                 diagnostics['sheet_rejections'] += 1; continue
-            sheet = {'origin_mm': [x0, y0, shift[2] - required],
+            sheet = {'origin_mm': [x0, y0, face['lower_z']],
                      'dimensions_mm': [x1-x0, y1-y0, required],
-                     'extra_clearance_mm': gap, 'support_surface': 'actual_horizontal_face'}
+                     'extra_clearance_mm': gap, 'support_surface': 'paired_horizontal_faces' if face['upper_z'] > .02 else 'actual_horizontal_face'}
             panel = trimesh.creation.box(np.asarray(sheet['dimensions_mm']) - .002)
             panel.apply_translation(np.asarray(sheet['origin_mm']) + np.asarray(sheet['dimensions_mm'])/2)
-            if a['manager'].in_collision_single(panel):
+            inverse_shift = np.eye(4); inverse_shift[:3, 3] = -shift
+            if a['manager'].in_collision_single(panel) or b['manager'].in_collision_single(panel, inverse_shift):
                 diagnostics['sheet_rejections'] += 1; continue
         transform = np.eye(4); transform[:3, 3] = shift
         diagnostics['exact_checks'] += 1

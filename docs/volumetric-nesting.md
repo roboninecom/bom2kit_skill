@@ -26,6 +26,24 @@ use `--motifs rows --volumetric-catalog CATALOG.json
 estimates when a catalog's locally compact motifs rank whole-kit concepts poorly.
 Both the refined proposal and its fallback still require independent replay.
 
+The practical planner also compares motif-aware content partitions. A compact
+combination stays together during height-based partition estimates, preventing
+the ordinary SKU split from separating its members before placement search.
+These temporary estimate objects are expanded back into exact original unit
+IDs. They neither introduce cartons nor require carrying several loose parts
+as one object. Ordinary partitions remain competing alternatives.
+The practical runner accepts `--annotations FILE.json` for evidence-tagged
+semantic labels and saves `part-properties.json`. Before layout generation it
+reunites any split accessory set in the least-cost generated partition. Final
+replay independently rejects split sets. A smaller geometric layout that
+separates an ArUco core from its faces is not an accepted kitting improvement.
+Initial carton-count alternatives are visited round-robin. `--types 4 7` can
+compare a lower procurement cap with individually sized cartons; defaults still
+prefer fewer types. Joint refinement also tests motifs at footprints generated
+by the current run. If later floor repacking lowers the required height, the
+outer block is retiled and independently replayed rather than keeping stale
+larger exterior dimensions.
+
 Inspect local combinations, optionally rendering actual CAD with `[report]`:
 
 ```powershell
@@ -38,6 +56,13 @@ Use the accepted result's individual poses and motif records for final guides.
 combinations without repeating pair discovery. New BOM quantities are checked
 when selecting motifs; new or changed geometry needs new discovery.
 
+`--merge-catalog EARLIER.json` adds source-bound pair alternatives before
+extension. `--source-kinds factory_carton` can supplement printed-part search
+with retained factory cartons. `--cluster-correlation-seconds 120` additionally
+searches fresh translations against a complete multi-part obstacle, instead of
+only chaining previously discovered pair alignments. The temporary combined
+mesh is a search obstacle, never a BOM item or a rigid handling instruction.
+
 ## Algorithm and evidence
 
 1. Rank compatible source pairs by geometric void potential, spreading the
@@ -48,17 +73,27 @@ when selecting motifs; new or changed geometry needs new discovery.
 2. Generate independent stable contact faces and relative quarter-turns.
    `scipy.signal.fftconvolve` correlates **3D occupied voxels**, not projected
    silhouettes. Candidate translations use the floor and original horizontal
-   support faces. Quantization only proposes poses.
+   support faces. Internal downward-facing surfaces are also considered: an
+   upper U-shaped part can rest on a post while its legs extend below the
+   contact plane. Quantization only proposes poses.
 3. Recheck original triangle collision and protected clearance with FCL. Check
    enclosed solids with component-wise point containment. Reuse acceleration
    trees across translations. Supported pairs include explicit contact sheets.
+   Paired horizontal faces bind both contact planes to original triangles;
+   a sheet cannot stand in for a missing support. Replay checks contact area,
+   the combined load line, sheet collision and intermediate removal stability.
 4. Extend pairs into combinations of up to six individual parts, retaining
    source transforms, quantities and support relationships. Recheck all member
-   collisions. Extension failure does not prove that no larger nesting exists.
+   collisions. Fresh cluster correlation can find third-part translations that
+   pair-template chaining misses. Extension failure does not prove that no
+   larger nesting exists.
 5. Use a bounded exact-coverage beam at shared height bands to select motifs
    and remaining single parts. Compare footprint savings at a common carton
    height; isolated pair volume can wrongly discard useful stacks. Retain
-   volume, footprint and height alternatives for carton tiling.
+   volume, footprint and height alternatives for carton tiling. Unselected
+   copies remain individually placeable rather than occupying one reserved
+   rectangle per SKU. Directional access lanes propose tighter floors; the
+   unchanged fingertip replay still decides acceptance.
 6. Expand every original unit before the existing full-kit BOM, geometry,
    compatibility, foam, support and hand-access replay. A motif is neither a
    new purchased box nor a rigid preassembly.
@@ -66,10 +101,20 @@ when selecting motifs; new or changed geometry needs new discovery.
 The cache binds source hashes, pose options, protection, pitch, search parameters
 and the pair engine hash. Cached proposal geometry still requires complete-kit
 replay. Report cache hits separately from cold search time. The
+source-voxel disk cache separately binds mesh hash, pose, pitch and rasterizer
+version, and avoids rerasterization after a process restart. Original source
+files are still hash-checked. The
 `saving_vs_best_separate_fraction` metric compares a pair with the best
 side-by-side envelope among its prepared orientations, excluding carton walls.
 It is not the complete shipping-volume saving. Larger-cluster selection costs
 are heuristic estimates, not measured control layouts.
+
+The R3 guide now includes close-up cards for combinations actually selected in
+the frozen result, using source-unit IDs and contact-sheet relationships. A
+catalog-only example cannot appear as a used combination. These cards preserve
+the checked source poses and individual insertion order. Their explicitly
+labeled same-orientation row comparison is geometric envelope arithmetic, not
+a separately optimized or assembly-verified control carton.
 
 ## Backend trials and limits
 

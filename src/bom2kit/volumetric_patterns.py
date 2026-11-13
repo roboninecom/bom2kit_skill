@@ -72,8 +72,12 @@ def cover_variants(items, recipes, *, maximum=8, options=None, padding=1.):
     if options:
         heights = sorted(set(heights) | {round(p['dimensions_mm'][2]+2*padding, 5)
                                         for iid in ids for p in options[iid]})
-    if len(heights) > 8:
-        heights = [heights[round(k*(len(heights)-1)/7)] for k in range(8)]
+        minimum_shared = max(min(p['dimensions_mm'][2]+2*padding for p in options[iid]) for iid in ids)
+        heights = [h for h in heights if h >= minimum_shared-1e-5]
+    if len(heights) > 16:
+        # Preserve the first useful stack heights. Uniform sampling across tall
+        # six-part columns used to drop ordinary two-part stacks altogether.
+        heights = sorted(set(heights[:8] + [heights[round(k*(len(heights)-1)/7)] for k in range(8)]))
     for height in heights:
         single_areas = {}
         if options:
@@ -147,13 +151,18 @@ def volumetric_patterns(items, options, policy, *, seconds=2., hand_border=7.2,
         for index, recipe in enumerate(selection):
             uids = [remaining[iid].pop(0) for iid in recipe['item_ids']]
             pattern = materialize(recipe, by_id, uids, padding, wall)
-            zones.append({'id': f"motif-{index}", 'patterns': [pattern]})
+            zones.append({'id': f"motif-{index}", 'cohesion_group': tuple(sorted(set(recipe['item_ids']))), 'patterns': [pattern]})
         for iid, uids in remaining.items():
             if not uids: continue
-            item = {**by_id[iid], 'quantity': len(uids), 'packing_unit_ids': uids}
-            zones.append({'id': iid, 'patterns': repeated_rows(item, options, padding, wall, gap=spec['gap_mm'])})
+            # Remaining copies remain individually placeable; reserving one
+            # rectangle per SKU can consume more space than nesting saves.
+            for uid in uids:
+                item = {**by_id[iid], 'quantity': 1, 'packing_unit_ids': [uid]}
+                zones.append({'id': uid, 'cohesion_group': (iid,),
+                              'patterns': repeated_rows(item, options, padding, wall, gap=spec['gap_mm'])})
         patterns.extend(compose_zones(zones, wall, gap=spec['gap_mm'], hand_border=hand_border,
                                      access_lane=access_lane, target_footprints=target_footprints,
+                                     directional_access=True,
                                      seconds=max(.05, seconds/max(1, len(selections)))))
         if patterns and selection_index >= min(2, len(selections)-1) and perf_counter()-started > seconds:
             break

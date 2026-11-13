@@ -87,6 +87,19 @@ def test_stale_source_hash_rejected(tmp_path):
         variants(item, options(mesh))
 
 
+def test_voxel_disk_cache_survives_a_cold_memory_cache(tmp_path, monkeypatch):
+    from bom2kit.spectral_nesting import _variant
+    item, mesh = source(tmp_path, 'cached', trimesh.creation.box([10, 20, 30]))
+    first = variants(item, options(mesh), voxel_cache=tmp_path/'voxels')
+    expected = first[0]['grid'].copy()
+    _variant.cache_clear()
+    def unexpected_rasterization(*args, **kwargs):
+        raise AssertionError('A bound disk cache should avoid rasterizing again')
+    monkeypatch.setattr(trimesh.Trimesh, 'voxelized', unexpected_rasterization)
+    reused = variants(item, options(mesh), voxel_cache=tmp_path/'voxels')
+    assert np.array_equal(reused[0]['grid'], expected)
+
+
 def test_six_individual_parts_expand_without_invented_rigid_group(tmp_path):
     from bom2kit.volumetric_clusters import extend_catalog
     from bom2kit.volumetric_patterns import materialize, cover_variants
@@ -106,3 +119,62 @@ def test_six_individual_parts_expand_without_invented_rigid_group(tmp_path):
     assert cover_variants([item], [recipe, six])
     reduced = {**item, 'quantity': 1}
     assert not cover_variants([reduced], [recipe, six])
+
+
+def test_cluster_correlation_finds_new_third_part_offset(tmp_path):
+    from bom2kit.cluster_correlation import extend_with_correlation
+    host, hm = source(tmp_path, 'tray', tray())
+    child, cm = source(tmp_path, 'large', trimesh.creation.box([30, 30, 20]))
+    small, _ = source(tmp_path, 'small', trimesh.creation.box([10, 10, 10]))
+    pair = next(r for r in discover_pairs(host, child, options(hm), options(cm), seconds=3)['recipes']
+                if r['kind'] == 'supported_nesting')
+    recipe = {**pair, 'id': 'seed', 'item_ids': ['tray', 'large'],
+              'sheets': [{**pair['sheet'], 'lower_index': 0, 'upper_index': 1}]}
+    library = {'units': 'mm', 'items': [host, child, small]}
+    policy = {'item_padding_mm': 1., 'carton': {'gap_mm': .2},
+              'families': {i['id']: 'printed' for i in library['items']}}
+    found, diagnostic = extend_with_correlation([recipe], library, policy,
+        output=tmp_path/'obstacles', seconds=12, pair_seconds=4, maximum_members=3)
+    assert found, diagnostic
+    nested = min(found, key=lambda r: np.prod(r['dimensions_mm']))
+    assert nested['item_ids'] == ['tray', 'large', 'small']
+    assert nested['source_hashes'] == [i['mesh']['sha256'] for i in library['items']]
+    assert nested['dimensions_mm'] == pytest.approx([62, 62, 42])
+    assert len(nested['sheets']) == 2
+    assert nested['assembly_replay_required']
+
+
+def test_internal_underside_can_rest_on_a_post_without_floating_bottom(tmp_path):
+    from copy import deepcopy
+    from bom2kit.volumetric_patterns import materialize
+    from bom2kit.concept_patterns import compose_zones
+    from bom2kit.practical_design import build_candidate
+    from bom2kit.practical_validation import check_floor_support
+    from bom2kit.carton_tiling import tile_modules
+    lower, lm = source(tmp_path, 'post', trimesh.creation.box([20, 20, 30]))
+    pieces = []
+    for size, center in [([40, 40, 4], [20, 20, 28]), ([4, 40, 26], [2, 20, 13]),
+                         ([4, 40, 26], [38, 20, 13])]:
+        part = trimesh.creation.box(size); part.apply_translation(center); pieces.append(part)
+    upper, um = source(tmp_path, 'bridge', trimesh.util.concatenate(pieces))
+    found = discover_pairs(lower, upper, options(lm), options(um), seconds=5)
+    nested = [r for r in found['recipes'] if r['sheet'] and r['sheet']['support_surface']=='paired_horizontal_faces']
+    assert nested, found['diagnostics']
+    recipe = min(nested, key=lambda r: np.prod(r['dimensions_mm']))
+    assert recipe['dimensions_mm'][2] == pytest.approx(38.2)
+    recipe = {**recipe, 'id': 'internal-roof', 'item_ids': ['post', 'bridge'],
+              'sheets': [{**recipe['sheet'], 'lower_index': 0, 'upper_index': 1}]}
+    pattern = materialize(recipe, {'post': lower, 'bridge': upper}, ['post#1', 'bridge#1'], 1., 1.5)
+    pattern = compose_zones([{'id': 'internal-roof', 'patterns': [pattern]}], 1.5, seconds=.1)[0]
+    policy = {'families': {'post': 'printed', 'bridge': 'printed'}, 'allow_all_rotations': True,
+              'max_inner_cartons': 1, 'max_carton_types': 1, 'item_padding_mm': 1., 'clearance_mm': .2,
+              'carton': {'wall_mm': 7., 'protection_mm': 15., 'inner_wall_mm': 1.5,
+                         'reserved_top_mm': .8, 'gap_mm': .2, 'dimension_increment_mm': 1.}}
+    modules = [{'family': 'printed', 'items': [lower, upper], 'patterns': [pattern]}]
+    tiled = tile_modules(modules, wall=7, foam=15, max_types=1, time_limit=.1)['candidate']
+    result = build_candidate({'units': 'mm', 'items': [lower, upper]}, policy, modules, tiled)
+    assert result['practical']['support']['valid'], result['practical']['support']
+    assert result['practical']['hand_access']['valid'], result['practical']['hand_access']
+    bad = deepcopy(result)
+    bad['practical']['protective_separators'][0]['origin_mm'][2] += 1.
+    assert not check_floor_support(bad)['valid']
