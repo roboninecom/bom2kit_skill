@@ -252,9 +252,9 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
             rows.append([pic(thumbnails[iid],48,30 if state['kind']=='source_part' else 32),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
             if two_columns:
                 text=description+f'<br/><b>Qty: {count} | Slots:</b> '+', '.join(map(str,r['item_slots'][iid]))
-                card=Table([[pic(thumbnails[iid],34,32),P(text,'CellGuide')]],colWidths=[42,width/2-54])
+                card=Table([[pic(thumbnails[iid],34,28),P(text,'CellGuide')]],colWidths=[42,width/2-54])
                 card.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),2),
-                    ('RIGHTPADDING',(0,0),(-1,-1),2),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+                    ('RIGHTPADDING',(0,0),(-1,-1),2),('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3)]))
                 part_cards.append(card)
         if two_columns:
             headings=[P(f'<b>BOX {n} - part / quantity / slots</b>','CellGuide') for _ in range(2)]

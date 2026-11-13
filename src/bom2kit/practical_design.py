@@ -111,9 +111,13 @@ def nondominated(results):
     """Preserve operational improvements even when their exterior is larger."""
     def values(result):
         m=result["practical"]["metrics"]
+        organization=m.get('organization')
+        # Missing measurements must not masquerade as perfectly grouped parts.
+        grouping=tuple(organization[k] for k in ('mixed_group_pairs',
+            'additional_spatial_fragments','split_semantic_groups')) if organization else (math.inf,)*3
         return (*[m[k] for k in ("external_volume_l","cartons","carton_types","compound_preassemblies","split_source_skus")],
                 m.get('source_and_contact_sheet_placements',m.get('total_counted_placements',0)),
-                m.get('contact_sheet_sizes',0),m.get('additional_sku_orientations',0))
+                m.get('contact_sheet_sizes',0),m.get('additional_sku_orientations',0),*grouping)
     return [r for i,r in enumerate(results) if not any(j!=i and all(a<=b for a,b in zip(values(other),values(r)))
             and any(a<b for a,b in zip(values(other),values(r))) for j,other in enumerate(results))]
 
@@ -128,7 +132,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
     from .packing_states import declared_state
-    from .part_properties import describe_parts, check_accessory_set_cohesion
+    from .part_properties import describe_parts, check_accessory_set_cohesion, organization_metrics
     from .kitting_partition import reunite_accessory_sets
     started=perf_counter()
     if not reconcile_bom(bom,library)["complete"]:raise ValueError("Incomplete source BOM")
@@ -463,6 +467,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
             result['practical']['valid'] &= cohesion['valid']
             record['accessory_set_cohesion'] = cohesion
             if result["practical"]["valid"]:
+                result['practical']['metrics']['organization'] = organization_metrics(result, properties['cards'])
                 plan=build_assembly_plan(result,bom)
                 verified.append(result)
                 verified_plans[id(result)]=plan

@@ -93,7 +93,7 @@ def render(config_path,output):
         delta=(metrics[1]['external_volume_l']/ref_volume-1)*100
         status='Nominal volume target met' if delta<=0 else 'Volume target NOT MET'
         exterior=[plans[0]['outer_external_mm'],plans[1]['outer_external_mm'],reference['external_mm']]
-        after_seconds=None
+        after_seconds=case.get('after_seconds')
         if case.get('after_run'):
             run=json.loads(Path(case['after_run']).read_bytes());after_seconds=run.get('seconds')
         events=[packing_event_inventory(r,m) for r,m in zip((before,after),metrics)]
@@ -111,7 +111,7 @@ def render(config_path,output):
               ['Type cohabitation pairs / fragments',*[f"{o['type']['mixed_group_pairs']} / {o['type']['additional_spatial_fragments']}" for o in organizations],'Not measurable from illustration'],
               ['Units with free travel > 5 mm',*[str(r['units_with_demonstrated_movement']) for r in retention],'Not replayed'],
               ['Outside protected bounds, L',*[f"{s['space_outside_protected_bounds_l']:.2f}" for s in space],'Not replayed'],
-              ['Recorded run, seconds',f"{case['before_seconds']:.1f}" if isinstance(case.get('before_seconds'),(float,int)) else 'Not recorded',f'{after_seconds:.1f}' if after_seconds is not None else 'Partial run; see audit','Not measured']]
+              ['Recorded run, seconds',f"{case['before_seconds']:.1f}" if isinstance(case.get('before_seconds'),(float,int)) else 'Not recorded',f'{after_seconds:.1f}' if after_seconds is not None else 'Not recorded','Not measured']]
         pdf.setFillColor(colors.HexColor('#0f172a'));pdf.setFont('Helvetica-Bold',18)
         pdf.drawString(margin,height-32,case['kit']+' | Practical packing comparison')
         pdf.setFont('Helvetica-Bold',10);pdf.setFillColor(colors.HexColor('#9a3412') if delta>0 else colors.HexColor('#166534'))
