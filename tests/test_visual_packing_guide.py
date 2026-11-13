@@ -23,6 +23,16 @@ def fixture():
     return result,plan
 
 
+def test_manual_sheet_screen_is_recomputed_even_with_stored_pass_flag():
+    result={'concept':{'manual_material_screen':{'valid':True,'minimum_contact_sheet_side_mm':10.}},
+            'practical':{'protective_separators':[{'lower_unit_id':'base#1','upper_unit_id':'child#1',
+                                                'dimensions_mm':[.7,1.6,2.]}]}}
+    with pytest.raises(ValueError,match='manual-material'):
+        guide.check_manual_materials(result)
+    result['practical']['protective_separators'][0]['dimensions_mm']=[20,25,2]
+    assert guide.check_manual_materials(result)['valid']
+
+
 def test_numbering_follows_plan_not_source_layer_array():
     result,plan=fixture();original=deepcopy(result)
     records=guide.carton_records(result,plan)
@@ -44,3 +54,14 @@ def test_changed_source_is_rejected_before_rendering(tmp_path):
     result={'input':{'items':[{'id':'a','mesh':{'path':str(path),'sha256':sha256(path.read_bytes()).hexdigest()}}]}}
     path.write_text('{"changed":true}')
     with pytest.raises(ValueError,match='Source changed'):guide.load_geometry(result)
+
+
+def test_property_labels_are_bound_to_the_frozen_concept(tmp_path):
+    from bom2kit.report import fingerprint
+    properties={'source_library_fingerprint':'source-hash','cards':{'a':{'part_type':{'value':'clamps'}}}}
+    path=tmp_path/'properties.json';path.write_text(json.dumps(properties))
+    result={'source_library_sha256':'source-hash','input':{'items':[{'id':'a'}]},
+            'concept':{'properties_fingerprint':fingerprint(properties)}}
+    assert guide.bound_property_cards(result,path)==properties['cards']
+    properties['cards']['a']['part_type']['value']='electronics';path.write_text(json.dumps(properties))
+    with pytest.raises(ValueError,match='selected concept'):guide.bound_property_cards(result,path)

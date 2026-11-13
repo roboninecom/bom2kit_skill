@@ -8,6 +8,12 @@ minor packaging details must not stop the search.
 
 - Use Visual Layout R3 for 101: electronics in BOX4 and disassembled ArUco.
 - Use the pinned current SO-ARM-102 repository BOM for 102.
+  The 12 November 2026 check supersedes the earlier source pin with
+  `43252799d077e7f9971d7c695fd59f31413aa9b6`. BOM tables are unchanged, but
+  the printed clamp, gear rack and nail meshes changed. The rack bounds changed
+  from approximately 4.5 x 9.35 x 61 to 4.4 x 13 x 61 mm. The purchased custom
+  106 mm clamp is unaffected. Current runs pin these three source mesh digests
+  in the independent expected BOM; old results require fresh matching-source replay.
   On 7 November 2026, upstream HEAD was checked at
   `77e2469737f30ee30cac6da9c3ecb82e7ff2539d`. The BOM is unchanged from
   `4b9d7eb8d6d8e4860b6ba238b665120fdc48644e`; the Board cap

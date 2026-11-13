@@ -59,8 +59,18 @@ def validate_layered(problem, layout):
                 local_counts[p["item_id"]] += 1
                 local_poses.append({**p, "unit_id": p["item_id"]+"#"+str(local_counts[p["item_id"]]),
                                     "position_mm": [p["position_mm"][k]-position[k]-declared_wall for k in range(3)]})
-            certificate = validate({"units": "mm", "container": {"inner_mm": list(inner)},
-                                    "items": inner_items, "gap_mm": problem.get("gap_mm",0)}, {"placements": local_poses})
+            mode=layer.get('placement_check','source_floor' if problem.get('source_clearance_slots') else
+                           'planar' if problem.get('planar_footprints') else 'envelopes')
+            if mode not in ('source_floor','source_contact','planar','envelopes'):raise ValueError('Unknown inner placement check')
+            if mode in ('source_floor','source_contact'):
+                from .source_floor_validation import validate_source_floor
+                certificate=validate_source_floor(inner_items,local_poses,inner,problem['source_padding_mm'],problem.get('gap_mm',0),require_floor=mode=='source_floor')
+            elif mode=='planar':
+                from .planar_validation import validate_floor_footprints
+                certificate = validate_floor_footprints(inner_items, local_poses, inner, problem.get("gap_mm",0))
+            else:
+                certificate = validate({"units": "mm", "container": {"inner_mm": list(inner)},
+                                        "items": inner_items, "gap_mm": problem.get("gap_mm",0)}, {"placements": local_poses})
             inner_certificates.append(certificate)
         outer = validate({"units": "mm", "container": problem["container"], "items": outer_items}, {"placements": outer_poses})
         return {"valid": outer["valid"] and all(c["valid"] for c in inner_certificates),
