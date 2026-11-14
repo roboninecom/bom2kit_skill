@@ -109,7 +109,7 @@ def render(config_path,output):
               ['Factory cartons / packets',*[f"{m['packing_states'].get('factory_carton',0)} / {m['packing_states'].get('protective_packet',0)}" for m in metrics],'Not audited'],
               ['Orientations / SKU / set splits',*[f"{m['additional_sku_orientations']} / {m['split_source_skus']} / {len(c['split_sets'])}" for m,c in zip(metrics,cohesion)],'Not counted'],
               ['Type cohabitation pairs / fragments',*[f"{o['type']['mixed_group_pairs']} / {o['type']['additional_spatial_fragments']}" for o in organizations],'Not measurable from illustration'],
-              ['Units with free travel > 5 mm',*[str(r['units_with_demonstrated_movement']) for r in retention],'Not replayed'],
+              ['Free travel: units >5 mm / max mm',*[f"{r['units_with_demonstrated_movement']} / {r['maximum_demonstrated_mm']:.1f}" for r in retention],'Not replayed'],
               ['Outside protected bounds, L',*[f"{s['space_outside_protected_bounds_l']:.2f}" for s in space],'Not replayed'],
               ['Recorded run, seconds',f"{case['before_seconds']:.1f}" if isinstance(case.get('before_seconds'),(float,int)) else 'Not recorded',f'{after_seconds:.1f}' if after_seconds is not None else 'Not recorded','Not measured']]
         pdf.setFillColor(colors.HexColor('#0f172a'));pdf.setFont('Helvetica-Bold',18)
@@ -138,7 +138,7 @@ def render(config_path,output):
             f"Before/after keep the same sources, {spec['protection_mm']:g} mm six-face foam, {spec['wall_mm']:g} mm outer wall, {spec['inner_wall_mm']:g} mm inner walls and declared part protection. Finger model: {grip['radius_mm']:g} mm radius, up to {grip['insertion_depth_mm']:g} mm engagement, vertical paths.",
             'Cohabitation counts shared-carton type pairs; fragments use 10 mm AABB adjacency. Empty space outside protected bounds is a lower bound, not usable capacity.',
             'Free travel is a conservative geometric diagnostic, not a transport standard. Blocked/overlapping bounds do not prove restraint. Strength and shipping performance remain unqualified.',
-            'Events = source/compound + sheets + liners + 3 per inner carton (form, close, insert) + 8 outer/foam events. Packet preparation, labeling and measured labor are excluded. Timings use prepared meshes/warm caches; concurrent runs are not a controlled speed comparison.',
+            'Events count placements and carton forming/closing/insertion; packet preparation and labeling excluded. Timings use prepared meshes/warm caches, not controlled cold-start speed tests.',
             case.get('note','')]
         paragraph=Paragraph('<br/>'.join(escape(n) for n in notes if n),style)
         _,ph=paragraph.wrap(available,110);paragraph.drawOn(pdf,margin,306-table_height-8-ph)
