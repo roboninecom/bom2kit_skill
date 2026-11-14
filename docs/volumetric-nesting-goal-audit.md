@@ -15,7 +15,8 @@ extension is included. PR #3 is the base; work remains in draft PR #4, unmerged.
 | Evaluate psacking and sparrow-3d | Setup attempted and logged; neither completed a real-part benchmark. CPU SciPy correlation is a separate fallback. |
 | Search cavities, complementary forms and stacks | Original-source 3D occupancy correlation, independent stable poses and source-triangle replay implemented. Search is bounded, not general continuous 6-DOF optimization. |
 | Start with 2–6 parts; retain individual sources | Source-bound clusters and exact quantity accounting implemented; optional extension reaches twelve members. |
-| Demonstrate actual use in a complete kit | The 101 three-carton alternative contains an eleven-part combination with one supported pair and nine floor-supported parts. It is not eleven mutually nested parts. |
+| Demonstrate actual use in a complete kit | The 101 three-carton alternative contains an eleven-part combination with one stacked pair and nine floor-supported parts. It is not eleven mutually nested parts. |
+| Use cavity insertion in the selected full kits | Not achieved. Local 102 cavity examples pass source replay, but selected full kits do not use them. The displayed actual 101 pair is a separated stack. |
 | Validate placement sequence, support and access | Original-source clearance, modeled static/intermediate support and vertical two-finger insertion replay pass for delivered drafts. General tilted/rotated insertion and physical grip remain unverified. |
 | Consider OMPL + FCL | General SE(3) planner not implemented. One native FCL continuous-collision configuration failed a thin-wall probe; the unchanged distance-bounded replay remains authoritative. |
 | Jointly choose groups and carton dimensions | Motif-aware partitions, common-height alternatives, CP-SAT carton selection and complete-block repacking implemented. Local savings still fail to translate reliably into whole-kit improvements. |

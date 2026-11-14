@@ -13,7 +13,7 @@ They are geometric drafts, not packaging released for shipment.
 | 101 frozen baseline | 28.974770 | 4 / 4 | 0 | Comparison control |
 | 101 selected grouped candidate | 28.852296 | 4 / 4 | 0 | Primary guide; grouping proxies unchanged |
 | 101 lower-volume four-carton alternative | 28.099062 | 4 / 4 | 0 | More scattered and mixed types |
-| 101 fewer-carton alternative | 29.144258 | 3 / 3 | 1 | Uses an actual eleven-part nesting combination |
+| 101 fewer-carton alternative | 29.144258 | 3 / 3 | 1 | Eleven-part combination with one stacked pair |
 | 101 smaller-volume alternative | 27.654264 | 7 / 7 | 2 | More cartons and handling |
 | 101 Alan reference | 19.423040 | 7 / not audited | Not counted | Nominal target |
 | 102 retained baseline | 36.126552 | 4 / 4 | 0 | New candidates have not improved it |
@@ -63,8 +63,9 @@ not fictitious rigid compound objects. Purchased envelopes remain estimates.
 - R3 guides show close-ups extracted from motifs actually used in the frozen
   result. Catalog examples are labeled separately as subset experiments.
 - An eleven-part combination is actually used in the complete 29.144258 L
-  three-carton alternative: one supported pair plus nine floor-supported parts,
-  not eleven mutually nested parts. Its separately replayed subset control is
+  three-carton alternative: one stacked pair plus nine floor-supported parts,
+  not eleven mutually nested parts. The pair has no vertical cavity overlap.
+  Its separately replayed subset control is
   11.799882 L versus 10.737408 L (-9.00%). A fourteen-part extension gave
   29.608704 L for the full kit, so increasing group size was not a reliable gain.
 
@@ -85,6 +86,14 @@ replay. Clamp cavities are assumptions in the retained source proxy, not measure
 manufactured CAD. Their pair is floor-supported; no envelope is reclassified as
 a load-bearing carton. A smaller local bounding envelope can still produce a
 larger protected shipping box, as the negative controls demonstrate.
+
+The actual 101 stack has 1.7 mm separation between its vertical bounds. The
+positive 102 local pair has 3.8 mm vertical bounds overlap, and the negative
+102 pair 28.00 mm, while their original solids remain collision-free. These
+are genuinely different from simple separated stacks. Neither local cavity
+example was used in the selected complete-kit guides. Checked full-kit 102
+supported alternatives found during this study also use separated stacks.
+Useful cavity insertion in the selected full kits therefore remains unproven.
 
 ## Remaining causes of the gap
 
