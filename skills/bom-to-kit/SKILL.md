@@ -8,7 +8,7 @@ description: Design grouped packaging from a BOM and individual CAD or declared 
 Use this repository's shared Python engine from its root. The same instructions
 apply to Codex and Claude Code. Install `python -m pip install -e ".[mesh,cad,test]"`
 as needed; `[report]` enables mesh visualization. Read
-`docs/independent-design-progress.md` for capabilities and remaining gaps.
+`docs/volumetric-nesting-results.md` for measured capabilities and remaining gaps.
 The complete no-worse 101/102 objective is still open.
 For shipping kits and manual kitting, start with **Concept-first packing** below
 and compare the **Practical manual packing** baseline when an incumbent exists.
@@ -109,6 +109,23 @@ Voxel emptiness alone never certifies a fit. This differs from the older
 ## Validate, illustrate and compare
 
 ### Concept-first packing
+
+When floor-only layouts waste cavities or stackable height, read
+`docs/volumetric-nesting.md`. Build a source-bound volumetric catalog, then
+compare `--motifs volumetric --volumetric-catalog CATALOG.json` with the verified
+row incumbent. Both concept and practical planners can consume this catalog.
+Replay and illustrate promising motifs with `scripts/replay_volumetric_motifs.py`;
+local pair savings do not establish a smaller complete kit. Report preparation,
+cache reuse, complete-kit verification and transport qualification separately.
+Use `--cluster-correlation-seconds` to search fresh translations against whole
+source clusters when pair-template extension stalls. The default ceiling is six
+parts; `--cluster-members 12` can extend source-bound seeds further after smaller
+combinations prove useful. Larger recipes still require individual support,
+quantity and insertion replay, and their full-kit benefit must be measured.
+The practical planner also
+compares motif-aware partitions; pass evidence-tagged `--annotations` when source
+names do not identify complete accessory sets. Keep those sets together and
+replay the full kit before treating a local motif gain as a delivered improvement.
 
 Read `docs/concept-packing-design.md`. Build evidence-tagged property cards, form
 semantic groups, generate executable motifs, compare bounded kit concepts, refine

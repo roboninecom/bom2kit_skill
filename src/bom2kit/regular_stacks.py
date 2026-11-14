@@ -33,12 +33,14 @@ def horizontal_cap(mesh, z, tolerance=.02,normal_sign=None):
     return union_all(polygons(xy[area>1e-10]))
 
 
-def interface_certificate(lower,upper,thickness,*,tolerance=.02,plane_z=None):
+def interface_certificate(lower,upper,thickness,*,tolerance=.02,plane_z=None,upper_plane_z=None):
     """Real coplanar source faces must support the upper center of mass."""
     import numpy as np
     from shapely.geometry import Point
-    z=lower.bounds[1,2] if plane_z is None else plane_z;gap=upper.bounds[0,2]-z
-    bottom=horizontal_cap(upper,upper.bounds[0,2],tolerance,normal_sign=-1)
+    z=lower.bounds[1,2] if plane_z is None else plane_z
+    upper_z=upper.bounds[0,2] if upper_plane_z is None else upper_plane_z
+    gap=upper_z-z
+    bottom=horizontal_cap(upper,upper_z,tolerance,normal_sign=-1)
     top=horizontal_cap(lower,z,tolerance,normal_sign=1)
     contact=bottom.intersection(top)
     center=Point(upper.center_mass[:2])
@@ -83,8 +85,9 @@ def check_stack_support(result, meshes, layers, floor_liner):
             extra=sheet.get('extra_clearance_mm',0.)
             if not math.isfinite(extra) or extra<0 or (extra>0 and extra<result['logistics']['policy']['carton']['gap_mm']-1e-7):
                 raise ValueError('Invalid contact sheet clearance')
-            plane=origin[2] if sheet.get('support_surface')=='actual_horizontal_face' else meshes[lower].bounds[1,2]
-            certificate=interface_certificate(meshes[lower],meshes[upper],2*floor_liner+extra,plane_z=plane)
+            plane=origin[2] if sheet.get('support_surface') in ('actual_horizontal_face','paired_horizontal_faces') else meshes[lower].bounds[1,2]
+            upper_plane=plane+2*floor_liner+extra if sheet.get('support_surface')=='paired_horizontal_faces' else None
+            certificate=interface_certificate(meshes[lower],meshes[upper],2*floor_liner+extra,plane_z=plane,upper_plane_z=upper_plane)
             bounds=certificate['interface_bounds_mm']
             if bounds is None:raise ValueError('Missing actual contact surface')
             expected_origin=[bounds[0],bounds[1],plane]
@@ -99,12 +102,13 @@ def check_stack_support(result, meshes, layers, floor_liner):
             # No third part may occupy the modeled protective sheet volume.
             for uid,mesh in meshes.items():
                 if modules[uid]!=modules[upper]:continue
-                if uid in (lower,upper) and sheet.get('support_surface')!='actual_horizontal_face':continue
+                if uid in (lower,upper) and sheet.get('support_surface') not in ('actual_horizontal_face','paired_horizontal_faces'):continue
                 if np.all(np.minimum(origin+size,mesh.bounds[1])-np.maximum(origin,mesh.bounds[0])>1e-6):
                     import trimesh
                     panel=trimesh.creation.box(size-.002);panel.apply_translation(origin+size/2)
                     manager=trimesh.collision.CollisionManager();manager.add_object('sheet',panel)
-                    if manager.in_collision_single(mesh):raise ValueError('Contact sheet intersects another source part')
+                    if manager.in_collision_single(mesh) or mesh.contains([panel.center_mass]).any():
+                        raise ValueError('Contact sheet intersects another source part')
             if not certificate['valid']:raise ValueError('Actual flat interface does not support the upper part')
         except (KeyError,TypeError,ValueError) as error:errors.append(f'{upper}: {error}')
     if errors:
@@ -127,9 +131,10 @@ def check_stack_support(result, meshes, layers, floor_liner):
         else:
             lower=meshes[parents[uid]]
             sheet=by_upper[uid]
-            plane=sheet['origin_mm'][2] if sheet.get('support_surface')=='actual_horizontal_face' else lower.bounds[1,2]
-            certificate=interface_certificate(lower,mesh,2*floor_liner+sheet.get('extra_clearance_mm',0.),plane_z=plane)
-            contact=horizontal_cap(lower,plane,normal_sign=1).intersection(horizontal_cap(mesh,mesh.bounds[0,2],normal_sign=-1)).convex_hull
+            plane=sheet['origin_mm'][2] if sheet.get('support_surface') in ('actual_horizontal_face','paired_horizontal_faces') else lower.bounds[1,2]
+            upper_plane=plane+sheet['dimensions_mm'][2] if sheet.get('support_surface')=='paired_horizontal_faces' else mesh.bounds[0,2]
+            certificate=interface_certificate(lower,mesh,2*floor_liner+sheet.get('extra_clearance_mm',0.),plane_z=plane,upper_plane_z=upper_plane)
+            contact=horizontal_cap(lower,plane,normal_sign=1).intersection(horizontal_cap(mesh,upper_plane,normal_sign=-1)).convex_hull
             kind='flat_protected_interface'
         descendants=[uid]
         for current in descendants:
@@ -153,9 +158,10 @@ def removal_stability_checker(meshes,sheets,floor_z):
         lower,upper=sheet['lower_unit_id'],sheet['upper_unit_id']
         if upper in parents or lower not in meshes or upper not in meshes:return lambda remaining:False
         parents[upper]=lower;children.setdefault(lower,[]).append(upper)
-        plane=sheet['origin_mm'][2] if sheet.get('support_surface')=='actual_horizontal_face' else meshes[lower].bounds[1,2]
+        plane=sheet['origin_mm'][2] if sheet.get('support_surface') in ('actual_horizontal_face','paired_horizontal_faces') else meshes[lower].bounds[1,2]
+        upper_plane=plane+sheet['dimensions_mm'][2] if sheet.get('support_surface')=='paired_horizontal_faces' else meshes[upper].bounds[0,2]
         contacts[upper]=horizontal_cap(meshes[lower],plane,normal_sign=1).intersection(
-            horizontal_cap(meshes[upper],meshes[upper].bounds[0,2],normal_sign=-1)).convex_hull
+            horizontal_cap(meshes[upper],upper_plane,normal_sign=-1)).convex_hull
     for uid,mesh in meshes.items():
         if uid not in contacts:
             contacts[uid]=MultiPoint(mesh.vertices[np.abs(mesh.vertices[:,2]-floor_z)<=.02,:2]).convex_hull

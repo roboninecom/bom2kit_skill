@@ -61,6 +61,27 @@ def test_row_and_zone_transforms_preserve_source_quantities_and_containment(tmp_
         assert all(z["physical_container"] is False for z in pattern["semantic_zones"])
 
 
+def test_directional_access_lanes_preserve_true_rotated_source_envelopes(tmp_path):
+    library, _, _ = inputs(tmp_path)
+    options = {i['id']: stable_pose_options(i, include_projection=False) for i in library['items']}
+    zones = [{'id': i['id'], 'patterns': repeated_rows(i, options, 1., 1.5)} for i in library['items']]
+    patterns = compose_zones(zones, 1.5, directional_access=True, seconds=.1)
+    assert patterns
+    by_id = {i['id']: i for i in library['items']}
+    for pattern in patterns:
+        assert len(pattern['placements']) == 6
+        for pose in pattern['placements']:
+            data = json.loads(open(by_id[pose['item_id']]['mesh']['path']).read())
+            vertices = trimesh.transform_points(data['vertices_mm'], pose['transform'])
+            assert np.allclose(np.ptp(vertices, axis=0)+2, pose['envelope_dimensions_mm'])
+            assert np.allclose(vertices.min(axis=0)-1, pose['envelope_position_mm'])
+        for index, a in enumerate(pattern['placements']):
+            for b in pattern['placements'][index+1:]:
+                assert any(a['envelope_position_mm'][k]+a['envelope_dimensions_mm'][k]+.2 <= b['envelope_position_mm'][k]+1e-6
+                           or b['envelope_position_mm'][k]+b['envelope_dimensions_mm'][k]+.2 <= a['envelope_position_mm'][k]+1e-6
+                           for k in (0, 1))
+
+
 def test_concept_beam_never_merges_incompatible_families(tmp_path):
     library, policy, _ = inputs(tmp_path)
     cards = describe_parts(library, policy)["cards"]

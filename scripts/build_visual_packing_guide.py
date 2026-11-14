@@ -24,7 +24,8 @@ def bound_property_cards(result,properties_path=None):
     properties=json.loads(Path(properties_path).read_bytes())
     if properties.get('source_library_fingerprint')!=result.get('source_library_sha256'):
         raise ValueError('Property cards do not match the frozen source library')
-    if fingerprint(properties)!=result.get('concept',{}).get('properties_fingerprint'):
+    binding = result.get('concept',{}).get('properties_fingerprint') or result.get('practical',{}).get('properties_fingerprint')
+    if fingerprint(properties)!=binding:
         raise ValueError('Property cards do not match the selected concept')
     if set(properties['cards'])!={i['id'] for i in result['input']['items']}:
         raise ValueError('Property cards must cover every source SKU')
@@ -127,6 +128,17 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
         illustrate(parts+shell,assets/f'box-{n}-iso.png',size=(1400,800))
         illustrate(parts+shell,assets/f'box-{n}-top.png',view='top',labels=slot_labels,size=(1000,750))
         illustrate(parts,assets/f'box-{n}-side.png',view='side',size=(1000,750))
+    from bom2kit.motif_evidence import used_motifs
+    motif_records = used_motifs(result, meshes)
+    palette = [(.73,.76,.79), (.44,.62,.74), (.77,.64,.46), (.53,.70,.57), (.66,.56,.74), (.73,.57,.57)]
+    for number, motif in enumerate(motif_records, 1):
+        record = next(r for r in records if r['module']['id'] == motif['carton_id'])
+        parts = [(meshes[uid], palette[index % len(palette)]) for index, uid in enumerate(motif['unit_ids'])]
+        parts.extend((cuboid(s['origin_mm'], s['dimensions_mm']), FOAM) for s in motif['sheets'])
+        labels = [(str(record['unit_to_slot'][uid]), meshes[uid].bounds.mean(0)) for uid in motif['unit_ids']]
+        for view in ('iso', 'side'):
+            illustrate(parts, assets/f'used-motif-{number}-{view}.png', view=view,
+                       labels=labels if view=='iso' else [], size=(1100,850))
     # Workbench views preserve each certified internal group frame.
     template_images={}
     for index,template in enumerate(plan['templates'],1):
@@ -240,9 +252,9 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
             rows.append([pic(thumbnails[iid],48,30 if state['kind']=='source_part' else 32),P(description,'CellGuide'),P(str(count),'CellGuide'),P(', '.join(map(str,r['item_slots'][iid])),'CellGuide')])
             if two_columns:
                 text=description+f'<br/><b>Qty: {count} | Slots:</b> '+', '.join(map(str,r['item_slots'][iid]))
-                card=Table([[pic(thumbnails[iid],34,32),P(text,'CellGuide')]],colWidths=[42,width/2-54])
+                card=Table([[pic(thumbnails[iid],34,28),P(text,'CellGuide')]],colWidths=[42,width/2-54])
                 card.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),2),
-                    ('RIGHTPADDING',(0,0),(-1,-1),2),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+                    ('RIGHTPADDING',(0,0),(-1,-1),2),('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3)]))
                 part_cards.append(card)
         if two_columns:
             headings=[P(f'<b>BOX {n} - part / quantity / slots</b>','CellGuide') for _ in range(2)]
@@ -253,6 +265,19 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
                 ('LINEBELOW',(0,0),(-1,-1),.3,colors.HexColor('#d7dfe6'))]))
             flow.append(grid)
         else:flow.append(table(rows,[62,width-62-36-90,36,90],compact=True))
+    for number, motif in enumerate(motif_records, 1):
+        record = next(r for r in records if r['module']['id'] == motif['carton_id'])
+        slots = {record['unit_to_slot'][uid] for uid in motif['unit_ids']}
+        order = [slot for step in record['order'] for slot in step if slot in slots]
+        flow.extend([PageBreak(), P(f"Box {record['number']}: combination {number}", 'TitleGuide'),
+                     P('Actual source poses from this packing plan. Place the parts individually inside the box.', 'SmallGuide'),
+                     pic(assets/f'used-motif-{number}-iso.png', width, 260),
+                     pic(assets/f'used-motif-{number}-side.png', width, 145),
+                     P('<b>Slot order:</b> '+', '.join(map(str, order))+'. Follow the complete box sequence for other parts.'),
+                     P('Protected combination envelope: '+dims(motif['dimensions_mm'])+' mm.', 'SmallGuide')])
+        if motif['sheets']:
+            flow.append(P('Place each listed protective sheet after its lower slot and before its upper slot. Do not lift the loose parts as one assembly.', 'SmallGuide'))
+        flow.append(P(f"Geometric envelope change versus a same-orientation row: {-100*motif['geometric_row_saving_fraction']:+.1f}%. This row is not an optimized or assembly-checked separate carton; the full-kit comparison is reported separately.", 'SmallGuide'))
     if plan['templates']:
         flow.extend([PageBreak(),P('Nested groups: workbench assembly','TitleGuide'),P('Build each group in numbered order, then rotate the completed group into its box slot. These are certified workbench frames, not extra packing boxes.','SmallGuide')])
         cards=[]
@@ -302,6 +327,7 @@ def build(result_path,bom_path,output,*,kit='Kit',revision='Draft 1',properties_
               'display_offsets':offsets,'source_geometry_modified':False,'explosion_is_display_only':True,
               'physical_qualification':False,'transport_checks':checks,
               'manual_material_screen':material_screen,'accessory_set_cohesion':cohesion_screen,
+              'used_motifs':motif_records,
               'properties_sha256':sha256(Path(properties_path).read_bytes()).hexdigest() if properties_path else None,
               'display_property_cards_fingerprint':fingerprint(property_cards),
               'illustrations_sha256':{p.name:sha256(p.read_bytes()).hexdigest() for p in assets.glob('*.png')}}

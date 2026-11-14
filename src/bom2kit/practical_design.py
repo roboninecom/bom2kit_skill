@@ -53,6 +53,8 @@ def build_candidate(library, policy, modules, tiled, *, finger_radius=4.):
             groups["assembly-"+uid]=[p["unit_id"]];members.append(p["unit_id"])
         manifest.append({"id":lid,"family":module["family"],"method":pattern["method"],
                          "external_mm":leaf["external_mm"],"position_mm":leaf["position_mm"],"unit_ids":members,
+                         'source_motifs': deepcopy([operation for operation in pattern.get('motif_operations', [])
+                                                   if operation.get('recipe_id') and operation.get('unit_ids')]),
                          "retention_status":"unverified","closure":"Closed carton; physical retention trial required"})
         packaging.append({"id":lid,"quantity":1,"type":"closed_rectangular_inner_carton",
                           "external_mm":leaf["external_mm"],"wall_mm":t,
@@ -109,9 +111,13 @@ def nondominated(results):
     """Preserve operational improvements even when their exterior is larger."""
     def values(result):
         m=result["practical"]["metrics"]
+        organization=m.get('organization')
+        # Missing measurements must not masquerade as perfectly grouped parts.
+        grouping=tuple(organization[k] for k in ('mixed_group_pairs',
+            'additional_spatial_fragments','split_semantic_groups')) if organization else (math.inf,)*3
         return (*[m[k] for k in ("external_volume_l","cartons","carton_types","compound_preassemblies","split_source_skus")],
                 m.get('source_and_contact_sheet_placements',m.get('total_counted_placements',0)),
-                m.get('contact_sheet_sizes',0),m.get('additional_sku_orientations',0))
+                m.get('contact_sheet_sizes',0),m.get('additional_sku_orientations',0),*grouping)
     return [r for i,r in enumerate(results) if not any(j!=i and all(a<=b for a,b in zip(values(other),values(r)))
             and any(a<b for a,b in zip(values(other),values(r))) for j,other in enumerate(results))]
 
@@ -120,11 +126,14 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                      hand_border=8.,packing_gap=None,finger_radius=4.,max_replays=12,callback=None,cp_sat_python=None,
                      irregular_executable=None,irregular_budget=0.,family_gaps=None,progress=None,stack_height_factor=0.,refinement_budget=0.,
                      rectangle_executable=None,rectangle_budget=0.,floor_pair_budget=0.,access_lane_mm=0.,
-                     common_floor_budget=0.,common_floor_only=False,supported_nesting=False,source_surface_budget=0.,access_repair_budget=0.):
+                     common_floor_budget=0.,common_floor_only=False,supported_nesting=False,source_surface_budget=0.,access_repair_budget=0.,volumetric_catalog=None,annotations=None,
+                     motif_rectangle_budget=0.):
     """Search source-derived family partitions and retain a verified Pareto set."""
     from .bom import reconcile_bom
     from .assembly_plan import build_assembly_plan
     from .packing_states import declared_state
+    from .part_properties import describe_parts, check_accessory_set_cohesion, organization_metrics
+    from .kitting_partition import reunite_accessory_sets
     started=perf_counter()
     if not reconcile_bom(bom,library)["complete"]:raise ValueError("Incomplete source BOM")
     if any(not declared_state(i).get('eligible_for_primary_comparison',False) for i in library['items']):
@@ -136,17 +145,22 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     if not math.isfinite(time_limit) or time_limit<=0:raise ValueError("Positive time limit required")
     if not carton_counts or not type_caps or not isinstance(max_replays,int) or max_replays<1:
         raise ValueError('Nonempty carton/type search and a positive replay count required')
-    values=[hand_border,irregular_budget,refinement_budget,rectangle_budget,floor_pair_budget,access_lane_mm,common_floor_budget,source_surface_budget,access_repair_budget]
+    values=[hand_border,irregular_budget,refinement_budget,rectangle_budget,floor_pair_budget,access_lane_mm,common_floor_budget,source_surface_budget,access_repair_budget,motif_rectangle_budget]
     if packing_gap is not None:values.append(packing_gap)
     if any(not math.isfinite(v) or v<0 for v in values):raise ValueError('Finite nonnegative search parameters required')
     if common_floor_only and not common_floor_budget:raise ValueError('Common-floor-only mode requires a positive budget')
+    if motif_rectangle_budget and (not rectangle_executable or volumetric_catalog is None):
+        raise ValueError('Motif rectangle search requires a catalog and rectangle executable')
     if not math.isfinite(finger_radius) or finger_radius<=0:raise ValueError('Positive finite fingertip radius required')
-    if any(n<1 or n>7 for n in carton_counts) or any(n<1 or n>4 for n in type_caps):raise ValueError("Invalid carton/type search limits")
+    if any(n<1 or n>7 for n in carton_counts) or any(n<1 or n>7 for n in type_caps):raise ValueError("Invalid carton/type search limits")
     if not math.isfinite(stack_height_factor) or stack_height_factor<0:raise ValueError('Invalid stack height factor')
     if stack_height_factor and irregular_executable:raise ValueError('Stack and planar-contour modes must be evaluated separately')
     if floor_pair_budget and irregular_executable:raise ValueError('Floor pairs and projected contours require separate experiments')
     if supported_nesting and (irregular_executable or floor_pair_budget):raise ValueError('Supported cavity pairs require a separate experiment')
-    options={i["id"]:stable_pose_options(i,cache=cache) for i in library["items"]}
+    # Rectangular and volumetric motifs do not use planar triangle unions.
+    # Prepare them only for an explicitly requested contour backend.
+    options={i["id"]:stable_pose_options(i,cache=cache,include_projection=bool(irregular_executable)) for i in library["items"]}
+    properties = describe_parts(library, policy, annotations=annotations)
     preparation_seconds=perf_counter()-started
     if progress:progress({'stage':'sources_prepared','seconds':preparation_seconds,'source_skus':len(options)})
     search_start=perf_counter()
@@ -158,14 +172,26 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     if set(family_gaps)-set(families) or any(not math.isfinite(v) or v<spec['gap_mm'] for v in family_gaps.values()):
         raise ValueError('Family gap overrides must preserve the declared clearance and name known families')
     patterns_cache={};cached_items={};proposals=[];attempts=[];irregular_used=0.;irregular_diagnostics=[];rectangle_used=0.;rectangle_diagnostics=[];pair_used=0.
-    surface_used=0.;surface_diagnostics=[]
+    surface_used=0.;surface_diagnostics=[];motif_rectangle_used=0.;motif_rectangle_diagnostics=[]
     allocations=[counts for counts in product(range(1,max(carton_counts)+1),repeat=len(families))
                  if sum(counts) in carton_counts and all(c<=len(families[f]) for f,c in zip(family_names,counts))]
     group_estimates={}
-    partitions={}
+    partitions={}; motif_selections={}
     def partition(family,count,strategy):
         key=(family,count,strategy)
-        if key not in partitions:partitions[key]=partition_by_height(families[family],options,count,strategy)
+        if key not in partitions:
+            if strategy.startswith('motif_'):
+                from .volumetric_patterns import cover_variants
+                from .volumetric_partition import partition_with_motifs
+                if family not in motif_selections:
+                    motif_selections[family] = cover_variants(families[family], volumetric_catalog['recipes'],
+                        options=options, padding=policy['item_padding_mm'])
+                partitions[key] = partition_with_motifs(families[family], options, count,
+                    volumetric_catalog['recipes'], selection_index=0 if strategy=='motif_volume' else 1,
+                    padding=policy['item_padding_mm'], selections=motif_selections[family])
+            else:
+                partitions[key]=partition_by_height(families[family],options,count,strategy)
+            partitions[key] = reunite_accessory_sets(partitions[key], properties['cards'], group_cost)
         return partitions[key]
     def group_cost(subset):
         key=tuple(sorted((i['id'],i['quantity']) for i in subset))
@@ -191,9 +217,17 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
     # Visit every requested carton count before spending the budget on variants.
     seeds=[next((c for c in allocations if sum(c)==n),None) for n in carton_counts]
     allocations=[c for c in seeds if c is not None]+[c for c in allocations if c not in seeds]
-    for counts in allocations:
+    strategies = (("motif_volume", "cost", "motif_footprint", "footprint_cost", "copies", "height", "area")
+                  if volumetric_catalog is not None else ("cost", "footprint_cost", "copies", "height", "area"))
+    # A catalog makes each partition more expensive. Round-robin the initial
+    # counts before trying all strategies for one count; otherwise a fixed
+    # budget can finish without ever proposing the requested larger counts.
+    initial = [c for c in seeds if c is not None]
+    scheduled = [(counts, (strategy,)) for strategy in strategies for counts in initial]
+    scheduled.extend((counts, strategies) for counts in allocations if counts not in initial)
+    for counts, trial_strategies in scheduled:
         if proposals and perf_counter()-search_start>time_limit*.72:break
-        for strategy in ("cost","footprint_cost","copies","height","area"):
+        for strategy in trial_strategies:
             modules=[]
             for family,count in zip(family_names,counts):
                 local_gap=family_gaps.get(family,gap)
@@ -211,6 +245,17 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                             rectangle_budget=min(2,max(0,rectangle_budget-rectangle_used)),
                             floor_pair_budget=0.)
                         patterns_cache[key]['regular_floor_patterns']=list(patterns_cache[key]['patterns'])
+                        if volumetric_catalog is not None:
+                            from .volumetric_patterns import volumetric_patterns
+                            local_diagnostics = []
+                            patterns_cache[key]['patterns'].extend(volumetric_patterns(subset, options,
+                                {**policy, '_volumetric_catalog': volumetric_catalog}, seconds=1.,
+                                hand_border=hand_border, access_lane=access_lane_mm,
+                                rectangle_executable=rectangle_executable,
+                                rectangle_budget=min(4., max(0., motif_rectangle_budget-motif_rectangle_used)),
+                                rectangle_diagnostics=local_diagnostics))
+                            motif_rectangle_used += sum(d.get('elapsed_seconds', 0.) for d in local_diagnostics)
+                            motif_rectangle_diagnostics.extend(local_diagnostics)
                         if stack_height_factor or supported_nesting or floor_pair_budget>pair_used:
                             # Experimental patterns compete per carton with the
                             # regular floor; enabling stacks must not force every
@@ -274,7 +319,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                                 if proposal['status']=='validated_planar_proposal':patterns_cache[key]['patterns'].append(proposal['pattern'])
                             irregular_used+=perf_counter()-irregular_start
                     modules.append({"family":family,"items":subset,**patterns_cache[key]})
-            if progress:progress({'stage':'carton_candidates','counts':dict(zip(family_names,counts)),'strategy':strategy,
+            if progress:progress({'stage':'carton_candidates','counts':dict(zip(family_names,counts)),'actual_cartons':len(modules),'strategy':strategy,
                                   'seconds':perf_counter()-started,'irregular_seconds':irregular_used})
             if any(len(m['patterns'])>len(m['regular_floor_patterns']) for m in modules):
                 regular=[{**m,'patterns':m['regular_floor_patterns']} for m in modules]
@@ -305,7 +350,8 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
         master_candidates=[];master_modules=[]
         for key,entry in patterns_cache.items():
             subset=cached_items[key]
-            for pattern in entry['patterns'][:12]:
+            from .concept_patterns import diverse_patterns
+            for pattern in diverse_patterns(entry['patterns'], 12):
                 size=pattern['external_mm']
                 master_candidates.append({'contents':{p['unit_id']:1 for p in pattern['placements']},
                                           'external_mm':size,'size_key':[*sorted(size[:2]),size[2]]})
@@ -334,7 +380,8 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
             left=refinement_budget-(perf_counter()-refinement_start)
             if left<=0:break
             improved,diagnostic=refine(seed,options,policy,seconds=min(15,left),gap=gap,family_gaps=family_gaps,
-                hand_border=hand_border,stack_height_factor=stack_height_factor,access_lane_mm=access_lane_mm,supported_nesting=supported_nesting)
+                hand_border=hand_border,stack_height_factor=stack_height_factor,access_lane_mm=access_lane_mm,
+                supported_nesting=supported_nesting,volumetric_catalog=volumetric_catalog)
             proposals.append(improved);refinement_diagnostics.append(diagnostic)
             if progress:progress({'stage':'joint_refinement','before_l':seed[0]/1e6,'after_l':improved[0]/1e6,**diagnostic})
     verified=[];verified_plans={};replays=[];seen=set();repair_used=0.
@@ -360,8 +407,9 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
         trial_policy={**deepcopy(policy),"max_inner_cartons":max(carton_counts),"max_carton_types":cap}
         try:
             # Repack against the expanded, current-run carton dimensions. This
-            # does not import an external recipe or change the complete outer block.
-            modules=deepcopy(modules);tiled=deepcopy(tiled)
+            # does not import an external recipe. If this reduces a module's
+            # required height, retile the block before independent replay.
+            modules=deepcopy(modules);tiled=deepcopy(tiled);replacements={}
             for leaf in tiled['leaves']:
                 module=modules[leaf['module']]
                 try:
@@ -375,9 +423,15 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                     # Keep contour packing when a rectangular repair loses its fit.
                     if fits:
                         replacement=min(fits,key=lambda p:p['external_mm'][2])
-                        module['patterns'].append(replacement);leaf['pattern']=len(module['patterns'])-1
+                        replacements[leaf['module']]=[replacement]
                 except ValueError:
                     pass
+            from .practical_refinement import choose_repacked_block
+            compact_modules, compact = choose_repacked_block(modules,tiled,replacements,spec,cap)
+            post_repack_retiling = {'before_l': volume/1e6, 'after_l': volume/1e6}
+            if compact and compact['volume_mm3'] < volume-1e-6:
+                volume, modules, tiled = compact['volume_mm3'], compact_modules, compact
+                post_repack_retiling['after_l'] = volume/1e6
             result=build_candidate(library,trial_policy,modules,tiled,finger_radius=finger_radius)
             repair_diagnostic=None
             if result['practical']['support']['valid'] and not result['practical']['hand_access']['valid'] and repair_used<access_repair_budget:
@@ -404,9 +458,16 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                     elapsed=perf_counter()-repair_start;repair_used+=elapsed
                     repair_diagnostic={'attempts':repair_attempts,'including_replay_seconds':elapsed}
             record={"volume_l":volume/1e6,"cartons":len(modules),"types":tiled["distinct_carton_sizes"],
-                    "support":result["practical"]["support"]["valid"],"hand_access":result["practical"]["hand_access"]["valid"]}
+                    "support":result["practical"]["support"]["valid"],"hand_access":result["practical"]["hand_access"]["valid"],
+                    'post_repack_retiling': post_repack_retiling}
             if repair_diagnostic:record['access_repair']=repair_diagnostic
+            cohesion = check_accessory_set_cohesion(result, properties['cards'])
+            result['practical']['accessory_set_cohesion'] = cohesion
+            result['practical']['properties_fingerprint'] = fingerprint(properties)
+            result['practical']['valid'] &= cohesion['valid']
+            record['accessory_set_cohesion'] = cohesion
             if result["practical"]["valid"]:
+                result['practical']['metrics']['organization'] = organization_metrics(result, properties['cards'])
                 plan=build_assembly_plan(result,bom)
                 verified.append(result)
                 verified_plans[id(result)]=plan
@@ -429,6 +490,7 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
                           "irregular_proposals":irregular_diagnostics,
                           "joint_refinement":refinement_diagnostics,
                           "rectangle_proposals":rectangle_diagnostics,
+                          'motif_rectangle_proposals': motif_rectangle_diagnostics,
                           "common_footprint_proposals":common_diagnostics,
                           "supported_pair_proposals":cavity_diagnostics,
                           "source_surface_proposals":surface_diagnostics,
@@ -441,8 +503,10 @@ def design_practical(library,policy,bom,*,cache=None,time_limit=120,carton_count
             "attempts":attempts,"replays":replays,"exact_cover_master":master_diagnostics,
             "joint_refinement":refinement_diagnostics,
             "rectangle_proposals":rectangle_diagnostics,
+            'motif_rectangle_proposals': motif_rectangle_diagnostics,
             "common_footprint_proposals":common_diagnostics,
             "supported_pair_proposals":cavity_diagnostics,
             "source_surface_proposals":surface_diagnostics,
             "irregular_proposals":irregular_diagnostics,"seconds":perf_counter()-started,
-            "preparation_seconds":preparation_seconds,"status":"verified" if frontier else "no_verified_practical_layout"}
+            "preparation_seconds":preparation_seconds,"part_properties":properties,
+            "status":"verified" if frontier else "no_verified_practical_layout"}

@@ -121,6 +121,22 @@ def check_hand_access(result, *, radius_mm=4., insertion_depth_mm=8., finger_len
         panel=trimesh.creation.box(size-.002);panel.apply_translation(np.asarray(sheet['origin_mm'])+size/2)
         sheet_meshes[sheet['id']]=panel
     cartons, failures = [], []
+    # These world-space source and sheet meshes remain immutable during this
+    # check. Reuse their BVH/Convex geometry across independent collision objects;
+    # moving-part/finger composites and their transforms are never cached here.
+    fixed_ids = {id(mesh) for mesh in [*meshes.values(), *sheet_meshes.values()]}
+    geometry_cache = {}; geometry_cache_hits = 0
+    class SourceCollisionManager(trimesh.collision.CollisionManager):
+        def _get_fcl_obj(self, mesh):
+            nonlocal geometry_cache_hits
+            key = id(mesh)
+            if key not in fixed_ids:
+                return super()._get_fcl_obj(mesh)
+            if key not in geometry_cache:
+                geometry_cache[key] = super()._get_fcl_obj(mesh)
+            else:
+                geometry_cache_hits += 1
+            return geometry_cache[key]
     for module in result["logistics"]["modules"]:
         layer = layers[module["id"]]
         low = np.asarray(layer["position_mm"])+layer["wall_mm"]
@@ -141,7 +157,7 @@ def check_hand_access(result, *, radius_mm=4., insertion_depth_mm=8., finger_len
                     continue
                 if not stable(remaining-{uid}):continue
                 mesh = meshes[uid];bounds = mesh.bounds
-                own=trimesh.collision.CollisionManager();own.add_object('part',mesh)
+                own=SourceCollisionManager();own.add_object('part',mesh)
                 for axis,fingers,depth in fingertip_candidates(mesh,radius_mm,insertion_depth_mm,finger_length_mm):
                     if perf_counter()-started>=time_limit:break
                     if any(np.any(f.bounds[0,:2]<low[:2]-1e-7) or np.any(f.bounds[1,:2]>high[:2]+1e-7) for f in fingers):
@@ -149,7 +165,7 @@ def check_hand_access(result, *, radius_mm=4., insertion_depth_mm=8., finger_len
                     if any(own.in_collision_single(finger) or own.min_distance_single(finger)<.01 for finger in fingers):
                         continue
                     moving = trimesh.util.concatenate([mesh,*fingers])
-                    manager = trimesh.collision.CollisionManager()
+                    manager = SourceCollisionManager()
                     # Expanded XY broad phase includes fingers; obstacles remain original triangles.
                     for other in remaining-{uid}:
                         obstacle = meshes[other]
@@ -163,7 +179,7 @@ def check_hand_access(result, *, radius_mm=4., insertion_depth_mm=8., finger_len
                         obstacle=sheet_meshes[sheet['id']]
                         if all(moving.bounds[1,k]>=obstacle.bounds[0,k] and moving.bounds[0,k]<=obstacle.bounds[1,k] for k in (0,1)):
                             manager.add_object('protective-sheet:'+sheet['id'],obstacle)
-                    moving_manager = trimesh.collision.CollisionManager()
+                    moving_manager = SourceCollisionManager()
                     moving_manager.add_object("moving",moving)
                     travel = max(0.,high[2]-moving.bounds[0,2])+1
                     moved = 0.;passed = False
@@ -191,6 +207,8 @@ def check_hand_access(result, *, radius_mm=4., insertion_depth_mm=8., finger_len
     return {"valid":not failures,"failures":failures,"cartons":cartons,
             "parameters":{"radius_mm":radius_mm,"insertion_depth_mm":insertion_depth_mm,"finger_length_mm":finger_length_mm},
             "seconds":perf_counter()-started,"physical_qualification":False,
+            "immutable_geometry_cache":{"geometries":len(geometry_cache),"hits":geometry_cache_hits,
+                                        "scope":"One replay; unchanged original source and sheet meshes only"},
             "intermediate_load_states_checked":True,
             "protective_sheet_obstacles_checked":True,
             "scope":"Two fingertip clearance and rigid vertical sweep; actual manual grip is not certified"}

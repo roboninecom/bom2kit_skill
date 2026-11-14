@@ -46,6 +46,7 @@ def main():
     for name in ("library","policy","bom"):p.add_argument(name,type=Path)
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--cache",type=Path)
+    p.add_argument('--annotations', type=Path, help='Evidence-tagged semantic labels, including complete accessory sets')
     p.add_argument("--time-limit",type=float,default=120)
     p.add_argument("--cartons",type=int,nargs="+",default=[3,4,5,6,7])
     p.add_argument("--types",type=int,nargs="+",default=[2,3,4])
@@ -61,12 +62,14 @@ def main():
     p.add_argument('--refinement-budget',type=float,default=0.,help='Additional joint carton/content refinement seconds')
     p.add_argument('--rectangle-solver',type=Path)
     p.add_argument('--rectangle-budget',type=float,default=0.)
+    p.add_argument('--motif-rectangle-budget', type=float, default=0., help='Additional PackingSolver budget for translating source motif envelopes')
     p.add_argument('--floor-pair-budget',type=float,default=0.,help='Repeated adjacent source-supported pairs, individually handled')
     p.add_argument('--access-lane',type=float,default=0.,help='Envelope gap along Y only, subject to independent grip replay')
     p.add_argument('--common-floor-budget',type=float,default=0.,help='Footprint-first partial-layer beam search seconds')
     p.add_argument('--common-floor-only',action='store_true',help='Evaluate footprint-first search separately')
     p.add_argument('--supported-nesting',action='store_true',help='Individually inserted pairs supported by actual internal horizontal faces')
     p.add_argument('--source-surface-budget',type=float,default=0.,help='Actual-surface 3D proposals with branching support trees')
+    p.add_argument('--volumetric-catalog', type=Path, help='Source-bound 3D motif proposals, expanded before full replay')
     p.add_argument('--access-repair-budget',type=float,default=0.,help='Repack cartons rejected by the unchanged finger model, including replay')
     p.add_argument('--wall-limit',type=float,help='Hard complete-invocation limit, including replay and report JSON')
     p.add_argument('--_supervised',action='store_true',help=argparse.SUPPRESS)
@@ -75,6 +78,8 @@ def main():
         raise SystemExit(supervise(sys.argv[1:],a.output,a.wall_limit))
     values={name:json.loads(getattr(a,name).read_bytes()) for name in ("library","policy","bom")}
     files={name:sha256(getattr(a,name).read_bytes()).hexdigest() for name in values}
+    if a.volumetric_catalog: files['volumetric_catalog'] = sha256(a.volumetric_catalog.read_bytes()).hexdigest()
+    if a.annotations: files['annotations'] = sha256(a.annotations.read_bytes()).hexdigest()
     root=Path(__file__).resolve().parents[1]
     def code_hashes():
         files=[*sorted((root/"src/bom2kit").glob("*.py")),Path(__file__).resolve()]
@@ -96,14 +101,18 @@ def main():
         stack_height_factor=a.stack_height_factor,
         refinement_budget=a.refinement_budget,
         rectangle_executable=a.rectangle_solver,rectangle_budget=a.rectangle_budget,
+        motif_rectangle_budget=a.motif_rectangle_budget,
         floor_pair_budget=a.floor_pair_budget,
         access_lane_mm=a.access_lane,
         common_floor_budget=a.common_floor_budget,common_floor_only=a.common_floor_only,
         supported_nesting=a.supported_nesting,
         source_surface_budget=a.source_surface_budget,
         access_repair_budget=a.access_repair_budget,
+        volumetric_catalog=json.loads(a.volumetric_catalog.read_bytes()) if a.volumetric_catalog else None,
+        annotations=json.loads(a.annotations.read_bytes()) if a.annotations else None,
         progress=lambda record:print(json.dumps(record),flush=True))
     results=run.pop("results");plans=run.pop('assembly_plans')
+    (a.output/'part-properties.json').write_text(json.dumps(run.pop('part_properties'), indent=2), encoding='utf8')
     run["input_files_sha256"]=files
     run["engine_provenance"]={"initial_sha256":before,"unchanged_during_run":before==code_hashes()}
     run["parameters"]={k:str(v) if isinstance(v,Path) else v for k,v in vars(a).items()}

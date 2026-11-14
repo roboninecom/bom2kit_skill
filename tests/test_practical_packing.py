@@ -51,6 +51,24 @@ def test_states_do_not_invent_factory_cartons_or_allow_unmeasured_replacements(t
     with pytest.raises(ValueError,match='quantities'):select_state(item,alternate,research=True)
 
 
+def test_hand_replay_reuses_fixed_geometry_without_changing_source_poses(tmp_path,monkeypatch):
+    result=candidate(tmp_path,gap=.2,border=9)
+    original=deepcopy(result)
+    calls={}
+    get_geometry=trimesh.collision.CollisionManager._get_fcl_obj
+    def counted(manager,mesh):
+        if len(mesh.vertices)==8 and np.allclose(sorted(mesh.extents),[10,20,30]):
+            key=tuple(np.round(mesh.bounds.ravel(),6))
+            calls[key]=calls.get(key,0)+1
+        return get_geometry(manager,mesh)
+    monkeypatch.setattr(trimesh.collision.CollisionManager,'_get_fcl_obj',counted)
+    replay=check_hand_access(result)
+    assert replay['valid']
+    assert calls and max(calls.values())==1
+    assert replay['immutable_geometry_cache']['hits']>0
+    assert result==original
+
+
 def test_primary_search_rejects_research_only_packing_state(tmp_path):
     from bom2kit.practical_design import design_practical
     item,_=source(tmp_path)
@@ -156,6 +174,19 @@ def test_pareto_retains_simpler_larger_option():
     assert nondominated([compact,simple,bad])==[compact,simple]
     rotated=deepcopy(simple);rotated['practical']['metrics']['additional_sku_orientations']=2
     assert nondominated([rotated,simple])==[simple]
+
+
+def test_pareto_retains_grouped_option_when_smaller_layout_scatters_types():
+    grouped={'practical':{'metrics':{'external_volume_l':28.85,'cartons':4,'carton_types':4,
+        'compound_preassemblies':0,'split_source_skus':0,
+        'organization':{'mixed_group_pairs':49,'additional_spatial_fragments':4,'split_semantic_groups':0}}}}
+    smaller=deepcopy(grouped)
+    smaller['practical']['metrics'].update(external_volume_l=28.10,
+        organization={'mixed_group_pairs':72,'additional_spatial_fragments':11,'split_semantic_groups':0})
+    worse=deepcopy(smaller);worse['practical']['metrics']['external_volume_l']=29.
+    assert nondominated([smaller,grouped,worse])==[smaller,grouped]
+    unknown=deepcopy(grouped);del unknown['practical']['metrics']['organization']
+    assert nondominated([unknown,grouped])==[grouped]
 
 
 def test_common_floor_partial_allocation_preserves_every_copy(tmp_path):

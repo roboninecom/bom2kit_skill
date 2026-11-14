@@ -5,6 +5,7 @@ Its members remain individual original CAD parts with independent replay.
 """
 from collections import Counter
 from copy import deepcopy
+from itertools import product
 import math
 from time import perf_counter
 
@@ -124,7 +125,7 @@ def carton_orientation_patterns(patterns,wall):
 
 
 def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
-                  increment=1., seconds=3., target_footprints=()):
+                  increment=1., seconds=3., target_footprints=(), directional_access=False):
     """Pack named source zones, retaining low-height and narrow alternatives."""
     started = perf_counter(); candidates = []; configurations = []
     heights = sorted({p["external_mm"][2] for z in zones for p in z["patterns"]})
@@ -151,12 +152,17 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
             units.append({"item_id": str(index), "unit_id": str(index), "dimensions": size,
                           "orientations": [((0, 1, 2), tuple(size)), ((1, 0, 2), (size[1], size[0], size[2]))]})
         area = sum(math.prod(u["dimensions"][:2]) for u in units); height = max(u["dimensions"][2] for u in units)
+        lane_extra = max(0., access_lane-gap) if directional_access else 0.
+        packing_units = [{**u, 'cohesion_group': zones[index].get('cohesion_group', zones[index]['id']),
+                          'orientations': [(r, (d[0], d[1]+lane_extra, d[2])) for r, d in u['orientations']]}
+                         for index, u in enumerate(units)]
         widths = sorted({max(min(u["dimensions"][:2]) for u in units), *(math.sqrt(area)*f for f in (.6, .8, 1., 1.25, 1.6, 2.))})
         targets = [(w-2*(wall+hand_border), d-2*(wall+hand_border)) for w, d in target_footprints] or [(w, None) for w in widths]
         for width, depth in targets:
-            for order in ("area", "input"):
-                packed = pack_strip(units, width, height, max(gap, access_lane), depth=depth,
-                                    placement_score="short_side", item_order=order)
+            for order, placement_score in product(("area", "input"), ("cohesive", "short_side") if directional_access else ("short_side",)):
+                packed = pack_strip(packing_units, width, height, gap if directional_access else max(gap, access_lane),
+                                    depth=None if depth is None else depth+lane_extra,
+                                    placement_score=placement_score, item_order=order)
                 if not packed:
                     continue
                 poses = []; sheets = []; records = []; operations = []
@@ -169,7 +175,7 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
                     source_contact |= p.get("source_contact_slots", False)
                     source_clearance |= p.get("source_clearance_slots", False)
                     records.append({"id": z["id"], "unit_ids": [v["unit_id"] for v in original],
-                                    "origin_mm": position, "dimensions_mm": q["dimensions_mm"],
+                                    "origin_mm": position, "dimensions_mm": [q['dimensions_mm'][0], q['dimensions_mm'][1]-lane_extra, q['dimensions_mm'][2]],
                                     "motif": p["method"], "physical_container": False})
                     operations.extend(p.get("motif_operations", []))
                 used = [max(p["envelope_position_mm"][k]+p["envelope_dimensions_mm"][k] for p in poses) for k in range(3)]
@@ -178,6 +184,7 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
                 if depth is not None:
                     external[:2] = [width+2*(wall+hand_border), depth+2*(wall+hand_border)]
                 candidates.append({"external_mm": external, "placements": poses, "method": "semantic_zones",
+                                   'placement_score': placement_score,
                                    "preassemblies": 0, "protective_separators": sheets,
                                    "source_contact_slots": source_contact, "source_clearance_slots": source_clearance,
                                    "semantic_zones": records, "motif_operations": operations})
@@ -186,6 +193,13 @@ def compose_zones(zones, wall, *, gap=.2, hand_border=7.2, access_lane=6.4,
 
 def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=None,minimum_sheet_side=10.):
     """Generate source-derived motifs; all outputs still require independent replay."""
+    if mode == 'volumetric':
+        from .volumetric_patterns import volumetric_patterns
+        fallback = group_patterns(group, options, policy, seconds=seconds/2, mode='rows', cache=cache,
+                                  minimum_sheet_side=minimum_sheet_side)
+        patterns = volumetric_patterns(group['items'], options, policy, seconds=seconds/2, hand_border=0.)
+        return {'patterns': diverse_patterns(patterns+fallback['patterns'], 20),
+                'diagnostics': fallback['diagnostics']}
     if mode=='hybrid':
         generated=[group_patterns(group,options,policy,seconds=seconds/4,mode=m,cache=cache,minimum_sheet_side=minimum_sheet_side)
                    for m in ('rows','stacks','alternating','nesting')]
@@ -243,6 +257,16 @@ def group_patterns(group, options, policy, *, seconds=3., mode="rows", cache=Non
 def cohesive_carton_patterns(groups, options, policy, *, seconds=2., mode="rows", hand_border=7.2,
                              access_lane=6.4, packing_gap=None,target_footprints=(),semantic_order='portfolio',minimum_sheet_side=10.):
     """Keep meaningful neighbors without assigning rectangular private zones."""
+    if mode == 'volumetric':
+        from .volumetric_patterns import volumetric_patterns
+        items = coalesce_items([i for g in groups for i in g['items']])
+        generated = volumetric_patterns(items, options, policy, seconds=seconds/2, hand_border=hand_border,
+                                        access_lane=access_lane, target_footprints=target_footprints)
+        fallback = cohesive_carton_patterns(groups, options, policy, seconds=seconds/2, mode='rows',
+                       hand_border=hand_border, access_lane=access_lane, packing_gap=packing_gap,
+                       target_footprints=target_footprints, semantic_order=semantic_order,
+                       minimum_sheet_side=minimum_sheet_side)
+        return diverse_patterns(generated+fallback, 24)
     if mode=='hybrid':
         return diverse_patterns([p for m in ('rows','stacks','alternating','nesting')
             for p in cohesive_carton_patterns(groups,options,policy,seconds=seconds/4,mode=m,
