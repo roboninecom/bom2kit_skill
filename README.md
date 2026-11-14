@@ -51,10 +51,11 @@ bounded concept search, local repair and a free-movement diagnostic. It compares
 organization and handling tradeoffs alongside volume. The [current goal](docs/concept-packing-goal.md)
 requires measured improvement on both kits; the architecture and passing tests
 alone do not meet that target. Keep the best independently verified incumbent.
-The [measured concept-planner outcome](docs/concept-packing-outcome.md) records
-the remaining gap: selected 101 is 28.975 L; 102 retains its 36.127 L incumbent.
-Neither meets Alan's nominal volume. The report distinguishes new candidates
-from retained layouts and records why better grouping did not solve space use.
+The [earlier concept-planner outcome](docs/concept-packing-outcome.md) establishes
+the baseline. The [volumetric nesting study](docs/volumetric-nesting-results.md)
+reports newer source-CAD nesting, complete-kit tradeoffs and negative controls.
+Neither complete kit meets Alan's nominal target. Local nesting gains and passing
+tests are not presented as evidence that the complete objective is achieved.
 
 The [practical packing redesign](docs/practical-packing-design.md) adds explicit
 packing states, source-based support checks, individual placement sequences,
@@ -63,8 +64,8 @@ regular rows, flat-interface stacks, adjacent floor pairs and actual-surface
 support trees target easier kitting. Shipping-kit requests start with concept-first
 planning and compare the practical baseline; the older compound searches remain
 research/baseline tools.
-The [four-hour goal](docs/practical-packing-four-hour-goal.md) states acceptance
-conditions and the fixed reporting deadline. These additions do not establish
+The [latest four-hour audit](docs/volumetric-nesting-goal-audit.md) maps the
+volumetric study's requirements to evidence and remaining gaps. These additions do not establish
 production readiness or success against Alan's volume reference.
 
 The [transport packaging workflow](docs/transport-packaging.md) implements

@@ -111,7 +111,8 @@ samples diverse motif and floor patterns rather than only the first floor rows.
    Paired horizontal faces bind both contact planes to original triangles;
    a sheet cannot stand in for a missing support. Replay checks contact area,
    the combined load line, sheet collision and intermediate removal stability.
-4. Extend pairs into combinations of up to six individual parts, retaining
+4. Extend pairs into combinations of up to six individual parts by default
+   (an explicit `--cluster-members` setting permits up to twelve), retaining
    source transforms, quantities and support relationships. Recheck all member
    collisions. Fresh cluster correlation can find third-part translations that
    pair-template chaining misses. Extension failure does not prove that no
@@ -126,6 +127,11 @@ samples diverse motif and floor patterns rather than only the first floor rows.
 6. Expand every original unit before the existing full-kit BOM, geometry,
    compatibility, foam, support and hand-access replay. A motif is neither a
    new purchased box nor a rigid preassembly.
+
+The practical result frontier includes type cohabitation, spatial fragmentation
+and split semantic groups measured with the same source property cards. A lower
+volume cannot discard a better-organized option solely because carton counts
+match. These metrics are proxies; they do not certify manual labor or restraint.
 
 The cache binds source hashes, pose options, protection, pitch, search parameters
 and the pair engine hash. Cached proposal geometry still requires complete-kit

@@ -8,7 +8,7 @@ description: Design grouped packaging from a BOM and individual CAD or declared 
 Use this repository's shared Python engine from its root. The same instructions
 apply to Codex and Claude Code. Install `python -m pip install -e ".[mesh,cad,test]"`
 as needed; `[report]` enables mesh visualization. Read
-`docs/independent-design-progress.md` for capabilities and remaining gaps.
+`docs/volumetric-nesting-results.md` for measured capabilities and remaining gaps.
 The complete no-worse 101/102 objective is still open.
 For shipping kits and manual kitting, start with **Concept-first packing** below
 and compare the **Practical manual packing** baseline when an incumbent exists.
